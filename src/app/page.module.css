@@ -22,6 +22,12 @@
     line-height: 1.6;
 }
 
+.logoContainer {
+    margin-bottom: 2em;
+    padding-bottom: 1em;
+    border-bottom: 1px solid #21262d;
+}
+
 .markdown h1 {
     font-size: 2em;
     border-bottom: 1px solid #21262d;
