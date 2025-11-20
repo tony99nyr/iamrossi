@@ -39,11 +39,13 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
 
     const year = new Date().getFullYear();
 
+    // Reset details when the game prop changes (e.g., selecting a different upcoming game)
     useEffect(() => {
-        if (showDetails && game && !homeTeamDetails && !visitorTeamDetails) {
-            fetchTeamDetails();
-        }
-    }, [showDetails]);
+        // Clear previous details so they are refetched for the new game
+        setHomeTeamDetails(null);
+        setVisitorTeamDetails(null);
+        setLoading(false);
+    }, [game]);
 
     const fetchTeamDetails = async () => {
         if (!game) return;

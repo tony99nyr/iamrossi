@@ -27,9 +27,7 @@
     "game_date_format": "2025-08-29",
     "game_time_format": "18:30",
     "game_date_format_pretty": "Aug 29",
-    "game_time_format_pretty": "6:30 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "6:30 pm"
   },
   {
     "kind": "game",
@@ -59,9 +57,7 @@
     "game_date_format": "2025-08-30",
     "game_time_format": "",
     "game_date_format_pretty": "Aug 30",
-    "game_time_format_pretty": "",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": ""
   },
   {
     "kind": "game",
@@ -91,9 +87,7 @@
     "game_date_format": "2025-08-30",
     "game_time_format": "",
     "game_date_format_pretty": "Aug 30",
-    "game_time_format_pretty": "",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": ""
   },
   {
     "kind": "game",
@@ -123,9 +117,7 @@
     "game_date_format": "2025-08-31",
     "game_time_format": "08:00",
     "game_date_format_pretty": "Aug 31",
-    "game_time_format_pretty": "8:00 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "8:00 am"
   },
   {
     "kind": "game",
@@ -155,9 +147,7 @@
     "game_date_format": "2025-08-31",
     "game_time_format": "13:00",
     "game_date_format_pretty": "Aug 31",
-    "game_time_format_pretty": "1:00 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "1:00 pm"
   },
   {
     "kind": "game",
@@ -187,9 +177,7 @@
     "game_date_format": "2025-09-06",
     "game_time_format": "16:20",
     "game_date_format_pretty": "Sep 6",
-    "game_time_format_pretty": "4:20 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "4:20 pm"
   },
   {
     "kind": "game",
@@ -219,9 +207,7 @@
     "game_date_format": "2025-09-07",
     "game_time_format": "09:35",
     "game_date_format_pretty": "Sep 7",
-    "game_time_format_pretty": "9:35 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "9:35 am"
   },
   {
     "kind": "game",
@@ -251,9 +237,7 @@
     "game_date_format": "2025-09-26",
     "game_time_format": "10:05",
     "game_date_format_pretty": "Sep 26",
-    "game_time_format_pretty": "10:05 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "10:05 am"
   },
   {
     "kind": "game",
@@ -283,9 +267,7 @@
     "game_date_format": "2025-09-26",
     "game_time_format": "14:25",
     "game_date_format_pretty": "Sep 26",
-    "game_time_format_pretty": "2:25 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "2:25 pm"
   },
   {
     "kind": "game",
@@ -315,9 +297,7 @@
     "game_date_format": "2025-09-27",
     "game_time_format": "09:27",
     "game_date_format_pretty": "Sep 27",
-    "game_time_format_pretty": "9:27 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "9:27 am"
   },
   {
     "kind": "game",
@@ -347,9 +327,7 @@
     "game_date_format": "2025-09-27",
     "game_time_format": "15:41",
     "game_date_format_pretty": "Sep 27",
-    "game_time_format_pretty": "3:41 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "3:41 pm"
   },
   {
     "kind": "game",
@@ -379,9 +357,7 @@
     "game_date_format": "2025-09-28",
     "game_time_format": "08:20",
     "game_date_format_pretty": "Sep 28",
-    "game_time_format_pretty": "8:20 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "8:20 am"
   },
   {
     "kind": "game",
@@ -411,9 +387,7 @@
     "game_date_format": "2025-10-11",
     "game_time_format": "17:10",
     "game_date_format_pretty": "Oct 11",
-    "game_time_format_pretty": "5:10 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "5:10 pm"
   },
   {
     "kind": "game",
@@ -443,9 +417,7 @@
     "game_date_format": "2025-10-12",
     "game_time_format": "08:15",
     "game_date_format_pretty": "Oct 12",
-    "game_time_format_pretty": "8:15 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "8:15 am"
   },
   {
     "kind": "game",
@@ -475,9 +447,7 @@
     "game_date_format": "2025-10-24",
     "game_time_format": "10:20",
     "game_date_format_pretty": "Oct 24",
-    "game_time_format_pretty": "10:20 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "10:20 am"
   },
   {
     "kind": "game",
@@ -507,9 +477,7 @@
     "game_date_format": "2025-10-24",
     "game_time_format": "16:30",
     "game_date_format_pretty": "Oct 24",
-    "game_time_format_pretty": "4:30 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "4:30 pm"
   },
   {
     "kind": "game",
@@ -539,9 +507,7 @@
     "game_date_format": "2025-10-25",
     "game_time_format": "09:30",
     "game_date_format_pretty": "Oct 25",
-    "game_time_format_pretty": "9:30 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "9:30 am"
   },
   {
     "kind": "game",
@@ -571,9 +537,7 @@
     "game_date_format": "2025-10-25",
     "game_time_format": "15:10",
     "game_date_format_pretty": "Oct 25",
-    "game_time_format_pretty": "3:10 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "3:10 pm"
   },
   {
     "kind": "game",
@@ -603,9 +567,7 @@
     "game_date_format": "2025-10-26",
     "game_time_format": "08:55",
     "game_date_format_pretty": "Oct 26",
-    "game_time_format_pretty": "8:55 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "8:55 am"
   },
   {
     "kind": "game",
@@ -635,9 +597,7 @@
     "game_date_format": "2025-11-01",
     "game_time_format": "19:45",
     "game_date_format_pretty": "Nov 1",
-    "game_time_format_pretty": "7:45 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "7:45 pm"
   },
   {
     "kind": "game",
@@ -667,9 +627,7 @@
     "game_date_format": "2025-11-02",
     "game_time_format": "11:10",
     "game_date_format_pretty": "Nov 2",
-    "game_time_format_pretty": "11:10 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "11:10 am"
   },
   {
     "kind": "game",
@@ -699,9 +657,7 @@
     "game_date_format": "2025-11-07",
     "game_time_format": "07:10",
     "game_date_format_pretty": "Nov 7",
-    "game_time_format_pretty": "7:10 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "7:10 am"
   },
   {
     "kind": "game",
@@ -731,9 +687,7 @@
     "game_date_format": "2025-11-07",
     "game_time_format": "20:15",
     "game_date_format_pretty": "Nov 7",
-    "game_time_format_pretty": "8:15 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "8:15 pm"
   },
   {
     "kind": "game",
@@ -763,9 +717,7 @@
     "game_date_format": "2025-11-08",
     "game_time_format": "13:00",
     "game_date_format_pretty": "Nov 8",
-    "game_time_format_pretty": "1:00 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "1:00 pm"
   },
   {
     "kind": "game",
@@ -795,9 +747,7 @@
     "game_date_format": "2025-11-08",
     "game_time_format": "19:00",
     "game_date_format_pretty": "Nov 8",
-    "game_time_format_pretty": "7:00 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "7:00 pm"
   },
   {
     "kind": "game",
@@ -827,9 +777,7 @@
     "game_date_format": "2025-11-09",
     "game_time_format": "07:00",
     "game_date_format_pretty": "Nov 9",
-    "game_time_format_pretty": "7:00 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "7:00 am"
   },
   {
     "kind": "game",
@@ -859,9 +807,7 @@
     "game_date_format": "2025-12-06",
     "game_time_format": "14:45",
     "game_date_format_pretty": "Dec 6",
-    "game_time_format_pretty": "2:45 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "2:45 pm"
   },
   {
     "kind": "game",
@@ -891,9 +837,7 @@
     "game_date_format": "2025-12-06",
     "game_time_format": "19:30",
     "game_date_format_pretty": "Dec 6",
-    "game_time_format_pretty": "7:30 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "7:30 pm"
   },
   {
     "kind": "game",
@@ -923,9 +867,7 @@
     "game_date_format": "2026-01-31",
     "game_time_format": "15:20",
     "game_date_format_pretty": "Jan 31",
-    "game_time_format_pretty": "3:20 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "3:20 pm"
   },
   {
     "kind": "game",
@@ -955,9 +897,7 @@
     "game_date_format": "2026-02-01",
     "game_time_format": "06:40",
     "game_date_format_pretty": "Feb 1",
-    "game_time_format_pretty": "6:40 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "6:40 am"
   },
   {
     "kind": "game",
@@ -987,9 +927,7 @@
     "game_date_format": "2026-02-21",
     "game_time_format": "14:45",
     "game_date_format_pretty": "Feb 21",
-    "game_time_format_pretty": "2:45 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "2:45 pm"
   },
   {
     "kind": "game",
@@ -1019,9 +957,7 @@
     "game_date_format": "2026-02-21",
     "game_time_format": "19:30",
     "game_date_format_pretty": "Feb 21",
-    "game_time_format_pretty": "7:30 pm",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "7:30 pm"
   },
   {
     "kind": "game",
@@ -1051,8 +987,6 @@
     "game_date_format": "2026-02-22",
     "game_time_format": "07:00",
     "game_date_format_pretty": "Feb 22",
-    "game_time_format_pretty": "7:00 am",
-    "home_team_details": null,
-    "visitor_team_details": null
+    "game_time_format_pretty": "7:00 am"
   }
 ]
