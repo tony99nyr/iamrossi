@@ -1,0 +1,27 @@
+<svg width="400" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- ROSSI text in italic bold style -->
+  <g transform="translate(50, 100)">
+    <!-- R -->
+    <path d="M 0 0 L 0 -60 L 25 -60 Q 40 -60 40 -45 Q 40 -35 30 -32 L 45 0 L 30 0 L 18 -28 L 15 -28 L 15 0 Z M 15 -40 L 23 -40 Q 28 -40 28 -45 Q 28 -50 23 -50 L 15 -50 Z" fill="white" transform="skewX(-12)"/>
+    
+    <!-- O -->
+    <path d="M 55 -30 Q 55 -60 75 -60 Q 95 -60 95 -30 Q 95 0 75 0 Q 55 0 55 -30 Z M 70 -10 Q 70 -5 75 -5 Q 80 -5 80 -10 L 80 -50 Q 80 -55 75 -55 Q 70 -55 70 -50 Z" fill="white" transform="skewX(-12)"/>
+    
+    <!-- S -->
+    <path d="M 105 -15 Q 105 0 125 0 Q 140 0 140 -10 L 130 -10 Q 130 -5 125 -5 Q 120 -5 120 -10 Q 120 -15 125 -18 L 135 -22 Q 145 -26 145 -40 Q 145 -60 125 -60 Q 105 -60 105 -45 L 115 -45 Q 115 -55 125 -55 Q 130 -55 130 -50 Q 130 -45 125 -42 L 115 -38 Q 105 -34 105 -15 Z" fill="white" transform="skewX(-12)"/>
+    
+    <!-- S -->
+    <path d="M 155 -15 Q 155 0 175 0 Q 190 0 190 -10 L 180 -10 Q 180 -5 175 -5 Q 170 -5 170 -10 Q 170 -15 175 -18 L 185 -22 Q 195 -26 195 -40 Q 195 -60 175 -60 Q 155 -60 155 -45 L 165 -45 Q 165 -55 175 -55 Q 180 -55 180 -50 Q 180 -45 175 -42 L 165 -38 Q 155 -34 155 -15 Z" fill="white" transform="skewX(-12)"/>
+    
+    <!-- I -->
+    <path d="M 205 0 L 220 0 L 220 -60 L 205 -60 Z" fill="white" transform="skewX(-12)"/>
+  </g>
+  
+  <!-- Hockey stick -->
+  <g transform="translate(280, 110) skewX(-12)">
+    <!-- Stick shaft (angled) -->
+    <path d="M 0 -20 L 8 -20 L 12 10 L 4 10 Z" fill="white"/>
+    <!-- Stick blade -->
+    <ellipse cx="-5" cy="15" rx="18" ry="8" fill="white" transform="rotate(-10)"/>
+  </g>
+</svg>

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import AnimatedLogo from '@/components/AnimatedLogo';
+import Image from 'next/image';
 import styles from './page.module.css';
 
 export default function Home() {
@@ -8,7 +8,14 @@ export default function Home() {
             <main className={styles.main}>
                 <article className={styles.markdown}>
                     <div className={styles.logoContainer}>
-                        <AnimatedLogo />
+                        <Image 
+                            src="/logo_rossi_transparent_1763691277543_white.svg" 
+                            alt="ROSSI Logo" 
+                            width={260}
+                            height={100}
+                            priority
+                            
+                        />
                     </div>
                     <p>Use the menu in the top right to navigate to the available tools.</p>
 

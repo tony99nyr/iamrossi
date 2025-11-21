@@ -67,17 +67,17 @@ export default function HamburgerMenu() {
                 <motion.span
                     animate={isOpen ? { rotate: 45, y: 8 } : { rotate: 0, y: 0 }}
                     className={styles.bar}
-                    transition={{ duration: 0.3 }}
+                    transition={{ duration: 0.15 }}
                 />
                 <motion.span
                     animate={isOpen ? { opacity: 0 } : { opacity: 1 }}
                     className={styles.bar}
-                    transition={{ duration: 0.3 }}
+                    transition={{ duration: 0.15 }}
                 />
                 <motion.span
                     animate={isOpen ? { rotate: -45, y: -8 } : { rotate: 0, y: 0 }}
                     className={styles.bar}
-                    transition={{ duration: 0.3 }}
+                    transition={{ duration: 0.15 }}
                 />
             </button>
 
@@ -89,7 +89,7 @@ export default function HamburgerMenu() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        transition={{ duration: 0.4 }}
+                        transition={{ duration: 0.2 }}
                         className={styles.menuOverlay}
                     >
                         <motion.ul
@@ -99,10 +99,10 @@ export default function HamburgerMenu() {
                             exit="closed"
                             variants={{
                                 open: {
-                                    transition: { staggerChildren: 0.1, delayChildren: 0.2 }
+                                    transition: { staggerChildren: 0.05, delayChildren: 0.1 }
                                 },
                                 closed: {
-                                    transition: { staggerChildren: 0.05, staggerDirection: -1 }
+                                    transition: { staggerChildren: 0.03, staggerDirection: -1 }
                                 }
                             }}
                         >
@@ -113,7 +113,7 @@ export default function HamburgerMenu() {
                                         open: { y: 0, opacity: 1 },
                                         closed: { y: 20, opacity: 0 }
                                     }}
-                                    transition={{ duration: 0.4, ease: "easeOut" }}
+                                    transition={{ duration: 0.2, ease: "easeOut" }}
                                     className={styles.menuItem}
                                 >
                                     <Link

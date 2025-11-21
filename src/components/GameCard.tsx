@@ -45,25 +45,41 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
         setHomeTeamDetails(null);
         setVisitorTeamDetails(null);
         setLoading(false);
+        setShowDetails(false);
     }, [game]);
+
+    // Fetch team details when details section is opened
+    useEffect(() => {
+        if (showDetails && game && !homeTeamDetails && !visitorTeamDetails && !loading) {
+            fetchTeamDetails();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showDetails, game, homeTeamDetails, visitorTeamDetails, loading]);
 
     const fetchTeamDetails = async () => {
         if (!game) return;
         
+        // Store the current game IDs to check if game changed during fetch
+        const currentHomeTeamId = game.game_home_team;
+        const currentVisitorTeamId = game.game_visitor_team;
+        
         setLoading(true);
         try {
             const [homeRes, visitorRes] = await Promise.all([
-                fetch(`/api/team-details?teamId=${game.game_home_team}&year=${year}`),
-                fetch(`/api/team-details?teamId=${game.game_visitor_team}&year=${year}`)
+                fetch(`/api/team-details?teamId=${currentHomeTeamId}&year=${year}`),
+                fetch(`/api/team-details?teamId=${currentVisitorTeamId}&year=${year}`)
             ]);
 
-            if (homeRes.ok) {
-                const homeData = await homeRes.json();
-                setHomeTeamDetails(homeData);
-            }
-            if (visitorRes.ok) {
-                const visitorData = await visitorRes.json();
-                setVisitorTeamDetails(visitorData);
+            // Only update state if the game hasn't changed
+            if (game?.game_home_team === currentHomeTeamId && game?.game_visitor_team === currentVisitorTeamId) {
+                if (homeRes.ok) {
+                    const homeData = await homeRes.json();
+                    setHomeTeamDetails(homeData);
+                }
+                if (visitorRes.ok) {
+                    const visitorData = await visitorRes.json();
+                    setVisitorTeamDetails(visitorData);
+                }
             }
         } catch (error) {
             console.error('Failed to fetch team details:', error);

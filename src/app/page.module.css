@@ -26,6 +26,12 @@
     margin-bottom: 2em;
     padding-bottom: 1em;
     border-bottom: 1px solid #21262d;
+    display: flex;
+}
+
+.logoContainer img {
+    max-width: 100%;
+    height: auto;
 }
 
 .markdown h1 {
