@@ -1,7 +1,211 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import styles from './page.module.css';
+import { css } from '../../../styled-system/css';
+
+const containerStyle = css({
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '3rem 2rem',
+    background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%)',
+    color: '#ffffff',
+    position: 'relative',
+    overflowX: 'hidden',
+    '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.1) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(255, 138, 101, 0.1) 0%, transparent 50%)',
+        pointerEvents: 'none',
+    },
+    sm: {
+        padding: '2rem 1rem',
+    },
+});
+
+const titleStyle = css({
+    fontSize: '3rem',
+    marginBottom: '3rem',
+    textAlign: 'center',
+    fontWeight: '800',
+    background: 'linear-gradient(135deg, #ffffff 0%, #7877c6 50%, #ff8a65 100%)',
+    backgroundClip: 'text',
+    color: 'transparent',
+    letterSpacing: '-0.03em',
+    position: 'relative',
+    zIndex: 1,
+    sm: {
+        fontSize: '2rem',
+        marginBottom: '2rem',
+    },
+});
+
+const formStyle = css({
+    width: '100%',
+    maxWidth: '420px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1.5rem',
+    background: 'rgba(25, 25, 30, 0.8)',
+    backdropFilter: 'blur(20px)',
+    padding: '3rem 2.5rem',
+    borderRadius: '20px',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+    position: 'relative',
+    zIndex: 1,
+    animation: 'fadeIn 0.5s ease-out',
+    sm: {
+        padding: '2.5rem 2rem',
+    },
+});
+
+const mainStyle = css({
+    width: '100%',
+    maxWidth: '900px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2rem',
+    position: 'relative',
+    zIndex: 1,
+    animation: 'fadeIn 0.5s ease-out',
+});
+
+const inputStyle = css({
+    padding: '1rem 1.25rem',
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    color: '#ffffff',
+    fontFamily: 'inherit',
+    borderRadius: '12px',
+    fontSize: '1rem',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    '&::placeholder': {
+        color: 'rgba(255, 255, 255, 0.4)',
+    },
+    '&:focus': {
+        outline: 'none',
+        borderColor: 'rgba(120, 119, 198, 0.5)',
+        background: 'rgba(255, 255, 255, 0.08)',
+        boxShadow: '0 0 0 3px rgba(120, 119, 198, 0.1)',
+    },
+    '&:hover:not(:focus)': {
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        background: 'rgba(255, 255, 255, 0.07)',
+    },
+});
+
+const buttonStyle = css({
+    padding: '1rem 1.5rem',
+    background: 'linear-gradient(135deg, #7877c6 0%, #5e5da8 100%)',
+    color: '#ffffff',
+    border: 'none',
+    fontFamily: 'inherit',
+    fontWeight: '600',
+    cursor: 'pointer',
+    borderRadius: '12px',
+    fontSize: '1rem',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    boxShadow: '0 4px 12px rgba(120, 119, 198, 0.3)',
+    '&:hover': {
+        transform: 'translateY(-2px)',
+        boxShadow: '0 6px 20px rgba(120, 119, 198, 0.4)',
+        background: 'linear-gradient(135deg, #8887d7 0%, #6f6eb9 100%)',
+    },
+    '&:active': {
+        transform: 'translateY(0)',
+    },
+});
+
+const sectionStyle = css({
+    background: 'rgba(25, 25, 30, 0.6)',
+    backdropFilter: 'blur(20px)',
+    padding: '2.5rem',
+    borderRadius: '20px',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    '&:hover': {
+        borderColor: 'rgba(255, 255, 255, 0.15)',
+        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)',
+    },
+    '& h2': {
+        fontSize: '1.5rem',
+        marginBottom: '2rem',
+        color: '#ffffff',
+        fontWeight: '700',
+        letterSpacing: '-0.02em',
+        paddingBottom: '1rem',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+    },
+    sm: {
+        padding: '2rem 1.5rem',
+    },
+});
+
+const fieldStyle = css({
+    marginBottom: '1.5rem',
+    '& label': {
+        display: 'block',
+        marginBottom: '0.75rem',
+        fontSize: '0.9rem',
+        color: 'rgba(255, 255, 255, 0.8)',
+        fontWeight: '600',
+        letterSpacing: '0.02em',
+    },
+});
+
+const syncButtonStyle = css({
+    width: '100%',
+    padding: '1.25rem',
+    background: 'linear-gradient(135deg, #7877c6 0%, #5e5da8 100%)',
+    color: '#ffffff',
+    border: 'none',
+    fontFamily: 'inherit',
+    fontWeight: '600',
+    cursor: 'pointer',
+    borderRadius: '12px',
+    fontSize: '1rem',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    marginTop: '1.5rem',
+    boxShadow: '0 4px 12px rgba(120, 119, 198, 0.3)',
+    '&:hover:not(:disabled)': {
+        transform: 'translateY(-2px)',
+        boxShadow: '0 6px 20px rgba(120, 119, 198, 0.4)',
+        background: 'linear-gradient(135deg, #8887d7 0%, #6f6eb9 100%)',
+    },
+    '&:active:not(:disabled)': {
+        transform: 'translateY(0)',
+    },
+    '&:disabled': {
+        opacity: 0.5,
+        cursor: 'not-allowed',
+        transform: 'none',
+    },
+});
+
+const messageStyle = css({
+    marginTop: '1.5rem',
+    fontSize: '0.95rem',
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+    padding: '1rem',
+    background: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    animation: 'slideIn 0.3s ease-out',
+});
+
+const placeholderStyle = css({
+    marginTop: '1rem',
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: '0.95rem',
+});
 
 export default function AdminPage() {
     const [secret, setSecret] = useState('');
@@ -68,17 +272,17 @@ export default function AdminPage() {
 
     if (!isAuthenticated) {
         return (
-            <div className={styles.container}>
-                <h1 className={styles.title}>Admin Access</h1>
-                <form onSubmit={handleLogin} className={styles.form}>
+            <div className={containerStyle}>
+                <h1 className={titleStyle}>Admin Access</h1>
+                <form onSubmit={handleLogin} className={formStyle}>
                     <input
                         type="password"
                         placeholder="Enter Secret Token"
                         value={secret}
                         onChange={(e) => setSecret(e.target.value)}
-                        className={styles.input}
+                        className={inputStyle}
                     />
-                    <button type="submit" className={styles.button}>
+                    <button type="submit" className={buttonStyle}>
                         Login
                     </button>
                 </form>
@@ -87,43 +291,43 @@ export default function AdminPage() {
     }
 
     return (
-        <div className={styles.container}>
-            <h1 className={styles.title}>Admin Dashboard</h1>
+        <div className={containerStyle}>
+            <h1 className={titleStyle}>Admin Dashboard</h1>
             
-            <div className={styles.main}>
-                <div className={styles.section}>
+            <div className={mainStyle}>
+                <div className={sectionStyle}>
                     <h2>MyHockeyRankings Settings</h2>
-                    <div className={styles.field}>
+                    <div className={fieldStyle}>
                         <label>Team ID:</label>
                         <input 
                             type="text" 
                             value={teamId} 
                             onChange={(e) => setTeamId(e.target.value)} 
-                            className={styles.input}
+                            className={inputStyle}
                         />
                     </div>
-                    <div className={styles.field}>
+                    <div className={fieldStyle}>
                         <label>Year:</label>
                         <input 
                             type="text" 
                             value={year} 
                             onChange={(e) => setYear(e.target.value)} 
-                            className={styles.input}
+                            className={inputStyle}
                         />
                     </div>
                     <button 
                         onClick={handleSync} 
                         disabled={isSyncing} 
-                        className={styles.syncButton}
+                        className={syncButtonStyle}
                     >
                         {isSyncing ? 'Syncing...' : 'Sync Schedule'}
                     </button>
-                    {syncMessage && <p className={styles.message}>{syncMessage}</p>}
+                    {syncMessage && <p className={messageStyle}>{syncMessage}</p>}
                 </div>
 
-                <div className={styles.section}>
+                <div className={sectionStyle}>
                     <h2>Team Settings</h2>
-                    <p className={styles.placeholder}>Placeholder for other team settings.</p>
+                    <p className={placeholderStyle}>Placeholder for other team settings.</p>
                 </div>
             </div>
         </div>

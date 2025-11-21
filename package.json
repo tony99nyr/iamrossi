@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "panda:prepare": "panda codegen",
+    "panda:codegen": "panda codegen --watch",
+    "dev": "panda codegen && next dev",
+    "build": "panda codegen && next build",
     "start": "next start",
     "lint": "eslint",
     "lint:check": "eslint .",
@@ -20,6 +22,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "@pandacss/dev": "^1.5.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
