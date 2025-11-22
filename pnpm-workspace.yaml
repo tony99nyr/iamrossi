@@ -1,4 +1,5 @@
 onlyBuiltDependencies:
+  - esbuild
   - puppeteer
   - sharp
   - unrs-resolver

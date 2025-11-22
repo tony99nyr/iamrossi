@@ -42,3 +42,4 @@ next-env.d.ts
 
 # panda css
 styled-system
+.env*.local

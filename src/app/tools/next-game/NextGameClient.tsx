@@ -6,6 +6,7 @@ import { css, cx } from '../../../../styled-system/css';
 
 interface NextGameClientProps {
     futureGames: any[];
+    pastGames?: any[];
 }
 
 const containerStyle = css({
@@ -75,10 +76,11 @@ const listItemActiveStyle = css({
 
 const dateStyle = css({
     color: '#888',
-    width: '100px',
+    width: '120px',
     fontFamily: 'var(--font-geist-mono)',
     fontSize: '0.9rem',
     paddingRight: '1.5rem',
+    whiteSpace: 'nowrap',
 });
 
 const opponentStyle = css({
@@ -107,7 +109,27 @@ const homeBadgeSmallStyle = css({
     letterSpacing: '0.5px',
 });
 
-export default function NextGameClient({ futureGames }: NextGameClientProps) {
+const localBadgeSmallStyle = css({
+    display: 'inline-block',
+    background: 'rgba(74, 222, 128, 0.2)',
+    color: '#4ade80',
+    fontSize: '0.65rem',
+    fontWeight: '700',
+    padding: '0.15rem 0.5rem',
+    borderRadius: '4px',
+    marginLeft: '0.5rem',
+    letterSpacing: '0.5px',
+    border: '1px solid rgba(74, 222, 128, 0.3)',
+});
+
+interface NextGameClientProps {
+    futureGames: any[];
+    pastGames?: any[];
+}
+
+// ... (styles remain same)
+
+export default function NextGameClient({ futureGames, pastGames = [] }: NextGameClientProps) {
     const nextGame = futureGames.length > 0 ? futureGames[0] : null;
     const isNextGameHome = nextGame ? nextGame.home_team_name.includes('Carolina Junior Canes') : false;
     
@@ -119,17 +141,46 @@ export default function NextGameClient({ futureGames }: NextGameClientProps) {
 
     const handleGameClick = (game: any) => {
         setSelectedGame(game);
-        // Scroll to top smoothly
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    // Determine which game to show in the featured card
     const featuredGame = selectedGame || nextGame;
     const isFeaturedHome = featuredGame ? featuredGame.home_team_name.includes('Carolina Junior Canes') : false;
 
     return (
         <div className={containerStyle}>
             <h1 className={headerStyle}>Game Schedule</h1>
+            
+            <div className={css({ textAlign: 'center', marginBottom: '3rem', marginTop: '-2rem' })}>
+                <a 
+                    href="https://www.youtube.com/@2015JuniorCanes" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className={css({
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem 1rem',
+                        background: 'rgba(255, 0, 0, 0.1)',
+                        border: '1px solid rgba(255, 0, 0, 0.2)',
+                        borderRadius: '100px',
+                        color: '#ff4444',
+                        textDecoration: 'none',
+                        fontSize: '0.9rem',
+                        fontWeight: '600',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                            background: 'rgba(255, 0, 0, 0.2)',
+                            transform: 'translateY(-1px)',
+                        }
+                    })}
+                >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
+                    </svg>
+                    Visit YouTube Channel
+                </a>
+            </div>
             
             {selectedGame && (
                 <GameCard title="" game={selectedGame} isHome={isFeaturedHome} />
@@ -148,18 +199,25 @@ export default function NextGameClient({ futureGames }: NextGameClientProps) {
                     <p>No upcoming games found. Please sync the schedule in the Admin dashboard.</p>
                 ) : (
                     <ul className={listStyle}>
-                        {futureGames.slice(0, 5).map((game: any, index: number) => {
+                        {futureGames.map((game: any, index: number) => {
                             const isHomeGame = game.home_team_name.includes('Carolina Junior Canes');
                             return (
                                 <li 
-                                    key={game.game_nbr || `game-${index}`} 
+                                    key={`${game.game_nbr}-${index}`} 
                                     className={cx(listItemStyle, featuredGame?.game_nbr === game.game_nbr && listItemActiveStyle)}
                                     onClick={() => handleGameClick(game)}
                                 >
                                     <span className={dateStyle}>{game.game_date_format_pretty}</span>
                                     <span className={opponentStyle}>
-                                        {isHomeGame ? 'vs ' + game.visitor_team_name : '@ ' + game.home_team_name}
+                                        {isHomeGame ? game.visitor_team_name : '@ ' + game.home_team_name}
                                         {isHomeGame && <span className={homeBadgeSmallStyle}>HOME</span>}
+                                        {(game.rink_name?.toLowerCase().includes('raleigh') || 
+                                          game.rink_name?.toLowerCase().includes('wake') ||
+                                          game.rink_name?.toLowerCase().includes('garner') ||
+                                          game.rink_name?.toLowerCase().includes('cary') ||
+                                          game.rink_name?.toLowerCase().includes('invisalign')) && (
+                                            <span className={localBadgeSmallStyle}>LOCAL</span>
+                                        )}
                                     </span>
                                     <span className={timeStyle}>{game.game_time_format_pretty}</span>
                                 </li>
@@ -168,6 +226,39 @@ export default function NextGameClient({ futureGames }: NextGameClientProps) {
                     </ul>
                 )}
             </div>
+
+            {pastGames && pastGames.length > 0 && (
+                <div className={fullScheduleStyle}>
+                    <h2>Past Games</h2>
+                    <ul className={listStyle}>
+                        {pastGames.map((game: any, index: number) => {
+                            // Determine if we were home or away
+                            const isHomeGame = game.home_team_name?.includes('Carolina Junior Canes');
+                            const opponentName = isHomeGame ? game.visitor_team_name : game.home_team_name;
+                            const ourScore = isHomeGame ? game.game_home_score : game.game_visitor_score;
+                            const theirScore = isHomeGame ? game.game_visitor_score : game.game_home_score;
+                            const won = ourScore > theirScore;
+                            
+                            return (
+                                <li 
+                                    key={`past-${index}`} 
+                                    className={listItemStyle}
+                                    onClick={() => window.open(`https://myhockeyrankings.com/game.php?g=${game.game_nbr}`, '_blank')}
+                                >
+                                    <span className={dateStyle}>{game.game_date_format_pretty}</span>
+                                    <span className={opponentStyle}>
+                                        {isHomeGame ? opponentName : '@ ' + opponentName}
+                                        {isHomeGame && <span className={homeBadgeSmallStyle}>HOME</span>}
+                                    </span>
+                                    <span className={timeStyle} style={{ fontWeight: 'bold', color: won ? '#4ade80' : '#f87171' }}>
+                                        {won ? 'W' : 'L'} {ourScore}-{theirScore}
+                                    </span>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            )}
         </div>
     );
 }

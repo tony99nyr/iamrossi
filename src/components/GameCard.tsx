@@ -9,7 +9,7 @@ interface TeamDetails {
     rating?: number;
 }
 
-interface Game {
+export interface Game {
     game_date: string;
     game_time: string;
     home_team_name: string;
@@ -17,12 +17,22 @@ interface Game {
     rink_name: string;
     home_team_logo?: string;
     visitor_team_logo?: string;
+    game_date_format?: string;
     game_date_format_pretty?: string;
     game_time_format_pretty?: string;
-    game_home_team?: number;
-    game_visitor_team?: number;
+    game_home_team?: number | string;
+    game_visitor_team?: number | string;
     game_home_score?: number;
     game_visitor_score?: number;
+    opponent_record?: string;
+    opponent_rating?: string;
+    home_team_record?: string;
+    home_team_rating?: string;
+    visitor_team_record?: string;
+    visitor_team_rating?: string;
+    game_nbr?: string | number;
+    highlightsUrl?: string;
+    fullGameUrl?: string;
 }
 
 interface GameCardProps {
@@ -281,59 +291,14 @@ const statDividerStyle = css({
 
 export default function GameCard({ title, game, isHome }: GameCardProps) {
     const [showDetails, setShowDetails] = useState(false);
-    const [homeTeamDetails, setHomeTeamDetails] = useState<TeamDetails | null>(null);
-    const [visitorTeamDetails, setVisitorTeamDetails] = useState<TeamDetails | null>(null);
-    const [loading, setLoading] = useState(false);
 
     const year = new Date().getFullYear();
 
-    // Reset details when the game prop changes (e.g., selecting a different upcoming game)
-    useEffect(() => {
-        // Clear previous details so they are refetched for the new game
-        setHomeTeamDetails(null);
-        setVisitorTeamDetails(null);
-        setLoading(false);
-        setShowDetails(false);
-    }, [game]);
-
-    // Fetch team details when details section is opened
-    useEffect(() => {
-        if (showDetails && game && !homeTeamDetails && !visitorTeamDetails && !loading) {
-            fetchTeamDetails();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showDetails, game, homeTeamDetails, visitorTeamDetails, loading]);
-
-    const fetchTeamDetails = async () => {
-        if (!game) return;
-        
-        // Store the current game IDs to check if game changed during fetch
-        const currentHomeTeamId = game.game_home_team;
-        const currentVisitorTeamId = game.game_visitor_team;
-        
-        setLoading(true);
-        try {
-            const [homeRes, visitorRes] = await Promise.all([
-                fetch(`/api/team-details?teamId=${currentHomeTeamId}&year=${year}`),
-                fetch(`/api/team-details?teamId=${currentVisitorTeamId}&year=${year}`)
-            ]);
-
-            // Only update state if the game hasn't changed
-            if (game?.game_home_team === currentHomeTeamId && game?.game_visitor_team === currentVisitorTeamId) {
-                if (homeRes.ok) {
-                    const homeData = await homeRes.json();
-                    setHomeTeamDetails(homeData);
-                }
-                if (visitorRes.ok) {
-                    const visitorData = await visitorRes.json();
-                    setVisitorTeamDetails(visitorData);
-                }
-            }
-        } catch (error) {
-            console.error('Failed to fetch team details:', error);
-        } finally {
-            setLoading(false);
-        }
+    // For the opponent team, we use the data from schedule.json
+    // The schedule already has opponent_record and opponent_rating populated
+    const opponentDetails: TeamDetails = {
+        record: game?.opponent_record,
+        rating: game?.opponent_rating ? parseFloat(game.opponent_rating) : undefined,
     };
 
     if (!game) {
@@ -359,33 +324,64 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                 
                 <div className={matchupStyle}>
                     <div className={teamStyle}>
-                        <a 
-                            href={`https://myhockeyrankings.com/team-info/${game.game_visitor_team}/${year}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={teamLinkStyle}
-                        >
-                            {game.visitor_team_logo && <img src={game.visitor_team_logo} alt="Visitor Logo" className={logoStyle} />}
-                            <span className={teamNameStyle}>{game.visitor_team_name}</span>
-                        </a>
+                        {game.game_visitor_team ? (
+                            <a 
+                                href={`https://myhockeyrankings.com/team-info/${game.game_visitor_team}/${year}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={teamLinkStyle}
+                            >
+                                {game.visitor_team_logo && <img src={game.visitor_team_logo} alt="Visitor Logo" className={logoStyle} />}
+                                <span className={teamNameStyle}>{game.visitor_team_name}</span>
+                            </a>
+                        ) : (
+                            <div className={teamLinkStyle} style={{ cursor: 'default', opacity: 1 }}>
+                                {game.visitor_team_logo && <img src={game.visitor_team_logo} alt="Visitor Logo" className={logoStyle} />}
+                                <span className={teamNameStyle}>{game.visitor_team_name}</span>
+                            </div>
+                        )}
                     </div>
                     <div className={vsStyle}>AT</div>
                     <div className={teamStyle}>
-                        <a 
-                            href={`https://myhockeyrankings.com/team-info/${game.game_home_team}/${year}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={teamLinkStyle}
-                        >
-                            {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={logoStyle} />}
-                            <span className={teamNameStyle}>{game.home_team_name}</span>
-                        </a>
+                        {game.game_home_team ? (
+                            <a 
+                                href={`https://myhockeyrankings.com/team-info/${game.game_home_team}/${year}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={teamLinkStyle}
+                            >
+                                {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={logoStyle} />}
+                                <span className={teamNameStyle}>{game.home_team_name}</span>
+                            </a>
+                        ) : (
+                            <div className={teamLinkStyle} style={{ cursor: 'default', opacity: 1 }}>
+                                {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={logoStyle} />}
+                                <span className={teamNameStyle}>{game.home_team_name}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 <div className={locationStyle}>
                     <span className={rinkLabelStyle}>Rink:</span>
                     <span className={rinkNameStyle}>{game.rink_name}</span>
+                    {/* Location badge for local games */}
+                    {(game.rink_name?.toLowerCase().includes('raleigh') || 
+                      game.rink_name?.toLowerCase().includes('wake') ||
+                      game.rink_name?.toLowerCase().includes('garner') ||
+                      game.rink_name?.toLowerCase().includes('cary') ||
+                      game.rink_name?.toLowerCase().includes('invisalign')) && (
+                        <span className={css({
+                            marginLeft: '0.5rem',
+                            padding: '0.25rem 0.5rem',
+                            backgroundColor: 'rgba(74, 222, 128, 0.2)',
+                            color: '#4ade80',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            border: '1px solid rgba(74, 222, 128, 0.3)'
+                        })}>LOCAL</span>
+                    )}
                 </div>
             </div>
 
@@ -408,63 +404,175 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
 
             {showDetails && (
                 <div className={detailsStyle}>
-                    {loading ? (
-                        <p className={loadingStyle}>Loading team details...</p>
-                    ) : (
-                        <div className={teamStatsStyle}>
-                            <div className={teamStatStyle}>
+                    <div className={teamStatsStyle}>
+                        {/* Visitor Team */}
+                        <div className={teamStatStyle}>
+                            <div className={statTeamNameStyle}>
+                                {game.visitor_team_name}
+                            </div>
+                            {game.visitor_team_record ? (
+                                <div className={statValueStyle}>
+                                    <span className={statLabelStyle}>Record:</span> {game.visitor_team_record}
+                                </div>
+                            ) : (
+                                <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
+                                    No record
+                                </div>
+                            )}
+                            {game.visitor_team_rating ? (
+                                <div className={statValueStyle}>
+                                    <span className={statLabelStyle}>Rating:</span> {game.visitor_team_rating}
+                                </div>
+                            ) : (
+                                <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
+                                    No rating
+                                </div>
+                            )}
+                        </div>
+
+                        <div className={statDividerStyle} />
+
+                        {/* Home Team */}
+                        <div className={teamStatStyle}>
+                            <div className={statTeamNameStyle}>
+                                {game.home_team_name}
+                            </div>
+                            {game.home_team_record ? (
+                                <div className={statValueStyle}>
+                                    <span className={statLabelStyle}>Record:</span> {game.home_team_record}
+                                </div>
+                            ) : (
+                                <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
+                                    No record
+                                </div>
+                            )}
+                            {game.home_team_rating ? (
+                                <div className={statValueStyle}>
+                                    <span className={statLabelStyle}>Rating:</span> {game.home_team_rating}
+                                </div>
+                            ) : (
+                                <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
+                                    No rating
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {/* Game Preview Link - Only show for MHR games with numeric game_nbr */}
+                    {game.game_nbr && typeof game.game_nbr === 'number' && (
+                        <div className={css({
+                            marginTop: '1.5rem',
+                            paddingTop: '1.5rem',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                            textAlign: 'center'
+                        })}>
+                            <a 
+                                href={`https://myhockeyrankings.com/game-preview?g=${game.game_nbr}&y=2025`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={css({
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    padding: '0.75rem 1.5rem',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                    color: '#60a5fa',
+                                    borderRadius: '8px',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    textDecoration: 'none',
+                                    fontSize: '0.875rem',
+                                    fontWeight: '600',
+                                    transition: 'all 0.2s ease',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                        borderColor: 'rgba(59, 130, 246, 0.5)',
+                                        transform: 'translateY(-1px)'
+                                    }
+                                })}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                                View Game Preview on MHR
+                            </a>
+                        </div>
+                    )}
+
+                    {/* Video Links */}
+                    {(game.highlightsUrl || game.fullGameUrl) && (
+                        <div className={css({
+                            marginTop: '1.5rem',
+                            paddingTop: '1.5rem',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                            display: 'flex',
+                            gap: '1rem',
+                            justifyContent: 'center',
+                            flexWrap: 'wrap'
+                        })}>
+                            {game.highlightsUrl && (
                                 <a 
-                                    href={`https://myhockeyrankings.com/team-info/${game.game_visitor_team}/${year}`}
+                                    href={game.highlightsUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className={statTeamNameStyle}
+                                    className={css({
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        padding: '0.75rem 1.5rem',
+                                        backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                                        color: '#f87171',
+                                        borderRadius: '8px',
+                                        border: '1px solid rgba(220, 38, 38, 0.3)',
+                                        textDecoration: 'none',
+                                        fontSize: '0.875rem',
+                                        fontWeight: '600',
+                                        transition: 'all 0.2s ease',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(220, 38, 38, 0.2)',
+                                            borderColor: 'rgba(220, 38, 38, 0.5)',
+                                            transform: 'translateY(-1px)'
+                                        }
+                                    })}
                                 >
-                                    {game.visitor_team_name}
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.33 29 29 0 0 0-.46-5.33z"></path>
+                                        <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
+                                    </svg>
+                                    Watch Highlights
                                 </a>
-                                {visitorTeamDetails?.record && (
-                                    <div className={statValueStyle}>
-                                        <span className={statLabelStyle}>Record:</span> {visitorTeamDetails.record}
-                                    </div>
-                                )}
-                                {visitorTeamDetails?.goals && (
-                                    <div className={statValueStyle}>
-                                        <span className={statLabelStyle}>Goals:</span> {visitorTeamDetails.goals}
-                                    </div>
-                                )}
-                                {visitorTeamDetails?.rating && (
-                                    <div className={statValueStyle}>
-                                        <span className={statLabelStyle}>Rating:</span> {visitorTeamDetails.rating}
-                                    </div>
-                                )}
-                            </div>
-                            
-                            <div className={statDividerStyle}></div>
-                            
-                            <div className={teamStatStyle}>
+                            )}
+                            {game.fullGameUrl && (
                                 <a 
-                                    href={`https://myhockeyrankings.com/team-info/${game.game_home_team}/${year}`}
+                                    href={game.fullGameUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className={statTeamNameStyle}
+                                    className={css({
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        padding: '0.75rem 1.5rem',
+                                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                        color: '#e5e5e5',
+                                        borderRadius: '8px',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        textDecoration: 'none',
+                                        fontSize: '0.875rem',
+                                        fontWeight: '600',
+                                        transition: 'all 0.2s ease',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                                            transform: 'translateY(-1px)'
+                                        }
+                                    })}
                                 >
-                                    {game.home_team_name}
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                                    </svg>
+                                    Watch Full Game
                                 </a>
-                                {homeTeamDetails?.record && (
-                                    <div className={statValueStyle}>
-                                        <span className={statLabelStyle}>Record:</span> {homeTeamDetails.record}
-                                    </div>
-                                )}
-                                {homeTeamDetails?.goals && (
-                                    <div className={statValueStyle}>
-                                        <span className={statLabelStyle}>Goals:</span> {homeTeamDetails.goals}
-                                    </div>
-                                )}
-                                {homeTeamDetails?.rating && (
-                                    <div className={statValueStyle}>
-                                        <span className={statLabelStyle}>Rating:</span> {homeTeamDetails.rating}
-                                    </div>
-                                )}
-                            </div>
+                            )}
                         </div>
                     )}
                 </div>

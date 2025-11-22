@@ -210,13 +210,17 @@ const placeholderStyle = css({
 export default function AdminPage() {
     const [secret, setSecret] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [teamId, setTeamId] = useState('19758');
-    const [year, setYear] = useState('2025');
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState('');
+    const [gameCount, setGameCount] = useState<number | null>(null);
+    const [teamName, setTeamName] = useState('');
+    const [identifiers, setIdentifiers] = useState('');
+    const [teamLogo, setTeamLogo] = useState('');
+    const [mhrTeamId, setMhrTeamId] = useState('');
+    const [mhrYear, setMhrYear] = useState('');
+    const [settingsMessage, setSettingsMessage] = useState('');
 
     useEffect(() => {
-        // Check if already authenticated (simple session check)
         const auth = sessionStorage.getItem('admin_auth');
         if (auth === 'true') {
             setIsAuthenticated(true);
@@ -226,11 +230,14 @@ export default function AdminPage() {
 
     const fetchSettings = async () => {
         try {
-            const res = await fetch('/api/admin/sync-schedule');
+            const res = await fetch('/api/admin/settings');
             if (res.ok) {
                 const data = await res.json();
-                setTeamId(data.teamId || '19758');
-                setYear(data.year || '2025');
+                setTeamName(data.teamName || '');
+                setIdentifiers(Array.isArray(data.identifiers) ? data.identifiers.join(', ') : '');
+                setTeamLogo(data.teamLogo || '');
+                setMhrTeamId(data.mhrTeamId || '');
+                setMhrYear(data.mhrYear || '');
             }
         } catch (error) {
             console.error('Failed to fetch settings', error);
@@ -248,20 +255,51 @@ export default function AdminPage() {
         }
     };
 
+    const handleSaveSettings = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSettingsMessage('Saving...');
+        try {
+            const idList = identifiers.split(',').map(s => s.trim()).filter(Boolean);
+            const res = await fetch('/api/admin/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    teamName, 
+                    identifiers: idList, 
+                    teamLogo,
+                    mhrTeamId,
+                    mhrYear
+                }),
+            });
+            if (res.ok) {
+                setSettingsMessage('Settings saved successfully!');
+            } else {
+                setSettingsMessage('Failed to save settings.');
+            }
+        } catch (error) {
+            setSettingsMessage('Error saving settings.');
+        }
+    };
+
     const handleSync = async () => {
         setIsSyncing(true);
-        setSyncMessage('Syncing schedule... this may take a minute...');
+        setSyncMessage('Syncing calendar... this may take a moment...');
+        setGameCount(null);
         try {
             const res = await fetch('/api/admin/sync-schedule', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ teamId, year }),
+                body: JSON.stringify({}),
             });
             const data = await res.json();
             if (res.ok) {
-                setSyncMessage('Success: ' + data.message);
+                setSyncMessage(`Success: ${data.message}`);
+                setGameCount(data.count || null);
             } else {
-                setSyncMessage('Error: ' + (data.error || 'Unknown error'));
+                setSyncMessage(`Error: ${data.error || 'Unknown error'}`);
+                if (data.details) {
+                    console.error('Sync error details:', data.details);
+                }
             }
         } catch (error) {
             setSyncMessage('Error: Failed to connect to server');
@@ -273,63 +311,244 @@ export default function AdminPage() {
     if (!isAuthenticated) {
         return (
             <div className={containerStyle}>
-                <h1 className={titleStyle}>Admin Access</h1>
-                <form onSubmit={handleLogin} className={formStyle}>
-                    <input
-                        type="password"
-                        placeholder="Enter Secret Token"
-                        value={secret}
-                        onChange={(e) => setSecret(e.target.value)}
-                        className={inputStyle}
-                    />
-                    <button type="submit" className={buttonStyle}>
-                        Login
-                    </button>
-                </form>
+                <div className={loginBoxStyle}>
+                    <h1 className={headerStyle}>Admin Access</h1>
+                    <form onSubmit={handleLogin} className={formStyle}>
+                        <input
+                            type="password"
+                            value={secret}
+                            onChange={(e) => setSecret(e.target.value)}
+                            placeholder="Enter Secret Token"
+                            className={inputStyle}
+                        />
+                        <button type="submit" className={buttonStyle}>Login</button>
+                    </form>
+                </div>
             </div>
         );
     }
 
     return (
         <div className={containerStyle}>
-            <h1 className={titleStyle}>Admin Dashboard</h1>
-            
-            <div className={mainStyle}>
-                <div className={sectionStyle}>
-                    <h2>MyHockeyRankings Settings</h2>
-                    <div className={fieldStyle}>
-                        <label>Team ID:</label>
-                        <input 
-                            type="text" 
-                            value={teamId} 
-                            onChange={(e) => setTeamId(e.target.value)} 
-                            className={inputStyle}
-                        />
-                    </div>
-                    <div className={fieldStyle}>
-                        <label>Year:</label>
-                        <input 
-                            type="text" 
-                            value={year} 
-                            onChange={(e) => setYear(e.target.value)} 
-                            className={inputStyle}
-                        />
-                    </div>
-                    <button 
-                        onClick={handleSync} 
-                        disabled={isSyncing} 
-                        className={syncButtonStyle}
-                    >
-                        {isSyncing ? 'Syncing...' : 'Sync Schedule'}
-                    </button>
-                    {syncMessage && <p className={messageStyle}>{syncMessage}</p>}
+            <div className={dashboardStyle}>
+                <div className={headerRowStyle}>
+                    <h1 className={headerStyle}>Admin Dashboard</h1>
+                    <button onClick={() => {
+                        setIsAuthenticated(false);
+                        sessionStorage.removeItem('admin_auth');
+                    }} className={logoutButtonStyle}>Logout</button>
                 </div>
 
-                <div className={sectionStyle}>
-                    <h2>Team Settings</h2>
-                    <p className={placeholderStyle}>Placeholder for other team settings.</p>
+                <div className={cardStyle}>
+                    <h2>Team Configuration</h2>
+                    <p className={descriptionStyle}>Configure your team name and identifiers for schedule parsing.</p>
+                    
+                    <form onSubmit={handleSaveSettings} className={formStyle}>
+                        <div className={inputGroupStyle}>
+                            <label>Team Name (Official)</label>
+                            <input
+                                type="text"
+                                value={teamName}
+                                onChange={(e) => setTeamName(e.target.value)}
+                                className={inputStyle}
+                                placeholder="e.g. Carolina Junior Canes (Black) 10U AA"
+                            />
+                        </div>
+                        
+                        <div className={inputGroupStyle}>
+                            <label>Team Identifiers (comma separated)</label>
+                            <input
+                                type="text"
+                                value={identifiers}
+                                onChange={(e) => setIdentifiers(e.target.value)}
+                                className={inputStyle}
+                                placeholder="e.g. Black, Jr Canes, Carolina"
+                            />
+                            <small style={{ display: 'block', marginTop: '0.5rem', color: '#666' }}>
+                                Keywords used to identify "Us" in calendar events (e.g. "Black" for 10U Black).
+                            </small>
+                        </div>
+
+                        <div className={inputGroupStyle}>
+                            <label>MHR Team ID</label>
+                            <input
+                                type="text"
+                                value={mhrTeamId}
+                                onChange={(e) => setMhrTeamId(e.target.value)}
+                                className={inputStyle}
+                                placeholder="e.g. 19758"
+                            />
+                        </div>
+
+                        <div className={inputGroupStyle}>
+                            <label>MHR Year</label>
+                            <input
+                                type="text"
+                                value={mhrYear}
+                                onChange={(e) => setMhrYear(e.target.value)}
+                                className={inputStyle}
+                                placeholder="e.g. 2025"
+                            />
+                        </div>
+
+                        <div className={inputGroupStyle}>
+                            <label>Team Logo URL</label>
+                            <input
+                                type="text"
+                                value={teamLogo}
+                                onChange={(e) => setTeamLogo(e.target.value)}
+                                className={inputStyle}
+                                placeholder="https://..."
+                            />
+                        </div>
+
+                        <button type="submit" className={buttonStyle}>Save Settings</button>
+                        {settingsMessage && <p className={messageStyle}>{settingsMessage}</p>}
+                    </form>
+                </div>
+
+                <div className={cardStyle}>
+                    <h2>Calendar Sync</h2>
+                    <p className={descriptionStyle}>
+                        Sync schedule from Google Calendar. This will fetch the latest events and update the schedule.
+                    </p>
+                    
+                    <div className={syncSectionStyle}>
+                        <button 
+                            onClick={handleSync} 
+                            disabled={isSyncing}
+                            className={isSyncing ? disabledButtonStyle : buttonStyle}
+                        >
+                            {isSyncing ? 'Syncing...' : 'Sync Schedule from Calendar'}
+                        </button>
+                        
+                        {syncMessage && (
+                            <div className={messageStyle}>
+                                {syncMessage}
+                            </div>
+                        )}
+                        
+                        {gameCount !== null && (
+                            <div className={statsStyle}>
+                                <strong>{gameCount}</strong> games synced successfully
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
+
+const loginBoxStyle = css({
+    width: '100%',
+    maxWidth: '400px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '2rem',
+    zIndex: 1,
+});
+
+const headerStyle = css({
+    fontSize: '2.5rem',
+    fontWeight: '800',
+    background: 'linear-gradient(135deg, #ffffff 0%, #7877c6 50%, #ff8a65 100%)',
+    backgroundClip: 'text',
+    color: 'transparent',
+    letterSpacing: '-0.03em',
+    margin: 0,
+});
+
+const dashboardStyle = css({
+    width: '100%',
+    maxWidth: '800px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2rem',
+    zIndex: 1,
+});
+
+const headerRowStyle = css({
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+    flexWrap: 'wrap',
+    gap: '1rem',
+});
+
+const logoutButtonStyle = css({
+    padding: '0.5rem 1rem',
+    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    color: '#ffffff',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    transition: 'all 0.2s',
+    '&:hover': {
+        background: 'rgba(255, 255, 255, 0.2)',
+    },
+});
+
+const cardStyle = css({
+    background: 'rgba(25, 25, 30, 0.6)',
+    backdropFilter: 'blur(20px)',
+    padding: '2rem',
+    borderRadius: '20px',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+    '& h2': {
+        fontSize: '1.5rem',
+        marginBottom: '1rem',
+        color: '#ffffff',
+        fontWeight: '700',
+    },
+});
+
+const descriptionStyle = css({
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginBottom: '1.5rem',
+    lineHeight: '1.5',
+});
+
+const inputGroupStyle = css({
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem',
+    '& label': {
+        fontSize: '0.9rem',
+        fontWeight: '600',
+        color: 'rgba(255, 255, 255, 0.8)',
+    },
+});
+
+const syncSectionStyle = css({
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+});
+
+const disabledButtonStyle = css({
+    padding: '1rem 1.5rem',
+    background: 'rgba(120, 119, 198, 0.3)',
+    color: 'rgba(255, 255, 255, 0.5)',
+    border: 'none',
+    borderRadius: '12px',
+    fontSize: '1rem',
+    fontWeight: '600',
+    cursor: 'not-allowed',
+    width: '100%',
+});
+
+const statsStyle = css({
+    textAlign: 'center',
+    color: 'rgba(120, 119, 198, 0.9)',
+    fontSize: '0.95rem',
+    marginTop: '0.5rem',
+    padding: '0.75rem',
+    background: 'rgba(120, 119, 198, 0.1)',
+    borderRadius: '8px',
+    border: '1px solid rgba(120, 119, 198, 0.2)',
+});

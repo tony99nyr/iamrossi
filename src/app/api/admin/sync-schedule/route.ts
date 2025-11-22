@@ -1,42 +1,56 @@
-import { NextResponse, NextRequest } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
-
-const execPromise = promisify(exec);
+import { fetchCalendarEvents } from '@/lib/fetch-calendar';
+import { transformCalendarEvents } from '@/lib/transform-calendar-events';
+import { fetchMHRSchedule, scrapeTeamDetails } from '@/lib/mhr-service';
 
 export async function POST(request: NextRequest) {
   try {
-    const { teamId, year } = await request.json();
-
-    if (!teamId || !year) {
-      return NextResponse.json({ error: 'Team ID and Year are required' }, { status: 400 });
+    // 1. Get Settings
+    const settingsPath = path.join(process.cwd(), 'src/data/settings.json');
+    let settings = { mhrTeamId: '19758', mhrYear: '2025' };
+    if (fs.existsSync(settingsPath)) {
+        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
     }
 
-    const scriptPath = path.join(process.cwd(), 'scripts/mhr-scraper.js');
-    const command = `node ${scriptPath} ${teamId} ${year}`;
-    console.log(`Executing: ${command}`);
+    const { mhrTeamId, mhrYear } = settings;
 
-    const { stdout, stderr } = await execPromise(command);
-    if (stderr) {
-      console.error(`Stderr: ${stderr}`);
-      return NextResponse.json({ error: 'Failed to sync schedule', details: stderr }, { status: 500 });
-    }
-    console.log(`Stdout: ${stdout}`);
-    return NextResponse.json({ success: true, message: 'Schedule synced successfully' });
-  } catch (error) {
-    console.error('API Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
+    // 2. Fetch MHR Schedule (for known opponents)
+    console.log('Fetching MHR Schedule...');
+    const mhrSchedule = await fetchMHRSchedule(mhrTeamId, mhrYear);
+    console.log(`Fetched ${mhrSchedule.length} games from MHR.`);
+    
+    // Save MHR Schedule for Past Games
+    const mhrSchedulePath = path.join(process.cwd(), 'src/data/mhr-schedule.json');
+    fs.writeFileSync(mhrSchedulePath, JSON.stringify(mhrSchedule, null, 2));
 
-export async function GET() {
-  // Endpoint to get current settings
-  const settingsPath = path.join(process.cwd(), 'src/data/settings.json');
-  if (fs.existsSync(settingsPath)) {
-    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-    return NextResponse.json(settings);
+    // 2b. Fetch Main Team Stats
+    console.log('Fetching Main Team Stats...');
+    const mainTeamStats = await scrapeTeamDetails(mhrTeamId, mhrYear);
+    console.log(`Fetched Main Team Stats:`, mainTeamStats);
+
+    // 3. Fetch Calendar Events
+    console.log('Fetching Calendar Events...');
+    const calendarEvents = await fetchCalendarEvents();
+    console.log(`Fetched ${calendarEvents.length} events from Calendar.`);
+
+    // 4. Transform and Merge
+    console.log('Transforming and Merging...');
+    const schedule = await transformCalendarEvents(calendarEvents, mhrSchedule, mhrYear, mainTeamStats);
+
+    // 5. Save Schedule
+    const schedulePath = path.join(process.cwd(), 'src/data/schedule.json');
+    fs.writeFileSync(schedulePath, JSON.stringify(schedule, null, 2));
+
+    return NextResponse.json({ 
+        success: true, 
+        message: `Successfully synced ${schedule.length} games`,
+        count: schedule.length 
+    });
+
+  } catch (error: any) {
+    console.error('Sync failed:', error);
+    return NextResponse.json({ error: error.message || 'Sync failed' }, { status: 500 });
   }
-  return NextResponse.json({ teamId: '19758', year: '2025' }); // Defaults
 }
