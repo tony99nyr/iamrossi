@@ -72,13 +72,14 @@ const cardStyle = css({
 const badgeStyle = css({
     position: 'absolute',
     top: 0,
-    right: '2rem',
+    right: { base: '1rem', sm: '2rem' },
     padding: '0.5rem 1.5rem',
     fontSize: '0.75rem',
     fontWeight: '700',
     letterSpacing: '1px',
     borderRadius: '0 0 8px 8px',
     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+    zIndex: 1,
 });
 
 const homeBadgeStyle = css({
@@ -130,9 +131,11 @@ const dateRowStyle = css({
 
 const matchupStyle = css({
     display: 'flex',
+    flexDirection: { base: 'column', sm: 'row' },
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '1rem 0',
+    gap: { base: '1.5rem', sm: '0' },
 });
 
 const teamStyle = css({
@@ -140,7 +143,7 @@ const teamStyle = css({
     flexDirection: 'column',
     alignItems: 'center',
     textAlign: 'center',
-    width: '40%',
+    width: { base: '100%', sm: '40%' },
     gap: '0.5rem',
 });
 
@@ -178,6 +181,7 @@ const vsStyle = css({
     color: '#444',
     fontSize: '1.2rem',
     fontStyle: 'italic',
+    margin: { base: '0.5rem 0', sm: '0' },
 });
 
 const locationStyle = css({
@@ -188,6 +192,8 @@ const locationStyle = css({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: '0.5rem',
+    flexWrap: 'wrap',
+    paddingInline: { base: '2.5rem', sm: '0' }, // Prevent overlap with details button
 });
 
 const rinkLabelStyle = css({

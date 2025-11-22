@@ -53,7 +53,9 @@ const listStyle = css({
 
 const listItemStyle = css({
     display: 'flex',
+    flexWrap: { base: 'wrap', sm: 'nowrap' },
     justifyContent: 'space-between',
+    alignItems: { base: 'center', sm: 'center' },
     padding: '0.75rem 1rem',
     background: 'rgba(255, 255, 255, 0.02)',
     borderRadius: '8px',
@@ -76,18 +78,25 @@ const listItemActiveStyle = css({
 
 const dateStyle = css({
     color: '#888',
-    width: '120px',
+    width: { base: '50%', sm: '120px' },
     fontFamily: 'var(--font-geist-mono)',
     fontSize: '0.9rem',
-    paddingRight: '1.5rem',
+    paddingRight: { base: '0', sm: '1.5rem' },
     whiteSpace: 'nowrap',
+    order: { base: 1, sm: 0 },
 });
 
 const opponentStyle = css({
     color: '#eee',
     flex: 1,
-    padding: '0 1rem',
+    padding: { base: '0.5rem 0', sm: '0 1rem' },
     fontWeight: '500',
+    width: { base: '100%', sm: 'auto' },
+    order: { base: 3, sm: 0 },
+    display: 'flex',
+    flexDirection: { base: 'column', sm: 'row' },
+    alignItems: { base: 'flex-start', sm: 'center' },
+    gap: { base: '0.25rem', sm: '0.5rem' },
 });
 
 const timeStyle = css({
@@ -95,6 +104,8 @@ const timeStyle = css({
     textAlign: 'right',
     fontFamily: 'var(--font-geist-mono)',
     fontSize: '0.9rem',
+    width: { base: '50%', sm: 'auto' },
+    order: { base: 2, sm: 0 },
 });
 
 const homeBadgeSmallStyle = css({
@@ -105,7 +116,6 @@ const homeBadgeSmallStyle = css({
     fontWeight: '700',
     padding: '0.15rem 0.5rem',
     borderRadius: '4px',
-    marginLeft: '0.5rem',
     letterSpacing: '0.5px',
 });
 
@@ -117,9 +127,14 @@ const localBadgeSmallStyle = css({
     fontWeight: '700',
     padding: '0.15rem 0.5rem',
     borderRadius: '4px',
-    marginLeft: '0.5rem',
     letterSpacing: '0.5px',
     border: '1px solid rgba(74, 222, 128, 0.3)',
+});
+
+const badgesContainerStyle = css({
+    display: 'flex',
+    gap: '0.5rem',
+    alignItems: 'center',
 });
 
 interface NextGameClientProps {
@@ -209,15 +224,17 @@ export default function NextGameClient({ futureGames, pastGames = [] }: NextGame
                                 >
                                     <span className={dateStyle}>{game.game_date_format_pretty}</span>
                                     <span className={opponentStyle}>
-                                        {isHomeGame ? game.visitor_team_name : '@ ' + game.home_team_name}
-                                        {isHomeGame && <span className={homeBadgeSmallStyle}>HOME</span>}
-                                        {(game.rink_name?.toLowerCase().includes('raleigh') || 
-                                          game.rink_name?.toLowerCase().includes('wake') ||
-                                          game.rink_name?.toLowerCase().includes('garner') ||
-                                          game.rink_name?.toLowerCase().includes('cary') ||
-                                          game.rink_name?.toLowerCase().includes('invisalign')) && (
-                                            <span className={localBadgeSmallStyle}>LOCAL</span>
-                                        )}
+                                        <span>{isHomeGame ? game.visitor_team_name : '@ ' + game.home_team_name}</span>
+                                        <span className={badgesContainerStyle}>
+                                            {isHomeGame && <span className={homeBadgeSmallStyle}>HOME</span>}
+                                            {(game.rink_name?.toLowerCase().includes('raleigh') || 
+                                              game.rink_name?.toLowerCase().includes('wake') ||
+                                              game.rink_name?.toLowerCase().includes('garner') ||
+                                              game.rink_name?.toLowerCase().includes('cary') ||
+                                              game.rink_name?.toLowerCase().includes('invisalign')) && (
+                                                <span className={localBadgeSmallStyle}>LOCAL</span>
+                                            )}
+                                        </span>
                                     </span>
                                     <span className={timeStyle}>{game.game_time_format_pretty}</span>
                                 </li>
@@ -242,13 +259,15 @@ export default function NextGameClient({ futureGames, pastGames = [] }: NextGame
                             return (
                                 <li 
                                     key={`past-${index}`} 
-                                    className={listItemStyle}
-                                    onClick={() => window.open(`https://myhockeyrankings.com/game.php?g=${game.game_nbr}`, '_blank')}
+                                    className={cx(listItemStyle, featuredGame?.game_nbr === game.game_nbr && listItemActiveStyle)}
+                                    onClick={() => handleGameClick(game)}
                                 >
                                     <span className={dateStyle}>{game.game_date_format_pretty}</span>
                                     <span className={opponentStyle}>
-                                        {isHomeGame ? opponentName : '@ ' + opponentName}
-                                        {isHomeGame && <span className={homeBadgeSmallStyle}>HOME</span>}
+                                        <span>{isHomeGame ? opponentName : '@ ' + opponentName}</span>
+                                        <span className={badgesContainerStyle}>
+                                            {isHomeGame && <span className={homeBadgeSmallStyle}>HOME</span>}
+                                        </span>
                                     </span>
                                     <span className={timeStyle} style={{ fontWeight: 'bold', color: won ? '#4ade80' : '#f87171' }}>
                                         {won ? 'W' : 'L'} {ourScore}-{theirScore}
