@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+        }
+
+        canvas {
+            display: block;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas-stick"></canvas>
+    <canvas id="canvas-flags"></canvas>
+    <script>
+        const img = new Image();
+        img.src = '/assets/logo-hurricanes.png';
+        img.onload = () => {
+            const w = img.width;
+            const h = img.height;
+
+            const cStick = document.getElementById('canvas-stick');
+            const ctxStick = cStick.getContext('2d');
+            cStick.width = w;
+            cStick.height = h;
+
+            const cFlags = document.getElementById('canvas-flags');
+            const ctxFlags = cFlags.getContext('2d');
+            cFlags.width = w;
+            cFlags.height = h;
+
+            // Draw original
+            const cTemp = document.createElement('canvas');
+            cTemp.width = w;
+            cTemp.height = h;
+            const ctxTemp = cTemp.getContext('2d');
+            ctxTemp.drawImage(img, 0, 0);
+
+            const imgData = ctxTemp.getImageData(0, 0, w, h);
+            const data = imgData.data;
+            const len = data.length;
+
+            // 1. Background Detection & Erosion
+            const isBg = new Uint8Array(w * h);
+            const idx = (x, y) => (y * w + x) * 4;
+
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const i = idx(x, y);
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    const a = data[i + 3];
+
+                    if (a < 50 || (r > 200 && g > 200 && b > 200)) {
+                        isBg[y * w + x] = 1;
+                    }
+                }
+            }
+
+            // Erosion
+            const isBgEroded = new Uint8Array(w * h);
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const vIdx = y * w + x;
+                    if (isBg[vIdx]) {
+                        isBgEroded[vIdx] = 1;
+                    } else {
+                        let neighborIsBg = false;
+                        const neighbors = [
+                            { nx: x + 1, ny: y }, { nx: x - 1, ny: y },
+                            { nx: x, ny: y + 1 }, { nx: x, ny: y - 1 }
+                        ];
+                        for (const { nx, ny } of neighbors) {
+                            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                                if (isBg[ny * w + nx]) {
+                                    neighborIsBg = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (neighborIsBg) {
+                            isBgEroded[vIdx] = 1;
+                        }
+                    }
+                }
+            }
+
+            // 2. Color Classification
+            const isRed = (r, g, b) => r > 80 && r > g + 15 && r > b + 15;
+            const isGrey = (r, g, b) => {
+                const avg = (r + g + b) / 3;
+                const variance = Math.max(Math.abs(r - avg), Math.abs(g - avg), Math.abs(b - avg));
+                return variance < 25 && avg > 100 && avg < 220;
+            };
+            const isBlack = (r, g, b) => r < 80 && g < 80 && b < 80;
+
+            // 3. Two-Phase Separation
+            // Phase 1: Identify STICK (Grey + Black adjacent to Grey)
+            const isStick = new Uint8Array(w * h);
+            const stickQueue = [];
+
+            // Seed with all Grey pixels
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const vIdx = y * w + x;
+                    if (!isBgEroded[vIdx]) {
+                        const i = idx(x, y);
+                        const r = data[i];
+                        const g = data[i + 1];
+                        const b = data[i + 2];
+
+                        if (isGrey(r, g, b)) {
+                            isStick[vIdx] = 1;
+                            stickQueue.push({ x, y });
+                        }
+                    }
+                }
+            }
+
+            // Expand stick into adjacent Black pixels
+            let stickHead = 0;
+            while (stickHead < stickQueue.length) {
+                const { x, y } = stickQueue[stickHead++];
+
+                const neighbors = [
+                    { nx: x + 1, ny: y }, { nx: x - 1, ny: y },
+                    { nx: x, ny: y + 1 }, { nx: x, ny: y - 1 },
+                    { nx: x + 1, ny: y + 1 }, { nx: x - 1, ny: y - 1 },
+                    { nx: x + 1, ny: y - 1 }, { nx: x - 1, ny: y + 1 }
+                ];
+
+                for (const { nx, ny } of neighbors) {
+                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                        const vIdx = ny * w + nx;
+
+                        if (!isStick[vIdx] && !isBgEroded[vIdx]) {
+                            const ni = idx(nx, ny);
+                            const nr = data[ni];
+                            const ng = data[ni + 1];
+                            const nb = data[ni + 2];
+
+                            // Only expand into Black pixels (not Red)
+                            if (isBlack(nr, ng, nb)) {
+                                isStick[vIdx] = 1;
+                                stickQueue.push({ x: nx, y: ny });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Phase 2: Everything else that's not background or stick is FLAG
+            const isFlag = new Uint8Array(w * h);
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const vIdx = y * w + x;
+                    if (!isBgEroded[vIdx] && !isStick[vIdx]) {
+                        isFlag[vIdx] = 1;
+                    }
+                }
+            }
+
+            // 4. Output Generation
+            const stickOutput = new Uint8ClampedArray(len);
+            const flagsOutput = new Uint8ClampedArray(len);
+
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const vIdx = y * w + x;
+                    const i = idx(x, y);
+
+                    if (isBgEroded[vIdx]) {
+                        stickOutput[i + 3] = 0;
+                        flagsOutput[i + 3] = 0;
+                    } else {
+                        const r = data[i];
+                        const g = data[i + 1];
+                        const b = data[i + 2];
+
+                        if (isFlag[vIdx]) {
+                            flagsOutput[i] = r;
+                            flagsOutput[i + 1] = g;
+                            flagsOutput[i + 2] = b;
+                            flagsOutput[i + 3] = 255;
+                        } else {
+                            stickOutput[i] = r;
+                            stickOutput[i + 1] = g;
+                            stickOutput[i + 2] = b;
+                            stickOutput[i + 3] = 255;
+                        }
+                    }
+                }
+            }
+
+            ctxStick.putImageData(new ImageData(stickOutput, w, h), 0, 0);
+            ctxFlags.putImageData(new ImageData(flagsOutput, w, h), 0, 0);
+
+            document.body.classList.add('done');
+        };
+    </script>
+</body>
+
+</html>

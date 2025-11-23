@@ -71,6 +71,17 @@ export default async function NextGamePage() {
     const schedule = await getSchedule();
     const mhrSchedule = await getMHRSchedule();
     
+    // Read settings
+    const settingsPath = path.join(process.cwd(), 'src/data/settings.json');
+    let settings = { mhrTeamId: '19758', mhrYear: '2025' };
+    if (fs.existsSync(settingsPath)) {
+        try {
+            settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        } catch (e) {
+            console.error('Failed to read settings:', e);
+        }
+    }
+    
     // Filter for future games
     const now = new Date();
     const futureGames = schedule.filter((game: any) => {
@@ -104,5 +115,5 @@ export default async function NextGamePage() {
     // Enrich past games with video links
     const enrichedPastGames = matchVideosToGames(pastGames, youtubeVideos);
 
-    return <NextGameClient futureGames={futureGames} pastGames={enrichedPastGames} />;
+    return <NextGameClient futureGames={futureGames} pastGames={enrichedPastGames} settings={settings} />;
 }

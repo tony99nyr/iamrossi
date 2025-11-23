@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { css } from '../../../styled-system/css';
+import { css, cx } from '@styled-system/css';
 
 const containerStyle = css({
     minHeight: '100vh',
@@ -310,7 +310,7 @@ export default function AdminPage() {
 
     if (!isAuthenticated) {
         return (
-            <div className={containerStyle}>
+            <div className={cx('admin-page', containerStyle)}>
                 <div className={loginBoxStyle}>
                     <h1 className={headerStyle}>Admin Access</h1>
                     <form onSubmit={handleLogin} className={formStyle}>
@@ -329,7 +329,7 @@ export default function AdminPage() {
     }
 
     return (
-        <div className={containerStyle}>
+        <div className={cx('admin-page', containerStyle)}>
             <div className={dashboardStyle}>
                 <div className={headerRowStyle}>
                     <h1 className={headerStyle}>Admin Dashboard</h1>

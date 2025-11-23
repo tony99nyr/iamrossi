@@ -12,6 +12,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+import { css, cx } from '@styled-system/css';
 import HamburgerMenu from '@/components/HamburgerMenu';
 
 export const metadata: Metadata = {
@@ -26,7 +27,7 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="en">
-            <body className={`${geistSans.variable} ${geistMono.variable}`}>
+            <body className={cx('root-layout', `${geistSans.variable} ${geistMono.variable}`)}>
                 <HamburgerMenu />
                 {children}
             </body>

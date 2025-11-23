@@ -1,4 +1,4 @@
-import { css } from '../../styled-system/css';
+import { css, cx } from '@styled-system/css';
 
 const containerStyle = css({
     position: 'fixed',
@@ -44,7 +44,7 @@ const contentStyle = css({
 
 export default function NotFound() {
     return (
-        <div className={containerStyle}>
+        <div className={cx('not-found-page', containerStyle)}>
             <video autoPlay loop muted playsInline className={videoStyle}>
                 <source src="/rick.mp4" type="video/mp4" />
                 Your browser does not support the video tag.

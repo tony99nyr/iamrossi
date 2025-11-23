@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { css } from '../../styled-system/css';
+import { css, cx } from '@styled-system/css';
 
 const containerStyle = css({
     minHeight: '100vh',
@@ -69,8 +69,8 @@ const logoContainerStyle = css({
 
 export default function Home() {
     return (
-        <div className={containerStyle}>
-            <main className={mainStyle}>
+        <div className={cx('home-page-container', containerStyle)}>
+            <main className={cx('home-page-main', mainStyle)}>
                 <article className={markdownStyle}>
                     <div className={logoContainerStyle}>
                         <Image 

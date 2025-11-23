@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { css } from '../../styled-system/css';
+import { css, cx } from '@styled-system/css';
 
 const menuItems = [
     { href: '/', label: 'Home' },
@@ -144,24 +144,24 @@ export default function HamburgerMenu() {
             <button
                 ref={buttonRef}
                 onClick={toggleMenu}
-                className={hamburgerButtonStyle}
+                className={cx('hamburger-menu-button', hamburgerButtonStyle)}
                 aria-label={isOpen ? "Close menu" : "Open menu"}
                 aria-expanded={isOpen}
                 aria-controls="main-navigation"
             >
                 <motion.span
                     animate={isOpen ? { rotate: 45, y: 8 } : { rotate: 0, y: 0 }}
-                    className={barStyle}
+                    className={cx('menu-bar', barStyle)}
                     transition={{ duration: 0.15 }}
                 />
                 <motion.span
                     animate={isOpen ? { opacity: 0 } : { opacity: 1 }}
-                    className={barStyle}
+                    className={cx('menu-bar', barStyle)}
                     transition={{ duration: 0.15 }}
                 />
                 <motion.span
                     animate={isOpen ? { rotate: -45, y: -8 } : { rotate: 0, y: 0 }}
-                    className={barStyle}
+                    className={cx('menu-bar', barStyle)}
                     transition={{ duration: 0.15 }}
                 />
             </button>
@@ -175,10 +175,10 @@ export default function HamburgerMenu() {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
-                        className={menuOverlayStyle}
+                        className={cx('hamburger-menu-overlay', menuOverlayStyle)}
                     >
                         <motion.ul
-                            className={menuListStyle}
+                            className={cx('menu-list', menuListStyle)}
                             initial="closed"
                             animate="open"
                             exit="closed"
@@ -199,15 +199,15 @@ export default function HamburgerMenu() {
                                         closed: { y: 20, opacity: 0 }
                                     }}
                                     transition={{ duration: 0.2, ease: "easeOut" }}
-                                    className={menuItemStyle}
+                                    className={cx('menu-item', menuItemStyle)}
                                 >
                                     <Link
                                         href={item.href}
                                         onClick={toggleMenu}
-                                        className={menuLinkStyle}
+                                        className={cx('menu-link', menuLinkStyle)}
                                     >
                                         {item.label}
-                                        <span className={underlineStyle} />
+                                        <span className={cx('menu-underline', underlineStyle)} />
                                     </Link>
                                 </motion.li>
                             ))}

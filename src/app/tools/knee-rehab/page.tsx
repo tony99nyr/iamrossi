@@ -1,6 +1,8 @@
+import { css, cx } from '@styled-system/css';
+
 export default function KneeRehabPage() {
     return (
-        <div style={{ padding: '2rem' }}>
+        <div className={cx('knee-rehab-page', css({ padding: '2rem' }))}>
             <h1>Knee Rehab Tracker</h1>
             <p>This tool will track your daily knee rehab exercises.</p>
             <p>

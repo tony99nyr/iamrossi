@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { css, cx } from '../../styled-system/css';
+import { css, cx } from '@styled-system/css';
 
 interface TeamDetails {
     record?: string;
@@ -45,28 +45,18 @@ const cardStyle = css({
     background: 'rgba(20, 20, 20, 0.6)',
     backdropFilter: 'blur(12px)',
     border: '1px solid rgba(255, 255, 255, 0.08)',
-    borderRadius: '16px',
-    padding: '2rem',
-    marginBottom: '2rem',
+    borderTop: 'none',
+    borderTopLeftRadius: '0',
+    borderTopRightRadius: '0',
+    borderBottomLeftRadius: '8px',
+    borderBottomRightRadius: '8px',
+    padding: '1.5rem 1rem',
+    marginBottom: '0',
     fontFamily: 'var(--font-geist-sans)',
     boxShadow: '0 4px 24px rgba(0, 0, 0, 0.2)',
-    transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+    transition: 'box-shadow 0.3s ease',
     position: 'relative',
     overflow: 'hidden',
-    '&::before': {
-        content: '""',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '1px',
-        background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent)',
-    },
-    '&:hover': {
-        transform: 'translateY(-2px)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-        borderColor: 'rgba(255, 255, 255, 0.15)',
-    },
 });
 
 const badgeStyle = css({
@@ -88,7 +78,7 @@ const homeBadgeStyle = css({
 });
 
 const awayBadgeStyle = css({
-    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+    background: 'linear-gradient(135deg, #dc2626, #991b1b)',
     color: '#fff',
 });
 
@@ -111,7 +101,7 @@ const noGameStyle = css({
 const contentStyle = css({
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.5rem',
+    gap: '1rem',
 });
 
 const dateRowStyle = css({
@@ -134,8 +124,8 @@ const matchupStyle = css({
     flexDirection: { base: 'column', sm: 'row' },
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '1rem 0',
-    gap: { base: '1.5rem', sm: '0' },
+    padding: '0',
+    gap: { base: '1rem', sm: '0' },
 });
 
 const teamStyle = css({
@@ -162,8 +152,8 @@ const teamLinkStyle = css({
 });
 
 const logoStyle = css({
-    width: '80px',
-    height: '80px',
+    width: '100px',
+    height: '100px',
     objectFit: 'contain',
     filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))',
     transition: 'transform 0.3s ease',
@@ -275,9 +265,6 @@ const statTeamNameStyle = css({
     textDecoration: 'none',
     transition: 'color 0.2s ease',
     marginBottom: '0.25rem',
-    '&:hover': {
-        color: '#6366f1',
-    },
 });
 
 const statValueStyle = css({
@@ -309,95 +296,74 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
 
     if (!game) {
         return (
-            <div className={cardStyle}>
-                <h2 className={titleStyle}>{title}</h2>
-                <p className={noGameStyle}>No upcoming game scheduled.</p>
+            <div className={cx('game-card', cardStyle)}>
+                <h2 className={cx('game-title', titleStyle)}>{title}</h2>
+                <p className={cx('no-game-message', noGameStyle)}>No upcoming game scheduled.</p>
             </div>
         );
     }
 
     return (
-        <div className={cardStyle}>
-            <div className={cx(badgeStyle, isHome ? homeBadgeStyle : awayBadgeStyle)}>
-                {isHome ? 'HOME' : 'AWAY'}
-            </div>
-            <h2 className={titleStyle}>{title}</h2>
-            <div className={contentStyle}>
-                <div className={dateRowStyle}>
+        <div className={cx('game-card', cardStyle)}>
+            <div className={cx('game-content', contentStyle)}>
+                <div className={cx('date-row', dateRowStyle)}>
                     <span>{game.game_date_format_pretty || game.game_date}</span>
                     <span>{game.game_time_format_pretty || game.game_time}</span>
                 </div>
                 
-                <div className={matchupStyle}>
-                    <div className={teamStyle}>
+                <div className={cx('matchup', matchupStyle)}>
+                    <div className={cx('team', teamStyle)}>
                         {game.game_visitor_team ? (
                             <a 
                                 href={`https://myhockeyrankings.com/team-info/${game.game_visitor_team}/${year}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={teamLinkStyle}
+                                className={cx('team-link', teamLinkStyle)}
                             >
                                 {game.visitor_team_logo && <img src={game.visitor_team_logo} alt="Visitor Logo" className={logoStyle} />}
                                 <span className={teamNameStyle}>{game.visitor_team_name}</span>
                             </a>
                         ) : (
-                            <div className={teamLinkStyle} style={{ cursor: 'default', opacity: 1 }}>
-                                {game.visitor_team_logo && <img src={game.visitor_team_logo} alt="Visitor Logo" className={logoStyle} />}
-                                <span className={teamNameStyle}>{game.visitor_team_name}</span>
+                            <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
+                                {game.visitor_team_logo && <img src={game.visitor_team_logo} alt="Visitor Logo" className={cx('team-logo', logoStyle)} />}
+                                <span className={cx('team-name', teamNameStyle)}>{game.visitor_team_name}</span>
                             </div>
                         )}
                     </div>
-                    <div className={vsStyle}>AT</div>
-                    <div className={teamStyle}>
+                    <div className={cx('vs-label', vsStyle)}>AT</div>
+                    <div className={cx('team', teamStyle)}>
                         {game.game_home_team ? (
                             <a 
                                 href={`https://myhockeyrankings.com/team-info/${game.game_home_team}/${year}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={teamLinkStyle}
+                                className={cx('team-link', teamLinkStyle)}
                             >
-                                {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={logoStyle} />}
-                                <span className={teamNameStyle}>{game.home_team_name}</span>
+                                {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={cx('team-logo', logoStyle)} />}
+                                <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </a>
                         ) : (
-                            <div className={teamLinkStyle} style={{ cursor: 'default', opacity: 1 }}>
-                                {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={logoStyle} />}
-                                <span className={teamNameStyle}>{game.home_team_name}</span>
+                            <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
+                                {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={cx('team-logo', logoStyle)} />}
+                                <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </div>
                         )}
                     </div>
                 </div>
 
-                <div className={locationStyle}>
-                    <span className={rinkLabelStyle}>Rink:</span>
-                    <span className={rinkNameStyle}>{game.rink_name}</span>
-                    {/* Location badge for local games */}
-                    {(game.rink_name?.toLowerCase().includes('raleigh') || 
-                      game.rink_name?.toLowerCase().includes('wake') ||
-                      game.rink_name?.toLowerCase().includes('garner') ||
-                      game.rink_name?.toLowerCase().includes('cary') ||
-                      game.rink_name?.toLowerCase().includes('invisalign')) && (
-                        <span className={css({
-                            marginLeft: '0.5rem',
-                            padding: '0.25rem 0.5rem',
-                            backgroundColor: 'rgba(74, 222, 128, 0.2)',
-                            color: '#4ade80',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            border: '1px solid rgba(74, 222, 128, 0.3)'
-                        })}>LOCAL</span>
-                    )}
+                <div className={cx('location', locationStyle)}>
+                    <span className={cx('rink-label', rinkLabelStyle)}>Rink:</span>
+                    <span className={cx('rink-name', rinkNameStyle)}>{game.rink_name}</span>
                 </div>
             </div>
 
             <button 
-                className={detailsButtonStyle}
+                className={cx('details-button', detailsButtonStyle)}
                 onClick={() => setShowDetails(!showDetails)}
                 aria-label={showDetails ? "Hide details" : "Show details"}
             >
                 <svg 
-                    className={cx(detailsIconStyle, showDetails && detailsIconOpenStyle)}
+                    className={cx('details-icon', detailsIconStyle, showDetails && detailsIconOpenStyle)}
                     viewBox="0 0 24 24" 
                     fill="none" 
                     stroke="currentColor" 
@@ -409,16 +375,16 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
             </button>
 
             {showDetails && (
-                <div className={detailsStyle}>
-                    <div className={teamStatsStyle}>
+                <div className={cx('details-section', detailsStyle)}>
+                    <div className={cx('team-stats', teamStatsStyle)}>
                         {/* Visitor Team */}
-                        <div className={teamStatStyle}>
-                            <div className={statTeamNameStyle}>
+                        <div className={cx('team-stat-column', teamStatStyle)}>
+                            <div className={cx('stat-team-name', statTeamNameStyle)}>
                                 {game.visitor_team_name}
                             </div>
                             {game.visitor_team_record ? (
-                                <div className={statValueStyle}>
-                                    <span className={statLabelStyle}>Record:</span> {game.visitor_team_record}
+                                <div className={cx('stat-value', statValueStyle)}>
+                                    <span className={cx('stat-label', statLabelStyle)}>Record:</span> {game.visitor_team_record}
                                 </div>
                             ) : (
                                 <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
@@ -426,8 +392,8 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                                 </div>
                             )}
                             {game.visitor_team_rating ? (
-                                <div className={statValueStyle}>
-                                    <span className={statLabelStyle}>Rating:</span> {game.visitor_team_rating}
+                                <div className={cx('stat-value', statValueStyle)}>
+                                    <span className={cx('stat-label', statLabelStyle)}>Rating:</span> {game.visitor_team_rating}
                                 </div>
                             ) : (
                                 <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
@@ -436,16 +402,16 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                             )}
                         </div>
 
-                        <div className={statDividerStyle} />
+                        <div className={cx('stat-divider', statDividerStyle)} />
 
                         {/* Home Team */}
-                        <div className={teamStatStyle}>
-                            <div className={statTeamNameStyle}>
+                        <div className={cx('team-stat-column', teamStatStyle)}>
+                            <div className={cx('stat-team-name', statTeamNameStyle)}>
                                 {game.home_team_name}
                             </div>
                             {game.home_team_record ? (
-                                <div className={statValueStyle}>
-                                    <span className={statLabelStyle}>Record:</span> {game.home_team_record}
+                                <div className={cx('stat-value', statValueStyle)}>
+                                    <span className={cx('stat-label', statLabelStyle)}>Record:</span> {game.home_team_record}
                                 </div>
                             ) : (
                                 <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
@@ -453,8 +419,8 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                                 </div>
                             )}
                             {game.home_team_rating ? (
-                                <div className={statValueStyle}>
-                                    <span className={statLabelStyle}>Rating:</span> {game.home_team_rating}
+                                <div className={cx('stat-value', statValueStyle)}>
+                                    <span className={cx('stat-label', statLabelStyle)}>Rating:</span> {game.home_team_rating}
                                 </div>
                             ) : (
                                 <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
