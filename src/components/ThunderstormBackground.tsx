@@ -154,6 +154,7 @@ export function ThunderstormBackground() {
             overflow: 'hidden',
             zIndex: -1,
             pointerEvents: 'none',
+            background: '#0a0a0f', // Dark base background to prevent white showing on iOS
         })}>
             {/* Lightning flash */}
             <div className={css({

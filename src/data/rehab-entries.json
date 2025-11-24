@@ -56,5 +56,97 @@
     "isRestDay": false,
     "vitaminsTaken": true,
     "proteinShake": true
+  },
+  {
+    "id": "7b21741c-d260-4181-97b7-3aa7e191f4b0",
+    "date": "2025-11-20",
+    "exercises": [
+      {
+        "id": "ex-1763944286383",
+        "weight": "45 min"
+      },
+      {
+        "id": "ex-1763944340642",
+        "weight": ""
+      }
+    ],
+    "isRestDay": false,
+    "vitaminsTaken": true,
+    "proteinShake": true
+  },
+  {
+    "id": "entry-1763944348409",
+    "date": "2025-11-21",
+    "exercises": [
+      {
+        "id": "ex-1",
+        "weight": ""
+      },
+      {
+        "id": "ex-2",
+        "weight": "30"
+      },
+      {
+        "id": "ex-3",
+        "weight": "30"
+      },
+      {
+        "id": "ex-4",
+        "weight": ""
+      },
+      {
+        "id": "ex-1763943070219",
+        "weight": ""
+      }
+    ],
+    "isRestDay": false,
+    "vitaminsTaken": true,
+    "proteinShake": true
+  },
+  {
+    "id": "ef1e3441-cfd4-4b47-af76-57d6b23e199f",
+    "date": "2025-11-23",
+    "exercises": [
+      {
+        "id": "ex-1",
+        "weight": ""
+      },
+      {
+        "id": "ex-2",
+        "weight": "35"
+      },
+      {
+        "id": "ex-3",
+        "weight": "35"
+      },
+      {
+        "id": "ex-4",
+        "weight": ""
+      },
+      {
+        "id": "ex-1763943070219",
+        "weight": ""
+      }
+    ],
+    "isRestDay": false,
+    "vitaminsTaken": true,
+    "proteinShake": true
+  },
+  {
+    "id": "entry-1763944492060",
+    "date": "2025-11-24",
+    "exercises": [
+      {
+        "id": "ex-1763944286383",
+        "weight": ""
+      },
+      {
+        "id": "ex-1763944340642",
+        "weight": ""
+      }
+    ],
+    "isRestDay": false,
+    "vitaminsTaken": true,
+    "proteinShake": true
   }
 ]

@@ -46,5 +46,17 @@
     "title": "Quarter wall sit, single leg",
     "description": "Wall sit only about 1/4 depth to prevent pain. Balancing against the wall on injured leg",
     "createdAt": "2025-11-24T00:11:10.219Z"
+  },
+  {
+    "id": "ex-1763944286383",
+    "title": "Peloton bike bootcamp",
+    "description": "Peloton bike bootcamp",
+    "createdAt": "2025-11-24T00:31:26.383Z"
+  },
+  {
+    "id": "ex-1763944340642",
+    "title": "Core workout",
+    "description": "12 minute boxing timer routine. Fast paced abs, hips, and back.",
+    "createdAt": "2025-11-24T00:32:20.642Z"
   }
 ]

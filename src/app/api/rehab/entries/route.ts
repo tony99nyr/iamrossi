@@ -7,7 +7,7 @@ const ENTRIES_FILE = path.join(process.cwd(), 'src/data/rehab-entries.json');
 interface RehabEntry {
     id: string;
     date: string;
-    exercises: string[];
+    exercises: { id: string; weight?: string }[];
     isRestDay: boolean;
     vitaminsTaken: boolean;
     proteinShake: boolean;
