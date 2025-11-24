@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { css, cx } from '@styled-system/css';
+import { Reorder } from 'framer-motion';
 import SmartAutocomplete from './SmartAutocomplete';
 import ExerciseCard from './ExerciseCard';
 
@@ -23,6 +24,7 @@ interface ExerciseEntryFormProps {
     onAddExercise: (exercise: Exercise) => void;
     onRemoveExercise: (id: string) => void;
     onUpdateWeight: (id: string, weight: string) => void;
+    onReorder: (exercises: SelectedExercise[]) => void;
     onCreateExercise: (title: string, description: string) => Promise<Exercise>;
     onSave: () => void;
     onCancel: () => void;
@@ -39,6 +41,7 @@ export default function ExerciseEntryForm({
     onAddExercise,
     onRemoveExercise,
     onUpdateWeight,
+    onReorder,
     onCreateExercise,
     onSave,
     onCancel,
@@ -162,79 +165,111 @@ export default function ExerciseEntryForm({
                         }))}>
                             Added Exercises ({selectedExercises.length})
                         </label>
-                        <div className={cx('selected-list', css({
-                    flex: 1,
-                    overflowY: 'auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                    marginBottom: '20px',
-                    paddingRight: '4px',
-                }))}>
-                    {selectedExercises.length === 0 ? (
-                        <div className={cx('empty-state', css({
-                            color: '#666',
-                            fontSize: '14px',
-                            textAlign: 'center',
-                            padding: '20px',
-                            border: '1px dashed #333',
-                            borderRadius: '8px',
-                        }))}>
-                            No exercises added yet
-                        </div>
-                    ) : (
-                        selectedExercises.map((exercise) => (
-                            <div key={exercise.id} className={cx('exercise-item', css({
+                        
+                        <Reorder.Group 
+                            axis="y" 
+                            values={selectedExercises} 
+                            onReorder={onReorder}
+                            className={cx('selected-list', css({
+                                flex: 1,
+                                overflowY: 'auto',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '8px',
-                                backgroundColor: '#1a1a1a',
-                                border: '1px solid #333',
-                                borderRadius: '8px',
-                                padding: '12px',
-                            }))}>
-                                <ExerciseCard
-                                    exercise={exercise}
-                                    onRemove={() => onRemoveExercise(exercise.id)}
-                                    showRemove
-                                />
-                                <div className={cx('weight-input-container', css({
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    paddingLeft: '4px',
-                                }))}>
-                                    <label className={cx('weight-label', css({
-                                        color: '#999',
-                                        fontSize: '12px',
-                                        fontWeight: '500',
+                                marginBottom: '20px',
+                                paddingRight: '4px',
+                                listStyle: 'none',
+                                padding: 0,
+                                margin: 0,
+                            }))}
+                        >
+                            {selectedExercises.map((exercise) => (
+                                <Reorder.Item 
+                                    key={exercise.id} 
+                                    value={exercise}
+                                    className={cx('exercise-item', css({
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '8px',
+                                        backgroundColor: '#1a1a1a',
+                                        border: '1px solid #333',
+                                        borderRadius: '8px',
+                                        padding: '12px',
+                                        cursor: 'grab',
+                                        position: 'relative',
+                                        _active: {
+                                            cursor: 'grabbing',
+                                            borderColor: '#2563eb',
+                                            zIndex: 10,
+                                        }
+                                    }))}
+                                >
+                                    <div className={cx('drag-handle', css({
+                                        position: 'absolute',
+                                        left: '50%',
+                                        top: '4px',
+                                        transform: 'translateX(-50%)',
+                                        width: '40px',
+                                        height: '4px',
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        cursor: 'grab',
+                                        _active: { cursor: 'grabbing' }
                                     }))}>
-                                        Weight:
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={exercise.weight || ''}
-                                        onChange={(e) => onUpdateWeight(exercise.id, e.target.value)}
-                                        placeholder="e.g. 30lbs"
-                                        className={cx('weight-input', css({
-                                            backgroundColor: '#0a0a0a',
-                                            border: '1px solid #333',
-                                            borderRadius: '4px',
-                                            color: '#ededed',
+                                        <div className={css({
+                                            width: '32px',
+                                            height: '4px',
+                                            borderRadius: '2px',
+                                            backgroundColor: '#333',
+                                        })} />
+                                    </div>
+
+                                    <div className={css({ paddingTop: '8px' })}>
+                                        <ExerciseCard
+                                            exercise={exercise}
+                                            onRemove={() => onRemoveExercise(exercise.id)}
+                                            showRemove
+                                        />
+                                    </div>
+                                    <div className={cx('weight-input-container', css({
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        paddingLeft: '4px',
+                                    }))}>
+                                        <label className={cx('weight-label', css({
+                                            color: '#999',
                                             fontSize: '12px',
-                                            padding: '4px 8px',
-                                            width: '100px',
-                                            outline: 'none',
-                                            _focus: {
-                                                borderColor: '#2563eb',
-                                            }
-                                        }))}
-                                    />
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
+                                            fontWeight: '500',
+                                        }))}>
+                                            Weight:
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={exercise.weight || ''}
+                                            onChange={(e) => onUpdateWeight(exercise.id, e.target.value)}
+                                            placeholder="e.g. 30lbs"
+                                            className={cx('weight-input', css({
+                                                backgroundColor: '#0a0a0a',
+                                                border: '1px solid #333',
+                                                borderRadius: '4px',
+                                                color: '#ededed',
+                                                fontSize: '12px',
+                                                padding: '4px 8px',
+                                                width: '100px',
+                                                outline: 'none',
+                                                transition: 'border-color 0.2s ease',
+                                                _focus: {
+                                                    borderColor: '#2563eb',
+                                                }
+                                            }))}
+                                            onPointerDown={(e) => e.stopPropagation()} 
+                                        />
+                                    </div>
+                                </Reorder.Item>
+                            ))}
+                        </Reorder.Group>
                     </div>
                 )}
 

@@ -1,31 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-
-const EXERCISES_FILE = path.join(process.cwd(), 'src/data/exercises.json');
-
-interface Exercise {
-    id: string;
-    title: string;
-    description: string;
-    createdAt: string;
-}
-
-function readExercises(): Exercise[] {
-    if (!fs.existsSync(EXERCISES_FILE)) {
-        return [];
-    }
-    const data = fs.readFileSync(EXERCISES_FILE, 'utf8');
-    return JSON.parse(data);
-}
-
-function writeExercises(exercises: Exercise[]): void {
-    fs.writeFileSync(EXERCISES_FILE, JSON.stringify(exercises, null, 2));
-}
+import { verifyAuthToken } from '@/lib/auth';
+import { getExercises, setExercises, Exercise } from '@/lib/kv';
 
 export async function GET() {
     try {
-        const exercises = readExercises();
+        const exercises = await getExercises();
         return NextResponse.json(exercises);
     } catch (error) {
         console.error('Error reading exercises:', error);
@@ -34,6 +13,12 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+    // Verify authentication
+    const isAuthenticated = await verifyAuthToken(request);
+    if (!isAuthenticated) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const { title, description } = await request.json();
         
@@ -41,7 +26,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Title is required' }, { status: 400 });
         }
 
-        const exercises = readExercises();
+        const exercises = await getExercises();
         
         const newExercise: Exercise = {
             id: `ex-${Date.now()}`,
@@ -51,7 +36,7 @@ export async function POST(request: NextRequest) {
         };
 
         exercises.push(newExercise);
-        writeExercises(exercises);
+        await setExercises(exercises);
 
         return NextResponse.json(newExercise, { status: 201 });
     } catch (error) {
@@ -61,6 +46,12 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+    // Verify authentication
+    const isAuthenticated = await verifyAuthToken(request);
+    if (!isAuthenticated) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const { id, title, description } = await request.json();
         
@@ -68,7 +59,7 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'ID is required' }, { status: 400 });
         }
 
-        const exercises = readExercises();
+        const exercises = await getExercises();
         const exerciseIndex = exercises.findIndex(e => e.id === id);
 
         if (exerciseIndex === -1) {
@@ -82,7 +73,7 @@ export async function PATCH(request: NextRequest) {
         };
 
         exercises[exerciseIndex] = updatedExercise;
-        writeExercises(exercises);
+        await setExercises(exercises);
 
         return NextResponse.json(updatedExercise);
     } catch (error) {

@@ -151,12 +151,17 @@ export async function fetchMHRSchedule(teamId: string, year: string): Promise<an
 }
 
 // Helper to read settings
-function getSettings() {
-    const settingsPath = path.join(process.cwd(), 'src/data/settings.json');
-    if (fs.existsSync(settingsPath)) {
-        return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-    }
-    return {};
+async function getSettingsFromKV(): Promise<Partial<{
+    teamName: string;
+    identifiers: string[];
+    teamLogo: string;
+    mhrTeamId: string;
+    mhrYear: string;
+    aliases: Record<string, string>;
+}>> {
+    const { getSettings } = await import('@/lib/kv');
+    const settings = await getSettings();
+    return settings || {};
 }
 
 export async function searchMHRTeam(query: string, ageGroup?: string, preferredLevel?: string): Promise<MHRTeamData | null> {
@@ -247,7 +252,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
 
 export async function getMHRTeamData(opponentName: string, year: string, ageGroup: string = '10U', knownOpponents: any[] = []): Promise<MHRTeamData | null> {
     // Resolve aliases first
-    const settings = getSettings();
+    const settings = await getSettingsFromKV();
     const aliases = settings.aliases || {};
     const resolvedName = aliases[opponentName] || opponentName;
     

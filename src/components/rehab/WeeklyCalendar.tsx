@@ -140,7 +140,7 @@ export default function WeeklyCalendar({
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
                         _hover: {
-                            borderColor: '#7877c6',
+                            borderColor: '#2563eb',
                             backgroundColor: '#1a1a1a',
                         }
                     }))}
@@ -167,7 +167,7 @@ export default function WeeklyCalendar({
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
                         _hover: {
-                            borderColor: '#7877c6',
+                            borderColor: '#2563eb',
                             backgroundColor: '#1a1a1a',
                         }
                     }))}
@@ -212,7 +212,7 @@ export default function WeeklyCalendar({
                             className={cx('day-card', css({
                                 backgroundColor: isSelected ? '#1a1a1a' : '#0f0f0f',
                                 border: '2px solid',
-                                borderColor: isSelected ? '#7877c6' : isToday ? '#333' : '#1a1a1a',
+                                borderColor: isSelected ? '#2563eb' : isToday ? '#333' : '#1a1a1a',
                                 borderRadius: '12px',
                                 padding: '12px',
                                 cursor: 'pointer',
@@ -226,7 +226,7 @@ export default function WeeklyCalendar({
                                     minHeight: '240px',
                                 },
                                 _hover: {
-                                    borderColor: '#7877c6',
+                                    borderColor: '#2563eb',
                                     backgroundColor: '#1a1a1a',
                                 }
                             }))}
@@ -245,7 +245,7 @@ export default function WeeklyCalendar({
                                 }
                             }))}>
                                 <div className={cx('day-number', css({
-                                    color: isToday ? '#7877c6' : '#ededed',
+                                    color: isToday ? '#2563eb' : '#ededed',
                                     fontSize: '28px',
                                     fontWeight: '700',
                                     lineHeight: '1',
@@ -310,23 +310,29 @@ export default function WeeklyCalendar({
                                                 }
                                             }))}
                                         >
-                                            <span className={css({ color: '#7877c6', flexShrink: 0, marginTop: '2px' })}>•</span>
-                                            <span 
-                                                style={{
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    display: '-webkit-box',
-                                                    WebkitLineClamp: 3,
-                                                    WebkitBoxOrient: 'vertical',
-                                                } as any}
-                                            >
-                                                {exercise.title}
+                                            <span className={css({ color: '#2563eb', flexShrink: 0, marginTop: '4px' })}>•</span>
+                                            <div className={css({ lineHeight: '1.4' })}>
+                                                <span 
+                                                    className={css({ color: '#ccc', marginRight: '6px' })}
+                                                >
+                                                    {exercise.title}
+                                                </span>
                                                 {exercise.weight && (
-                                                    <span className={css({ color: '#7877c6', marginLeft: '4px', fontWeight: '600' })}>
-                                                        ({exercise.weight})
+                                                    <span className={css({ 
+                                                        color: '#60a5fa',
+                                                        fontSize: '0.85em',
+                                                        fontWeight: '600',
+                                                        display: 'inline-block',
+                                                        backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                                                        padding: '1px 6px',
+                                                        borderRadius: '4px',
+                                                        whiteSpace: 'nowrap',
+                                                        verticalAlign: 'middle',
+                                                    })}>
+                                                        {exercise.weight}
                                                     </span>
                                                 )}
-                                            </span>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

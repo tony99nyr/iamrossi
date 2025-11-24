@@ -1,33 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-
-const ENTRIES_FILE = path.join(process.cwd(), 'src/data/rehab-entries.json');
-
-interface RehabEntry {
-    id: string;
-    date: string;
-    exercises: { id: string; weight?: string }[];
-    isRestDay: boolean;
-    vitaminsTaken: boolean;
-    proteinShake: boolean;
-}
-
-function readEntries(): RehabEntry[] {
-    if (!fs.existsSync(ENTRIES_FILE)) {
-        return [];
-    }
-    const data = fs.readFileSync(ENTRIES_FILE, 'utf8');
-    return JSON.parse(data);
-}
-
-function writeEntries(entries: RehabEntry[]): void {
-    fs.writeFileSync(ENTRIES_FILE, JSON.stringify(entries, null, 2));
-}
+import { verifyAuthToken } from '@/lib/auth';
+import { getEntries, setEntries, RehabEntry } from '@/lib/kv';
 
 export async function GET() {
     try {
-        const entries = readEntries();
+        const entries = await getEntries();
         return NextResponse.json(entries);
     } catch (error) {
         console.error('Error reading entries:', error);
@@ -36,6 +13,12 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+    // Verify authentication
+    const isAuthenticated = await verifyAuthToken(request);
+    if (!isAuthenticated) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const { date, exercises, isRestDay, vitaminsTaken, proteinShake } = await request.json();
 
@@ -43,10 +26,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Date is required' }, { status: 400 });
         }
 
-        const entries = readEntries();
+        const entries = await getEntries();
         const existingEntryIndex = entries.findIndex(e => e.date === date);
 
-        const newEntry = {
+        const newEntry: RehabEntry = {
             id: existingEntryIndex !== -1 ? entries[existingEntryIndex].id : crypto.randomUUID(),
             date,
             exercises: exercises || [], // Array of { id: string, weight?: string }
@@ -61,7 +44,7 @@ export async function POST(request: NextRequest) {
             entries.push(newEntry);
         }
 
-        writeEntries(entries);
+        await setEntries(entries);
 
         return NextResponse.json(newEntry, { status: existingEntryIndex !== -1 ? 200 : 201 });
     } catch (error) {
@@ -71,6 +54,12 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+    // Verify authentication
+    const isAuthenticated = await verifyAuthToken(request);
+    if (!isAuthenticated) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const { date, isRestDay, vitaminsTaken, proteinShake } = await request.json();
         
@@ -78,7 +67,7 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'Date is required' }, { status: 400 });
         }
 
-        const entries = readEntries();
+        const entries = await getEntries();
         const existingIndex = entries.findIndex(e => e.date === date);
 
         if (existingIndex >= 0) {
@@ -98,7 +87,7 @@ export async function PATCH(request: NextRequest) {
             });
         }
 
-        writeEntries(entries);
+        await setEntries(entries);
         return NextResponse.json(entries.find(e => e.date === date));
     } catch (error) {
         console.error('Error updating entry:', error);

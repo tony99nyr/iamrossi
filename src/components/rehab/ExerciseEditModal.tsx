@@ -8,17 +8,19 @@ interface Exercise {
     title: string;
     description: string;
     createdAt: string;
+    weight?: string;
 }
 
 interface ExerciseEditModalProps {
     exercise: Exercise;
-    onSave: (id: string, title: string, description: string) => Promise<void>;
+    onSave: (id: string, title: string, description: string, weight?: string) => Promise<void>;
     onCancel: () => void;
 }
 
 export default function ExerciseEditModal({ exercise, onSave, onCancel }: ExerciseEditModalProps) {
     const [title, setTitle] = useState(exercise.title);
     const [description, setDescription] = useState(exercise.description);
+    const [weight, setWeight] = useState(exercise.weight || '');
     const [isSaving, setIsSaving] = useState(false);
 
     const handleSave = async () => {
@@ -26,7 +28,7 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
         
         setIsSaving(true);
         try {
-            await onSave(exercise.id, title.trim(), description.trim());
+            await onSave(exercise.id, title.trim(), description.trim(), weight.trim() || undefined);
         } finally {
             setIsSaving(false);
         }
@@ -78,6 +80,38 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                         type="text"
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
+                        className={cx('input', css({
+                            width: '100%',
+                            padding: '10px 12px',
+                            backgroundColor: '#0a0a0a',
+                            border: '1px solid #333',
+                            borderRadius: '6px',
+                            color: '#ededed',
+                            fontSize: '14px',
+                            outline: 'none',
+                            transition: 'border-color 0.2s ease',
+                            _focus: {
+                                borderColor: '#2563eb',
+                            }
+                        }))}
+                    />
+                </div>
+
+                <div className={cx('form-group', css({ marginBottom: '16px' }))}>
+                    <label className={cx('label', css({
+                        display: 'block',
+                        color: '#999',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        marginBottom: '8px',
+                    }))}>
+                        Weight / Reps
+                    </label>
+                    <input
+                        type="text"
+                        value={weight}
+                        onChange={(e) => setWeight(e.target.value)}
+                        placeholder="e.g. 135lb 12x4"
                         className={cx('input', css({
                             width: '100%',
                             padding: '10px 12px',

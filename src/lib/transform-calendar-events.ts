@@ -1,15 +1,10 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { getMHRTeamData } from './mhr-service';
+import { getSettings as getSettingsFromKV } from './kv';
 
-const SETTINGS_PATH = path.join(process.cwd(), 'src/data/settings.json');
-
-function getSettings() {
-    if (fs.existsSync(SETTINGS_PATH)) {
-        return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-    }
-    return {
+async function getSettings() {
+    const settings = await getSettingsFromKV();
+    return settings || {
         teamName: 'Carolina Junior Canes (Black) 10U AA',
         identifiers: ['Black', 'Jr Canes', 'Carolina', 'Jr'],
         teamLogo: ''
@@ -30,7 +25,7 @@ export async function transformCalendarEvents(
     year: string = '2025',
     mainTeamStats?: { record: string; rating: string }
 ) {
-    const settings = getSettings();
+    const settings = await getSettings();
     const { identifiers, teamLogo, teamName, mhrYear } = settings;
     
     // Use mhrYear from settings if available, otherwise use the passed year parameter

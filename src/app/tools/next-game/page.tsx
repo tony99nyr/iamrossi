@@ -1,15 +1,16 @@
-import fs from 'fs';
-import path from 'path';
 import { headers } from 'next/headers';
 import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
 import youtubeVideos from '@/data/youtube-videos.json';
+import { getSchedule, getMHRSchedule, getSettings } from '@/lib/kv';
+
+// Force dynamic rendering since we're reading from KV
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
     title: 'Next Game - Junior Canes 10U Black | iamrossi.com',
     description: 'Track upcoming games, view past results, and access detailed team statistics for the Carolina Junior Canes 10U Black hockey team. Get game schedules, opponent information, and team performance data.',
-    keywords: ['Junior Canes', 'Carolina Junior Canes', '10U Black', 'hockey schedule', 'youth hockey', 'game schedule', 'team statistics'],
     openGraph: {
         title: 'Next Game - Junior Canes 10U Black',
         description: 'Track upcoming games and view past results for the Carolina Junior Canes 10U Black hockey team.',
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
         type: 'website',
         images: [
             {
-                url: '/og-next-game.png', // You can create this image later
+                url: '/og-next-game.png',
                 width: 1200,
                 height: 630,
                 alt: 'Junior Canes 10U Black Game Schedule',
@@ -33,9 +34,13 @@ export const metadata: Metadata = {
         images: ['/og-next-game.png'],
     },
     robots: {
-        index: true,
-        follow: true,
+        index: false,
+        follow: false,
+        nocache: true,
     },
+    other: {
+        'ai-robots': 'noindex, noimageai',
+    }
 };
 
 async function triggerSync() {
@@ -54,66 +59,23 @@ async function triggerSync() {
     }
 }
 
-async function getSchedule() {
-    const filePath = path.join(process.cwd(), 'src/data/schedule.json');
-    
-    // If file doesn't exist, we must sync and wait
-    if (!fs.existsSync(filePath)) {
-        console.log('Schedule missing, syncing synchronously...');
-        // We can't easily call the API route synchronously here without full URL
-        // So we'll return empty array and let the client side or background sync handle it?
-        // Better: Import the sync logic directly for the "missing file" case to ensure we have data
-        // But for now, let's try to trigger sync and return empty, or better yet, just return empty 
-        // and let the user refresh. Or we could try to fetch from the API and await it.
-        
-        // For simplicity and robustness, if missing, we return empty but trigger sync
-        await triggerSync();
-        return [];
-    }
-
-    // Check if stale
-    const stats = fs.statSync(filePath);
-    const now = new Date();
-    const ageInMs = now.getTime() - stats.mtime.getTime();
-    const ONE_HOUR = 60 * 60 * 1000;
-
-    if (ageInMs > ONE_HOUR) {
-        console.log('Schedule stale, triggering background sync...');
-        triggerSync(); // Fire and forget
-    }
-
-    const fileContents = fs.readFileSync(filePath, 'utf8');
-    try {
-        return JSON.parse(fileContents);
-    } catch (e) {
-        return [];
-    }
-}
-
-async function getMHRSchedule() {
-    const filePath = path.join(process.cwd(), 'src/data/mhr-schedule.json');
-    if (!fs.existsSync(filePath)) return [];
-    try {
-        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } catch (e) {
-        return [];
-    }
-}
+// Note: Schedule staleness checking removed since KV is always fresh
+// If you need to trigger periodic syncs, implement a cron job or webhook
 
 export default async function NextGamePage() {
     const schedule = await getSchedule();
     const mhrSchedule = await getMHRSchedule();
     
-    // Read settings
-    const settingsPath = path.join(process.cwd(), 'src/data/settings.json');
-    let settings = { mhrTeamId: '19758', mhrYear: '2025' };
-    if (fs.existsSync(settingsPath)) {
-        try {
-            settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-        } catch (e) {
-            console.error('Failed to read settings:', e);
-        }
-    }
+    // Read settings from KV
+    const settingsData = await getSettings();
+    const settings = {
+        mhrTeamId: settingsData?.mhrTeamId || '19758',
+        mhrYear: settingsData?.mhrYear || '2025',
+        teamName: settingsData?.teamName || 'Carolina Junior Canes (Black) 10U AA',
+        identifiers: settingsData?.identifiers || ['Black', 'Jr Canes', 'Carolina', 'Jr'],
+        teamLogo: settingsData?.teamLogo || ''
+    };
+
     
     // Filter for future games
     const now = new Date();

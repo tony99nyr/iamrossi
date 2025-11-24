@@ -63,13 +63,13 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
                 )}
                 {exercise.weight && (
                     <div className={cx('exercise-weight', css({
-                        color: '#2563eb',
+                        color: '#60a5fa',
                         fontSize: '12px',
                         fontWeight: '600',
                         marginTop: '4px',
                         display: 'inline-block',
-                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                        padding: '2px 6px',
+                        backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                        padding: '1px 6px',
                         borderRadius: '4px',
                     }))}>
                         {exercise.weight}

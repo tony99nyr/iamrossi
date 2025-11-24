@@ -6,6 +6,7 @@ import WeeklyCalendar from '@/components/rehab/WeeklyCalendar';
 import DayView from '@/components/rehab/DayView';
 import ExerciseEntryForm from '@/components/rehab/ExerciseEntryForm';
 import ExerciseEditModal from '@/components/rehab/ExerciseEditModal';
+import PinEntryModal from '@/components/rehab/PinEntryModal';
 
 interface Exercise {
     id: string;
@@ -47,6 +48,26 @@ export default function KneeRehabClient({
     const [showEntryForm, setShowEntryForm] = useState(false);
     const [formExercises, setFormExercises] = useState<SelectedExercise[]>([]);
     const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+    
+    // PIN authentication state
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [showPinModal, setShowPinModal] = useState(false);
+    const [authToken, setAuthToken] = useState<string | null>(null);
+    const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
+
+    // Check for existing auth cookie on mount
+    useEffect(() => {
+        const checkAuth = async () => {
+            try {
+                const response = await fetch('/api/rehab/entries');
+                // If we can read, we're good. Auth is only needed for mutations.
+                setIsAuthenticated(true);
+            } catch (error) {
+                console.error('Auth check failed:', error);
+            }
+        };
+        checkAuth();
+    }, []);
 
     const selectedEntry = entries.find(e => e.date === selectedDate);
 
@@ -74,94 +95,140 @@ export default function KneeRehabClient({
         setSelectedDate(null);
     };
 
-    const handleToggleRestDay = async () => {
-        const newIsRestDay = !selectedEntry?.isRestDay;
-        
-        try {
-            const response = await fetch('/api/rehab/entries', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    date: selectedDate,
-                    isRestDay: newIsRestDay,
-                }),
-            });
-
-            if (response.ok) {
-                const updatedEntry = await response.json();
-                setEntries(prev => {
-                    const index = prev.findIndex(e => e.date === selectedDate);
-                    if (index >= 0) {
-                        const newEntries = [...prev];
-                        newEntries[index] = updatedEntry;
-                        return newEntries;
-                    }
-                    return [...prev, updatedEntry];
-                });
-            }
-        } catch (error) {
-            console.error('Failed to toggle rest day:', error);
+    // Authentication wrapper for protected actions
+    const requireAuth = async (action: () => Promise<void>) => {
+        if (isAuthenticated) {
+            await action();
+        } else {
+            setPendingAction(() => action);
+            setShowPinModal(true);
         }
     };
 
-    const handleToggleVitamins = async () => {
-        const newVitamins = !selectedEntry?.vitaminsTaken;
+    const handlePinSuccess = (token: string) => {
+        setAuthToken(token);
+        setIsAuthenticated(true);
+        setShowPinModal(false);
         
-        try {
-            const response = await fetch('/api/rehab/entries', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    date: selectedDate,
-                    vitaminsTaken: newVitamins,
-                }),
-            });
-
-            if (response.ok) {
-                const updatedEntry = await response.json();
-                setEntries(prev => {
-                    const index = prev.findIndex(e => e.date === selectedDate);
-                    if (index >= 0) {
-                        const newEntries = [...prev];
-                        newEntries[index] = updatedEntry;
-                        return newEntries;
-                    }
-                    return [...prev, updatedEntry];
-                });
-            }
-        } catch (error) {
-            console.error('Failed to toggle vitamins:', error);
+        // Execute pending action if any
+        if (pendingAction) {
+            pendingAction();
+            setPendingAction(null);
         }
     };
 
-    const handleToggleProtein = async () => {
-        const newProtein = !selectedEntry?.proteinShake;
-        
-        try {
-            const response = await fetch('/api/rehab/entries', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    date: selectedDate,
-                    proteinShake: newProtein,
-                }),
-            });
-
-            if (response.ok) {
-                const updatedEntry = await response.json();
-                setEntries(prev => {
-                    const index = prev.findIndex(e => e.date === selectedDate);
-                    if (index >= 0) {
-                        const newEntries = [...prev];
-                        newEntries[index] = updatedEntry;
-                        return newEntries;
-                    }
-                    return [...prev, updatedEntry];
+    const handleToggleRestDay = () => {
+        requireAuth(async () => {
+            const newIsRestDay = !selectedEntry?.isRestDay;
+            
+            try {
+                const response = await fetch('/api/rehab/entries', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: selectedDate,
+                        isRestDay: newIsRestDay,
+                    }),
                 });
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
+                }
+
+                if (response.ok) {
+                    const updatedEntry = await response.json();
+                    setEntries(prev => {
+                        const index = prev.findIndex(e => e.date === selectedDate);
+                        if (index >= 0) {
+                            const newEntries = [...prev];
+                            newEntries[index] = updatedEntry;
+                            return newEntries;
+                        }
+                        return [...prev, updatedEntry];
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to toggle rest day:', error);
             }
-        } catch (error) {
-            console.error('Failed to toggle protein:', error);
-        }
+        });
+    };
+
+    const handleToggleVitamins = () => {
+        requireAuth(async () => {
+            const newVitamins = !selectedEntry?.vitaminsTaken;
+            
+            try {
+                const response = await fetch('/api/rehab/entries', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: selectedDate,
+                        vitaminsTaken: newVitamins,
+                    }),
+                });
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
+                }
+
+                if (response.ok) {
+                    const updatedEntry = await response.json();
+                    setEntries(prev => {
+                        const index = prev.findIndex(e => e.date === selectedDate);
+                        if (index >= 0) {
+                            const newEntries = [...prev];
+                            newEntries[index] = updatedEntry;
+                            return newEntries;
+                        }
+                        return [...prev, updatedEntry];
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to toggle vitamins:', error);
+            }
+        });
+    };
+
+    const handleToggleProtein = () => {
+        requireAuth(async () => {
+            const newProtein = !selectedEntry?.proteinShake;
+            
+            try {
+                const response = await fetch('/api/rehab/entries', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: selectedDate,
+                        proteinShake: newProtein,
+                    }),
+                });
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
+                }
+
+                if (response.ok) {
+                    const updatedEntry = await response.json();
+                    setEntries(prev => {
+                        const index = prev.findIndex(e => e.date === selectedDate);
+                        if (index >= 0) {
+                            const newEntries = [...prev];
+                            newEntries[index] = updatedEntry;
+                            return newEntries;
+                        }
+                        return [...prev, updatedEntry];
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to toggle protein:', error);
+            }
+        });
     };
 
     const handleAddExerciseClick = () => {
@@ -190,73 +257,143 @@ export default function KneeRehabClient({
         ));
     };
 
+    const handleFormReorder = (newOrder: SelectedExercise[]) => {
+        setFormExercises(newOrder);
+    };
+
     const handleCreateExercise = async (title: string, description: string): Promise<Exercise> => {
-        const response = await fetch('/api/rehab/exercises', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, description }),
-        });
+        return new Promise((resolve, reject) => {
+            requireAuth(async () => {
+                try {
+                    const response = await fetch('/api/rehab/exercises', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title, description }),
+                    });
 
-        if (!response.ok) {
-            throw new Error('Failed to create exercise');
-        }
-
-        const newExercise = await response.json();
-        setExercises(prev => [...prev, newExercise]);
-        return newExercise;
-    };
-
-    const handleUpdateExercise = async (id: string, title: string, description: string) => {
-        try {
-            const response = await fetch('/api/rehab/exercises', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, title, description }),
-            });
-
-            if (response.ok) {
-                const updatedExercise = await response.json();
-                setExercises(prev => prev.map(ex => 
-                    ex.id === id ? updatedExercise : ex
-                ));
-                setEditingExercise(null);
-            }
-        } catch (error) {
-            console.error('Failed to update exercise:', error);
-        }
-    };
-
-    const handleSaveEntry = async () => {
-        try {
-            const response = await fetch('/api/rehab/entries', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    date: selectedDate,
-                    exercises: formExercises.map(e => ({ id: e.id, weight: e.weight })),
-                    isRestDay: selectedEntry?.isRestDay || false,
-                    vitaminsTaken: selectedEntry?.vitaminsTaken || false,
-                    proteinShake: selectedEntry?.proteinShake || false,
-                }),
-            });
-
-            if (response.ok) {
-                const savedEntry = await response.json();
-                setEntries(prev => {
-                    const index = prev.findIndex(e => e.date === selectedDate);
-                    if (index >= 0) {
-                        const newEntries = [...prev];
-                        newEntries[index] = savedEntry;
-                        return newEntries;
+                    if (response.status === 401) {
+                        setIsAuthenticated(false);
+                        setShowPinModal(true);
+                        reject(new Error('Unauthorized'));
+                        return;
                     }
-                    return [...prev, savedEntry];
+
+                    if (!response.ok) {
+                        reject(new Error('Failed to create exercise'));
+                        return;
+                    }
+
+                    const newExercise = await response.json();
+                    setExercises(prev => [...prev, newExercise]);
+                    resolve(newExercise);
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        });
+    };
+
+    const handleUpdateExercise = async (id: string, title: string, description: string, weight?: string) => {
+        return requireAuth(async () => {
+            try {
+                // 1. Update exercise definition
+                const response = await fetch('/api/rehab/exercises', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, title, description }),
                 });
-                setShowEntryForm(false);
-                setFormExercises([]);
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
+                }
+
+                if (response.ok) {
+                    const updatedExercise = await response.json();
+                    setExercises(prev => prev.map(ex => 
+                        ex.id === id ? updatedExercise : ex
+                    ));
+                    
+                    // 2. Update entry weight if provided and we have a selected date
+                    if (weight !== undefined && selectedDate && selectedEntry) {
+                        const updatedExercises = selectedEntry.exercises.map(ex => 
+                            ex.id === id ? { ...ex, weight } : ex
+                        );
+
+                        const entryResponse = await fetch('/api/rehab/entries', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                date: selectedDate,
+                                exercises: updatedExercises,
+                                isRestDay: selectedEntry.isRestDay,
+                                vitaminsTaken: selectedEntry.vitaminsTaken,
+                                proteinShake: selectedEntry.proteinShake,
+                            }),
+                        });
+
+                        if (entryResponse.ok) {
+                            const savedEntry = await entryResponse.json();
+                            setEntries(prev => {
+                                const index = prev.findIndex(e => e.date === selectedDate);
+                                if (index >= 0) {
+                                    const newEntries = [...prev];
+                                    newEntries[index] = savedEntry;
+                                    return newEntries;
+                                }
+                                return [...prev, savedEntry];
+                            });
+                        }
+                    }
+
+                    setEditingExercise(null);
+                }
+            } catch (error) {
+                console.error('Failed to update exercise:', error);
             }
-        } catch (error) {
-            console.error('Failed to save entry:', error);
-        }
+        });
+    };
+
+    const handleSaveEntry = () => {
+        requireAuth(async () => {
+            try {
+                const response = await fetch('/api/rehab/entries', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: selectedDate,
+                        exercises: formExercises.map(e => ({ id: e.id, weight: e.weight })),
+                        isRestDay: selectedEntry?.isRestDay || false,
+                        vitaminsTaken: selectedEntry?.vitaminsTaken || false,
+                        proteinShake: selectedEntry?.proteinShake || false,
+                    }),
+                });
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
+                }
+
+                if (response.ok) {
+                    const savedEntry = await response.json();
+                    setEntries(prev => {
+                        const index = prev.findIndex(e => e.date === selectedDate);
+                        if (index >= 0) {
+                            const newEntries = [...prev];
+                            newEntries[index] = savedEntry;
+                            return newEntries;
+                        }
+                        return [...prev, savedEntry];
+                    });
+                    setShowEntryForm(false);
+                    setFormExercises([]);
+                }
+            } catch (error) {
+                console.error('Failed to save entry:', error);
+            }
+        });
     };
 
     const handleCancelEntry = () => {
@@ -329,6 +466,7 @@ export default function KneeRehabClient({
                     onAddExercise={handleFormAddExercise}
                     onRemoveExercise={handleFormRemoveExercise}
                     onUpdateWeight={handleFormUpdateWeight}
+                    onReorder={handleFormReorder}
                     onCreateExercise={handleCreateExercise}
                     onSave={handleSaveEntry}
                     onCancel={handleCancelEntry}
@@ -341,6 +479,13 @@ export default function KneeRehabClient({
                     exercise={editingExercise}
                     onSave={handleUpdateExercise}
                     onCancel={() => setEditingExercise(null)}
+                />
+            )}
+
+            {/* PIN Entry Modal */}
+            {showPinModal && (
+                <PinEntryModal
+                    onSuccess={handlePinSuccess}
                 />
             )}
         </div>
