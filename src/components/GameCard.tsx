@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { css, cx } from '@styled-system/css';
 
 interface TeamDetails {
@@ -198,45 +197,7 @@ const rinkNameStyle = css({
     color: '#888',
 });
 
-const detailsButtonStyle = css({
-    position: 'absolute',
-    bottom: '1rem',
-    right: '1rem',
-    width: '36px',
-    height: '36px',
-    borderRadius: '50%',
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    padding: 0,
-    '&:hover': {
-        background: 'rgba(255, 255, 255, 0.1)',
-        borderColor: 'rgba(255, 255, 255, 0.2)',
-        transform: 'scale(1.05)',
-    },
-});
 
-const detailsIconStyle = css({
-    width: '18px',
-    height: '18px',
-    color: '#888',
-    transition: 'transform 0.3s ease',
-});
-
-const detailsIconOpenStyle = css({
-    transform: 'rotate(45deg)',
-});
-
-const detailsStyle = css({
-    marginTop: '1.5rem',
-    paddingTop: '1.5rem',
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-    animation: 'slideDown 0.3s ease',
-});
 
 const loadingStyle = css({
     textAlign: 'center',
@@ -283,8 +244,6 @@ const statDividerStyle = css({
 });
 
 export default function GameCard({ title, game, isHome }: GameCardProps) {
-    const [showDetails, setShowDetails] = useState(false);
-
     const year = new Date().getFullYear();
 
     // For the opponent team, we use the data from schedule.json
@@ -329,6 +288,18 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                                 <span className={cx('team-name', teamNameStyle)}>{game.visitor_team_name}</span>
                             </div>
                         )}
+                        <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.5rem' })}>
+                            {game.visitor_team_record && (
+                                <div className={statValueStyle}>
+                                    <span className={statLabelStyle}>Record:</span> {game.visitor_team_record}
+                                </div>
+                            )}
+                            {game.visitor_team_rating && (
+                                <div className={statValueStyle}>
+                                    <span className={statLabelStyle}>Rating:</span> {game.visitor_team_rating}
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <div className={cx('vs-label', vsStyle)}>AT</div>
                     <div className={cx('team', teamStyle)}>
@@ -348,6 +319,18 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                                 <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </div>
                         )}
+                        <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.5rem' })}>
+                            {game.home_team_record && (
+                                <div className={statValueStyle}>
+                                    <span className={statLabelStyle}>Record:</span> {game.home_team_record}
+                                </div>
+                            )}
+                            {game.home_team_rating && (
+                                <div className={statValueStyle}>
+                                    <span className={statLabelStyle}>Rating:</span> {game.home_team_rating}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -355,91 +338,59 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                     <span className={cx('rink-label', rinkLabelStyle)}>Rink:</span>
                     <span className={cx('rink-name', rinkNameStyle)}>{game.rink_name}</span>
                 </div>
-            </div>
 
-            <button 
-                className={cx('details-button', detailsButtonStyle)}
-                onClick={() => setShowDetails(!showDetails)}
-                aria-label={showDetails ? "Hide details" : "Show details"}
-            >
-                <svg 
-                    className={cx('details-icon', detailsIconStyle, showDetails && detailsIconOpenStyle)}
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2"
-                >
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-            </button>
-
-            {showDetails && (
-                <div className={cx('details-section', detailsStyle)}>
-                    <div className={cx('team-stats', teamStatsStyle)}>
-                        {/* Visitor Team */}
-                        <div className={cx('team-stat-column', teamStatStyle)}>
-                            <div className={cx('stat-team-name', statTeamNameStyle)}>
-                                {game.visitor_team_name}
-                            </div>
-                            {game.visitor_team_record ? (
-                                <div className={cx('stat-value', statValueStyle)}>
-                                    <span className={cx('stat-label', statLabelStyle)}>Record:</span> {game.visitor_team_record}
-                                </div>
-                            ) : (
-                                <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
-                                    No record
-                                </div>
-                            )}
-                            {game.visitor_team_rating ? (
-                                <div className={cx('stat-value', statValueStyle)}>
-                                    <span className={cx('stat-label', statLabelStyle)}>Rating:</span> {game.visitor_team_rating}
-                                </div>
-                            ) : (
-                                <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
-                                    No rating
-                                </div>
-                            )}
-                        </div>
-
-                        <div className={cx('stat-divider', statDividerStyle)} />
-
-                        {/* Home Team */}
-                        <div className={cx('team-stat-column', teamStatStyle)}>
-                            <div className={cx('stat-team-name', statTeamNameStyle)}>
-                                {game.home_team_name}
-                            </div>
-                            {game.home_team_record ? (
-                                <div className={cx('stat-value', statValueStyle)}>
-                                    <span className={cx('stat-label', statLabelStyle)}>Record:</span> {game.home_team_record}
-                                </div>
-                            ) : (
-                                <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
-                                    No record
-                                </div>
-                            )}
-                            {game.home_team_rating ? (
-                                <div className={cx('stat-value', statValueStyle)}>
-                                    <span className={cx('stat-label', statLabelStyle)}>Rating:</span> {game.home_team_rating}
-                                </div>
-                            ) : (
-                                <div className={statValueStyle} style={{ fontStyle: 'italic', color: '#666' }}>
-                                    No rating
-                                </div>
-                            )}
-                        </div>
+                {/* Game Preview Link - Only show for MHR games with numeric game_nbr */}
+                {game.game_nbr && typeof game.game_nbr === 'number' && (
+                    <div className={css({
+                        marginTop: '1.5rem',
+                        paddingTop: '1.5rem',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                        textAlign: 'center'
+                    })}>
+                        <a 
+                            href={`https://myhockeyrankings.com/game-preview?g=${game.game_nbr}&y=2025`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={css({
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.75rem 1.5rem',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                color: '#60a5fa',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(59, 130, 246, 0.3)',
+                                textDecoration: 'none',
+                                fontSize: '0.875rem',
+                                fontWeight: '600',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                    borderColor: 'rgba(59, 130, 246, 0.5)',
+                                    transform: 'translateY(-1px)'
+                                }
+                            })}
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                            </svg>
+                            View Game Preview on MHR
+                        </a>
                     </div>
-                    
-                    {/* Game Preview Link - Only show for MHR games with numeric game_nbr */}
-                    {game.game_nbr && typeof game.game_nbr === 'number' && (
-                        <div className={css({
-                            marginTop: '1.5rem',
-                            paddingTop: '1.5rem',
-                            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                            textAlign: 'center'
-                        })}>
+                )}
+
+                {/* Video Links */}
+                {(game.highlightsUrl || game.fullGameUrl) && (
+                    <div className={css({
+                        paddingTop: '0.5rem',
+                        display: 'flex',
+                        gap: '1rem',
+                        justifyContent: 'center',
+                        flexWrap: 'wrap'
+                    })}>
+                        {game.highlightsUrl && (
                             <a 
-                                href={`https://myhockeyrankings.com/game-preview?g=${game.game_nbr}&y=2025`}
+                                href={game.highlightsUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={css({
@@ -447,108 +398,63 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                                     alignItems: 'center',
                                     gap: '0.5rem',
                                     padding: '0.75rem 1.5rem',
-                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                    color: '#60a5fa',
+                                    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                                    color: '#f87171',
                                     borderRadius: '8px',
-                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    border: '1px solid rgba(220, 38, 38, 0.3)',
                                     textDecoration: 'none',
                                     fontSize: '0.875rem',
                                     fontWeight: '600',
                                     transition: 'all 0.2s ease',
                                     '&:hover': {
-                                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                                        borderColor: 'rgba(59, 130, 246, 0.5)',
+                                        backgroundColor: 'rgba(220, 38, 38, 0.2)',
+                                        borderColor: 'rgba(220, 38, 38, 0.5)',
                                         transform: 'translateY(-1px)'
                                     }
                                 })}
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                    <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.33 29 29 0 0 0-.46-5.33z"></path>
+                                    <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
                                 </svg>
-                                View Game Preview on MHR
+                                Watch Highlights
                             </a>
-                        </div>
-                    )}
-
-                    {/* Video Links */}
-                    {(game.highlightsUrl || game.fullGameUrl) && (
-                        <div className={css({
-                            marginTop: '1.5rem',
-                            paddingTop: '1.5rem',
-                            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                            display: 'flex',
-                            gap: '1rem',
-                            justifyContent: 'center',
-                            flexWrap: 'wrap'
-                        })}>
-                            {game.highlightsUrl && (
-                                <a 
-                                    href={game.highlightsUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className={css({
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem',
-                                        padding: '0.75rem 1.5rem',
-                                        backgroundColor: 'rgba(220, 38, 38, 0.1)',
-                                        color: '#f87171',
-                                        borderRadius: '8px',
-                                        border: '1px solid rgba(220, 38, 38, 0.3)',
-                                        textDecoration: 'none',
-                                        fontSize: '0.875rem',
-                                        fontWeight: '600',
-                                        transition: 'all 0.2s ease',
-                                        '&:hover': {
-                                            backgroundColor: 'rgba(220, 38, 38, 0.2)',
-                                            borderColor: 'rgba(220, 38, 38, 0.5)',
-                                            transform: 'translateY(-1px)'
-                                        }
-                                    })}
-                                >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.33 29 29 0 0 0-.46-5.33z"></path>
-                                        <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
-                                    </svg>
-                                    Watch Highlights
-                                </a>
-                            )}
-                            {game.fullGameUrl && (
-                                <a 
-                                    href={game.fullGameUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className={css({
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem',
-                                        padding: '0.75rem 1.5rem',
-                                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                                        color: '#e5e5e5',
-                                        borderRadius: '8px',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        textDecoration: 'none',
-                                        fontSize: '0.875rem',
-                                        fontWeight: '600',
-                                        transition: 'all 0.2s ease',
-                                        '&:hover': {
-                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                            borderColor: 'rgba(255, 255, 255, 0.2)',
-                                            transform: 'translateY(-1px)'
-                                        }
-                                    })}
-                                >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <circle cx="12" cy="12" r="10"></circle>
-                                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
-                                    </svg>
-                                    Watch Full Game
-                                </a>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
+                        )}
+                        {game.fullGameUrl && (
+                            <a 
+                                href={game.fullGameUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={css({
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    padding: '0.75rem 1.5rem',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                    color: '#e5e5e5',
+                                    borderRadius: '8px',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    textDecoration: 'none',
+                                    fontSize: '0.875rem',
+                                    fontWeight: '600',
+                                    transition: 'all 0.2s ease',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                                        transform: 'translateY(-1px)'
+                                    }
+                                })}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                                </svg>
+                                Watch Full Game
+                            </a>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
