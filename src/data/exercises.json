@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ex-1",
+    "title": "Bike sprint warmup",
+    "description": "Cardiovascular warmup on stationary bike",
+    "createdAt": "2025-11-18T00:00:00.000Z"
+  },
+  {
+    "id": "ex-2",
+    "title": "Leg extension",
+    "description": "Seated single leg extension with ankle weights. Lift up squeeze at the top, slow on the way down.",
+    "createdAt": "2025-11-18T00:00:00.000Z"
+  },
+  {
+    "id": "ex-3",
+    "title": "Straight leg raise",
+    "description": "Laying on back, single straight leg raise with ankle weights.",
+    "createdAt": "2025-11-18T00:00:00.000Z"
+  },
+  {
+    "id": "ex-4",
+    "title": "Buso single leg balance",
+    "description": "Balance on Buso ball with single leg slightly bent",
+    "createdAt": "2025-11-18T00:00:00.000Z"
+  },
+  {
+    "id": "ex-1763942910064",
+    "title": "Smith machine - single leg focused squat",
+    "description": "Using a smith machine, injured leg is directly underneath. Other leg supports through the challenging ranges.",
+    "createdAt": "2025-11-24T00:08:30.064Z"
+  },
+  {
+    "id": "ex-1763942962487",
+    "title": "Smith machine - Forward lunge",
+    "description": "Using the smith machine, injured leg in front, forward lunch.",
+    "createdAt": "2025-11-24T00:09:22.487Z"
+  },
+  {
+    "id": "ex-1763943007829",
+    "title": "Buso lunges",
+    "description": "Side, back, and curtsey lunges with injured leg on the buso ball",
+    "createdAt": "2025-11-24T00:10:07.829Z"
+  },
+  {
+    "id": "ex-1763943070219",
+    "title": "Quarter wall sit, single leg",
+    "description": "Wall sit only about 1/4 depth to prevent pain. Balancing against the wall on injured leg",
+    "createdAt": "2025-11-24T00:11:10.219Z"
+  }
+]

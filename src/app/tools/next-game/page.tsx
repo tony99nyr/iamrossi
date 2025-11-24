@@ -1,9 +1,42 @@
 import fs from 'fs';
 import path from 'path';
 import { headers } from 'next/headers';
+import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
 import youtubeVideos from '@/data/youtube-videos.json';
+
+export const metadata: Metadata = {
+    title: 'Next Game - Junior Canes 10U Black | iamrossi.com',
+    description: 'Track upcoming games, view past results, and access detailed team statistics for the Carolina Junior Canes 10U Black hockey team. Get game schedules, opponent information, and team performance data.',
+    keywords: ['Junior Canes', 'Carolina Junior Canes', '10U Black', 'hockey schedule', 'youth hockey', 'game schedule', 'team statistics'],
+    openGraph: {
+        title: 'Next Game - Junior Canes 10U Black',
+        description: 'Track upcoming games and view past results for the Carolina Junior Canes 10U Black hockey team.',
+        url: 'https://iamrossi.com/tools/next-game',
+        siteName: 'iamrossi.com',
+        type: 'website',
+        images: [
+            {
+                url: '/og-next-game.png', // You can create this image later
+                width: 1200,
+                height: 630,
+                alt: 'Junior Canes 10U Black Game Schedule',
+            },
+        ],
+        locale: 'en_US',
+    },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Next Game - Junior Canes 10U Black',
+        description: 'Track upcoming games and view past results for the Carolina Junior Canes 10U Black hockey team.',
+        images: ['/og-next-game.png'],
+    },
+    robots: {
+        index: true,
+        follow: true,
+    },
+};
 
 async function triggerSync() {
     try {

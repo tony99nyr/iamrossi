@@ -1,0 +1,60 @@
+[
+  {
+    "id": "2353ee21-f207-4d04-a854-3cfeda8cf787",
+    "date": "2025-11-18",
+    "exercises": [
+      {
+        "id": "ex-2",
+        "weight": "30"
+      },
+      {
+        "id": "ex-3",
+        "weight": "30"
+      },
+      {
+        "id": "ex-1",
+        "weight": ""
+      },
+      {
+        "id": "ex-4",
+        "weight": ""
+      }
+    ],
+    "isRestDay": false,
+    "vitaminsTaken": true,
+    "proteinShake": true
+  },
+  {
+    "id": "entry-1763942622753",
+    "date": "2025-11-22",
+    "exercises": [],
+    "isRestDay": true,
+    "vitaminsTaken": true,
+    "proteinShake": true
+  },
+  {
+    "id": "entry-1763942853639",
+    "date": "2025-11-19",
+    "exercises": [
+      {
+        "id": "ex-1763942910064",
+        "weight": "135"
+      },
+      {
+        "id": "ex-1763942962487",
+        "weight": "135"
+      },
+      {
+        "id": "ex-1763943007829",
+        "weight": "25"
+      },
+      {
+        "id": "ex-1763943070219",
+        "weight": ""
+      }
+    ],
+    "isRestDay": false,
+    "vitaminsTaken": true,
+    "proteinShake": true
+  }
+]
