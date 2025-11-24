@@ -18,6 +18,30 @@ import HamburgerMenu from '@/components/HamburgerMenu';
 export const metadata: Metadata = {
     title: 'iamrossi.com',
     description: 'Personal website and tools',
+    robots: {
+        index: false,
+        follow: false,
+        nocache: true,
+        googleBot: {
+            index: false,
+            follow: false,
+            noimageindex: true,
+            'max-video-preview': -1,
+            'max-image-preview': 'large',
+            'max-snippet': -1,
+        },
+    },
+    openGraph: {
+        title: 'iamrossi.com',
+        description: 'Personal website and tools',
+        url: 'https://iamrossi.com',
+        siteName: 'iamrossi.com',
+        locale: 'en_US',
+        type: 'website',
+    },
+    other: {
+        'ai-robots': 'noindex, noimageai',
+    }
 };
 
 export default function RootLayout({

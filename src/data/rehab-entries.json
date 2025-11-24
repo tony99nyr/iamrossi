@@ -1,7 +1,7 @@
 [
   {
     "id": "2353ee21-f207-4d04-a854-3cfeda8cf787",
-    "date": "2025-11-18",
+    "date": "2025-11-17",
     "exercises": [
       {
         "id": "ex-2",
@@ -26,7 +26,7 @@
   },
   {
     "id": "entry-1763942622753",
-    "date": "2025-11-22",
+    "date": "2025-11-21",
     "exercises": [],
     "isRestDay": true,
     "vitaminsTaken": true,
@@ -34,7 +34,7 @@
   },
   {
     "id": "entry-1763942853639",
-    "date": "2025-11-19",
+    "date": "2025-11-18",
     "exercises": [
       {
         "id": "ex-1763942910064",
@@ -59,7 +59,7 @@
   },
   {
     "id": "7b21741c-d260-4181-97b7-3aa7e191f4b0",
-    "date": "2025-11-20",
+    "date": "2025-11-19",
     "exercises": [
       {
         "id": "ex-1763944286383",
@@ -76,7 +76,7 @@
   },
   {
     "id": "entry-1763944348409",
-    "date": "2025-11-21",
+    "date": "2025-11-20",
     "exercises": [
       {
         "id": "ex-1",
@@ -105,7 +105,7 @@
   },
   {
     "id": "ef1e3441-cfd4-4b47-af76-57d6b23e199f",
-    "date": "2025-11-23",
+    "date": "2025-11-22",
     "exercises": [
       {
         "id": "ex-1",
@@ -134,7 +134,7 @@
   },
   {
     "id": "entry-1763944492060",
-    "date": "2025-11-24",
+    "date": "2025-11-23",
     "exercises": [
       {
         "id": "ex-1763944286383",
@@ -148,5 +148,13 @@
     "isRestDay": false,
     "vitaminsTaken": true,
     "proteinShake": true
+  },
+  {
+    "id": "entry-1763988699917",
+    "date": "2025-11-16",
+    "exercises": [],
+    "isRestDay": true,
+    "vitaminsTaken": false,
+    "proteinShake": false
   }
 ]

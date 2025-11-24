@@ -43,7 +43,7 @@ export default function KneeRehabClient({
     const [exercises, setExercises] = useState<Exercise[]>(initialExercises);
     const [entries, setEntries] = useState<RehabEntry[]>(initialEntries);
     const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
-    const [selectedDate, setSelectedDate] = useState<string | null>(formatDate(new Date()));
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [showEntryForm, setShowEntryForm] = useState(false);
     const [formExercises, setFormExercises] = useState<SelectedExercise[]>([]);
     const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
@@ -68,6 +68,10 @@ export default function KneeRehabClient({
         } else {
             setSelectedDate(date);
         }
+    };
+
+    const handleBackToCalendar = () => {
+        setSelectedDate(null);
     };
 
     const handleToggleRestDay = async () => {
@@ -270,35 +274,22 @@ export default function KneeRehabClient({
             }
         }))}>
             <div className={cx('container', css({
-                maxWidth: '1200px',
+                maxWidth: '1440px',
                 margin: '0 auto',
             }))}>
                 {/* Header */}
                 <header className={cx('page-header', css({
-                    marginBottom: '32px',
+                    marginBottom: '72px',
                 }))}>
-                    <h1 className={cx('page-title', css({
-                        color: '#ededed',
-                        fontSize: '28px',
-                        fontWeight: '700',
-                        marginBottom: '8px',
-                        md: {
-                            fontSize: '32px',
-                        }
-                    }))}>
-                        Knee Rehab Tracker
-                    </h1>
-                    <p className={cx('page-subtitle', css({
-                        color: '#999',
-                        fontSize: '14px',
-                    }))}>
-                        Track your daily rehabilitation exercises
-                    </p>
                 </header>
 
                 {/* Calendar */}
                 <div className={cx('calendar-section', css({
                     marginBottom: '32px',
+                    display: selectedDate ? 'none' : 'block',
+                    md: {
+                        display: 'block',
+                    }
                 }))}>
                     <WeeklyCalendar
                         currentDate={currentWeekStart}
@@ -323,6 +314,7 @@ export default function KneeRehabClient({
                             onToggleVitamins={handleToggleVitamins}
                             onToggleProtein={handleToggleProtein}
                             onEditExercise={setEditingExercise}
+                            onBack={handleBackToCalendar}
                         />
                     </div>
                 )}

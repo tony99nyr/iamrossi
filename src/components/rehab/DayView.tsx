@@ -28,6 +28,7 @@ interface DayViewProps {
     onToggleVitamins: () => void;
     onToggleProtein: () => void;
     onEditExercise: (exercise: Exercise) => void;
+    onBack?: () => void;
 }
 
 function formatDateHeader(dateStr: string): string {
@@ -49,6 +50,7 @@ export default function DayView({
     onToggleVitamins,
     onToggleProtein,
     onEditExercise,
+    onBack,
 }: DayViewProps) {
     const dayExercises = entry?.exercises.map(entryEx => {
         const fullExercise = exercises.find(ex => ex.id === entryEx.id);
@@ -63,6 +65,35 @@ export default function DayView({
             <div className={cx('day-header', css({
                 marginBottom: '24px',
             }))}>
+                {onBack && (
+                    <button
+                        onClick={onBack}
+                        className={cx('back-button', css({
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '8px 12px',
+                            marginBottom: '12px',
+                            backgroundColor: 'transparent',
+                            border: '1px solid #333',
+                            borderRadius: '8px',
+                            fontSize: '24px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            tapHighlightColor: 'transparent',
+                            md: {
+                                display: 'none',
+                            },
+                            _hover: {
+                                borderColor: '#7877c6',
+                                backgroundColor: '#1a1a1a',
+                            }
+                        }))}
+                        title="Back to Calendar"
+                    >
+                        📅
+                    </button>
+                )}
                 <h2 className={cx('date-title', css({
                     color: '#ededed',
                     fontSize: '20px',

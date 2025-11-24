@@ -1,6 +1,7 @@
 'use client';
 
 import { css, cx } from '@styled-system/css';
+import { useRef, type TouchEvent } from 'react';
 
 interface RehabEntry {
     id: string;
@@ -30,11 +31,12 @@ function getWeekDates(date: Date): Date[] {
     const week: Date[] = [];
     const current = new Date(date);
     
-    // Get to start of week (Sunday)
+    // Find Sunday of the current week
     const day = current.getDay();
-    current.setDate(current.getDate() - day);
+    const diff = current.getDate() - day;
+    current.setDate(diff);
     
-    // Get all 7 days
+    // Generate 7 days starting from Sunday
     for (let i = 0; i < 7; i++) {
         week.push(new Date(current));
         current.setDate(current.getDate() + 1);
@@ -48,11 +50,22 @@ function formatDate(date: Date): string {
 }
 
 function formatDayName(date: Date): string {
-    return date.toLocaleDateString('en-US', { weekday: 'short' });
+    return date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
 }
 
 function formatDayNumber(date: Date): string {
     return date.getDate().toString();
+}
+
+function formatMonthYear(startDate: Date, endDate: Date): string {
+    const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
+    const endMonth = endDate.toLocaleDateString('en-US', { month: 'short' });
+    const year = endDate.getFullYear();
+    
+    if (startMonth === endMonth) {
+        return `${startMonth} ${startDate.getDate()} - ${endDate.getDate()}, ${year}`;
+    }
+    return `${startMonth} ${startDate.getDate()} - ${endMonth} ${endDate.getDate()}, ${year}`;
 }
 
 export default function WeeklyCalendar({
@@ -67,65 +80,95 @@ export default function WeeklyCalendar({
     const weekDates = getWeekDates(currentDate);
     const today = formatDate(new Date());
 
+    const touchStartX = useRef<number | null>(null);
+    const touchEndX = useRef<number | null>(null);
+    const minSwipeDistance = 50;
+
+    const onTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+        touchEndX.current = null;
+        touchStartX.current = e.targetTouches[0].clientX;
+    };
+
+    const onTouchMove = (e: TouchEvent<HTMLDivElement>) => {
+        touchEndX.current = e.targetTouches[0].clientX;
+    };
+
+    const onTouchEnd = () => {
+        if (!touchStartX.current || !touchEndX.current) return;
+        const distance = touchStartX.current - touchEndX.current;
+        const isLeftSwipe = distance > minSwipeDistance;
+        const isRightSwipe = distance < -minSwipeDistance;
+
+        if (isLeftSwipe) {
+            onNextWeek();
+        }
+        if (isRightSwipe) {
+            onPreviousWeek();
+        }
+    };
+
     const getEntryForDate = (date: string) => {
         return entries.find(e => e.date === date);
     };
 
     return (
-        <div className={cx('weekly-calendar', css({
-            width: '100%',
-        }))}>
-            {/* Navigation */}
-            <div className={cx('calendar-header', css({
+        <div 
+            className={cx('weekly-calendar', css({
+                width: '100%',
+                touchAction: 'pan-y', // Allow vertical scrolling but capture horizontal swipes
+            }))}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+        >
+            {/* Week Navigation */}
+            <div className={cx('week-nav', css({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: '16px',
-                padding: '0 8px',
+                marginBottom: '24px',
             }))}>
                 <button
                     onClick={onPreviousWeek}
                     className={cx('nav-button', css({
-                        background: 'transparent',
-                        border: 'none',
+                        padding: '8px 16px',
+                        backgroundColor: 'transparent',
+                        border: '1px solid #333',
+                        borderRadius: '8px',
                         color: '#ededed',
-                        fontSize: '32px',
+                        fontSize: '20px',
                         cursor: 'pointer',
-                        padding: '8px 12px',
-                        transition: 'color 0.2s ease',
-                        tapHighlightColor: 'transparent',
+                        transition: 'all 0.2s ease',
                         _hover: {
-                            color: '#2563eb',
+                            borderColor: '#7877c6',
+                            backgroundColor: '#1a1a1a',
                         }
                     }))}
                     aria-label="Previous week"
                 >
                     ‹
                 </button>
-                
-                    <div className={cx('week-label', css({
+                <div className={cx('week-range', css({
                     color: '#ededed',
                     fontSize: '18px',
                     fontWeight: '600',
                 }))}>
-                    {weekDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    {' - '}
-                    {weekDates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {formatMonthYear(weekDates[0], weekDates[6])}
                 </div>
-
                 <button
                     onClick={onNextWeek}
                     className={cx('nav-button', css({
-                        background: 'transparent',
-                        border: 'none',
+                        padding: '8px 16px',
+                        backgroundColor: 'transparent',
+                        border: '1px solid #333',
+                        borderRadius: '8px',
                         color: '#ededed',
-                        fontSize: '32px',
+                        fontSize: '20px',
                         cursor: 'pointer',
-                        padding: '8px 12px',
-                        transition: 'color 0.2s ease',
-                        tapHighlightColor: 'transparent',
+                        transition: 'all 0.2s ease',
                         _hover: {
-                            color: '#2563eb',
+                            borderColor: '#7877c6',
+                            backgroundColor: '#1a1a1a',
                         }
                     }))}
                     aria-label="Next week"
@@ -134,138 +177,179 @@ export default function WeeklyCalendar({
                 </button>
             </div>
 
-            {/* Calendar Grid */}
-            <div className={cx('calendar-grid', css({
+            {/* Week Grid */}
+            <div className={cx('week-grid', css({
                 display: 'grid',
-                gridTemplateColumns: 'repeat(7, 1fr)',
+                gridTemplateColumns: '1fr',
                 gap: '8px',
+                sm: {
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '10px',
+                },
+                md: {
+                    gridTemplateColumns: 'repeat(7, 1fr)',
+                    gap: '12px',
+                },
+                lg: {
+                    gap: '16px',
+                }
             }))}>
                 {weekDates.map((date) => {
                     const dateStr = formatDate(date);
                     const entry = getEntryForDate(dateStr);
                     const isToday = dateStr === today;
                     const isSelected = dateStr === selectedDate;
-                    const exerciseCount = entry?.exercises.length || 0;
+                    
+                    const dayExercises = entry?.exercises.map(entryEx => {
+                        const fullExercise = exercises.find(ex => ex.id === entryEx.id);
+                        return fullExercise ? { ...fullExercise, weight: entryEx.weight } : null;
+                    }).filter(Boolean) || [];
 
                     return (
                         <button
                             key={dateStr}
                             onClick={() => onDateSelect(dateStr)}
-                            className={cx('calendar-day', css({
-                                backgroundColor: isSelected ? '#2563eb' : '#1a1a1a',
-                                border: isToday ? '2px solid #2563eb' : '1px solid #333',
+                            className={cx('day-card', css({
+                                backgroundColor: isSelected ? '#1a1a1a' : '#0f0f0f',
+                                border: '2px solid',
+                                borderColor: isSelected ? '#7877c6' : isToday ? '#333' : '#1a1a1a',
                                 borderRadius: '12px',
-                                padding: '12px 8px',
+                                padding: '12px',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
-                                minHeight: '80px',
+                                textAlign: 'left',
+                                minHeight: '100px',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                tapHighlightColor: 'transparent',
+                                md: {
+                                    padding: '16px',
+                                    minHeight: '240px',
+                                },
                                 _hover: {
-                                    borderColor: '#2563eb',
-                                    transform: 'translateY(-2px)',
+                                    borderColor: '#7877c6',
+                                    backgroundColor: '#1a1a1a',
                                 }
                             }))}
                         >
-                            <div className={cx('day-name', css({
-                                color: isSelected ? '#fff' : '#999',
-                                fontSize: '11px',
-                                fontWeight: '500',
-                                textTransform: 'uppercase',
-                            }))}>
-                                {formatDayName(date)}
-                            </div>
-
-                            <div className={cx('day-number', css({
-                                color: isSelected ? '#fff' : '#ededed',
-                                fontSize: '18px',
-                                fontWeight: '600',
-                            }))}>
-                                {formatDayNumber(date)}
-                            </div>
-
-                            <div className={cx('day-info', css({
+                            {/* Day Header */}
+                            <div className={cx('day-header', css({
+                                marginBottom: '10px',
                                 display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '4px',
-                                minHeight: '24px',
+                                flexDirection: 'row',
+                                alignItems: 'baseline',
+                                gap: '8px',
+                                md: {
+                                    marginBottom: '14px',
+                                    flexDirection: 'column',
+                                    gap: '0',
+                                }
                             }))}>
-                                {entry?.isRestDay ? (
-                                    <span className={cx('rest-emoji', css({ fontSize: '24px' }))}>😴</span>
-                                ) : exerciseCount > 0 ? (
-                                    <div className={cx('exercises-preview', css({
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        width: '100%',
-                                    }))}>
-                                        <div className={cx('icons-container', css({
-                                            display: 'flex',
-                                            justifyContent: 'center',
-                                            flexWrap: 'wrap',
-                                            gap: '2px',
-                                        }))}>
-                                            {Array.from({ length: exerciseCount }).map((_, i) => (
-                                                <span 
-                                                    key={i}
-                                                    className={cx('flex-icon', css({
-                                                        fontSize: '16px',
-                                                        animationName: 'shake',
-                                                        animationTimingFunction: 'ease-in-out',
-                                                        animationIterationCount: 'infinite',
-                                                        animationDelay: `${i * 0.1}s`,
-                                                        // Increase shake intensity based on count
-                                                        animationDuration: `${Math.max(0.2, 0.5 - (exerciseCount * 0.05))}s`
-                                                    }))}
-                                                >
-                                                    💪
-                                                </span>
-                                            ))}
-                                        </div>
-                                        
-                                        {!isSelected && (
-                                            <div className={cx('titles-preview', css({
-                                                fontSize: '10px',
-                                                color: '#999',
-                                                textAlign: 'center',
-                                                width: '100%',
-                                                overflow: 'hidden',
-                                                display: '-webkit-box',
-                                                WebkitLineClamp: 3,
-                                                // @ts-ignore
-                                                WebkitBoxOrient: 'vertical',
-                                                lineHeight: '1.2',
-                                            }))}>
-                                                {entry?.exercises.map(ex => {
-                                                    const fullEx = exercises.find(e => e.id === ex.id);
-                                                    return fullEx ? fullEx.title.substring(0, 30) : '';
-                                                }).filter(Boolean).join(', ')}
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : null}
-
-                                {/* Mini indicators for vitamins/protein */}
-                                {(entry?.vitaminsTaken || entry?.proteinShake) && (
-                                    <div className={cx('indicators', css({
-                                        display: 'flex',
-                                        gap: '4px',
-                                        fontSize: '10px',
-                                    }))}>
-                                        {entry.vitaminsTaken && (
-                                            <span title="Vitamins">💊</span>
-                                        )}
-                                        {entry.proteinShake && (
-                                            <span title="Protein">🥤</span>
-                                        )}
-                                    </div>
-                                )}
+                                <div className={cx('day-number', css({
+                                    color: isToday ? '#7877c6' : '#ededed',
+                                    fontSize: '28px',
+                                    fontWeight: '700',
+                                    lineHeight: '1',
+                                    md: {
+                                        fontSize: '32px',
+                                        order: 2,
+                                    }
+                                }))}>
+                                    {formatDayNumber(date)}
+                                </div>
+                                <div className={cx('day-name', css({
+                                    color: '#999',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    letterSpacing: '0.5px',
+                                    md: {
+                                        fontSize: '11px',
+                                        marginBottom: '4px',
+                                        order: 1,
+                                    }
+                                }))}>
+                                    {formatDayName(date)}
+                                </div>
                             </div>
+
+                            {/* Rest Day Indicator */}
+                            {entry?.isRestDay && (
+                                <div className={cx('rest-indicator', css({
+                                    fontSize: '28px',
+                                    md: {
+                                        fontSize: '32px',
+                                    }
+                                }))}>
+                                    😴
+                                </div>
+                            )}
+
+                            {/* Exercise List */}
+                            {!entry?.isRestDay && dayExercises.length > 0 && (
+                                <div className={cx('exercise-list', css({
+                                    flex: 1,
+                                    marginBottom: '8px',
+                                    md: {
+                                        marginBottom: '12px',
+                                    }
+                                }))}>
+                                    {dayExercises.map((exercise: any, index: number) => (
+                                        <div
+                                            key={exercise.id}
+                                            className={cx('exercise-bullet', css({
+                                                color: '#ccc',
+                                                fontSize: '12px',
+                                                marginBottom: '6px',
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                gap: '6px',
+                                                lineHeight: '1.4',
+                                                md: {
+                                                    fontSize: '13px',
+                                                    marginBottom: '8px',
+                                                    gap: '8px',
+                                                }
+                                            }))}
+                                        >
+                                            <span className={css({ color: '#7877c6', flexShrink: 0, marginTop: '2px' })}>•</span>
+                                            <span 
+                                                style={{
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    display: '-webkit-box',
+                                                    WebkitLineClamp: 3,
+                                                    WebkitBoxOrient: 'vertical',
+                                                } as any}
+                                            >
+                                                {exercise.title}
+                                                {exercise.weight && (
+                                                    <span className={css({ color: '#7877c6', marginLeft: '4px', fontWeight: '600' })}>
+                                                        ({exercise.weight})
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Daily Tracking Icons */}
+                            {(entry?.vitaminsTaken || entry?.proteinShake) && (
+                                <div className={cx('tracking-icons', css({
+                                    display: 'flex',
+                                    gap: '6px',
+                                    marginTop: 'auto',
+                                    md: {
+                                        gap: '8px',
+                                    }
+                                }))}>
+                                    {entry.vitaminsTaken && (
+                                        <span className={css({ fontSize: '16px', md: { fontSize: '20px' } })} title="Vitamins">💊</span>
+                                    )}
+                                    {entry.proteinShake && (
+                                        <span className={css({ fontSize: '16px', md: { fontSize: '20px' } })} title="Protein">🥤</span>
+                                    )}
+                                </div>
+                            )}
                         </button>
                     );
                 })}
