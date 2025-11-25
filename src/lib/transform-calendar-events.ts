@@ -21,19 +21,16 @@ interface CalendarEvent {
 
 export async function transformCalendarEvents(
     events: CalendarEvent[], 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mhrSchedule: any[] = [], 
     year: string = '2025',
     mainTeamStats?: { record: string; rating: string }
 ) {
     const settings = await getSettings();
-    const { identifiers, teamLogo, teamName, mhrYear } = settings;
+    const { mhrYear } = settings;
     
     // Use mhrYear from settings if available, otherwise use the passed year parameter
     const effectiveYear = mhrYear || year;
-
-    // Extract age group from team name (e.g. "10U")
-    const ageGroupMatch = teamName.match(/(\d+U)/i);
-    const ageGroup = ageGroupMatch ? ageGroupMatch[1] : '';
 
     const schedule = [];
 
@@ -73,10 +70,13 @@ export async function transformCalendarEvents(
         const day = String(gameDate.getDate()).padStart(2, '0');
         const localDateStr = `${year}-${month}-${day}`;
 
-        // Try to match this calendar event with an MHR game to get the real game_nbr
+        // Try to match this calendar event with an MHR game to get the real game_nbr and scores
         let mhrGameNbr = gameId; // Default to hash ID
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let matchedGame: any = null;
         if (mhrSchedule && Array.isArray(mhrSchedule)) {
-            const matchedGame = mhrSchedule.find((mhrGame: any) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            matchedGame = mhrSchedule.find((mhrGame: any) => {
                 // Match by date
                 const mhrGameDate = mhrGame.game_date_format || mhrGame.game_date;
                 if (!mhrGameDate) return false;
@@ -115,6 +115,9 @@ export async function transformCalendarEvents(
             }
         }
 
+
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const gameEntry: any = {
             game_nbr: mhrGameNbr, // Use MHR game_nbr if matched, otherwise hash ID
             game_date_format: localDateStr,
@@ -125,8 +128,8 @@ export async function transformCalendarEvents(
             visitor_team_name: isHomeGame ? (mhrData?.name || opponent) : settings.teamName,
             home_team_logo: isHomeGame ? settings.teamLogo : (mhrData?.logo || ''),
             visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : settings.teamLogo,
-            home_team_score: 0, // Default
-            visitor_team_score: 0, // Default
+            home_team_score: matchedGame?.home_team_score ?? 0, // Use matched score or default to 0
+            visitor_team_score: matchedGame?.visitor_team_score ?? 0, // Use matched score or default to 0
             rink_name: event.location || 'TBD',
             game_type: 'Regular Season',
             // Legacy fields for backward compatibility
@@ -165,20 +168,28 @@ function parseEventSummary(summary: string, identifiers: string[]): { opponent: 
     let isHome = true; // Default to home if unsure? No, better to be strict.
 
     if (vsMatch) {
-        isHome = true;
+        // "vs" means: [Home] vs [Away]
         const parts = cleanSummary.split(vsMatch[0]);
         if (isUs(parts[0], identifiers)) {
+            // We are on the left (home)
             opponent = parts[1];
+            isHome = true;
         } else {
+            // Opponent is on the left (home), we are away
             opponent = parts[0];
+            isHome = false;
         }
     } else if (atMatch) {
-        isHome = false;
+        // "@" or "at" means: [Away] @ [Home]
         const parts = cleanSummary.split(atMatch[0]);
         if (isUs(parts[0], identifiers)) {
+            // We are on the left (away)
             opponent = parts[1];
+            isHome = false;
         } else {
+            // Opponent is on the left (away), we are home
             opponent = parts[0];
+            isHome = true;
         }
     } else if (hyphenMatch) {
         const parts = cleanSummary.split(hyphenMatch[0]);

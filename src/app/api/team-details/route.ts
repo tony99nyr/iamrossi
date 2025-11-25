@@ -1,5 +1,9 @@
 import { NextResponse, NextRequest } from 'next/server';
-import puppeteer from 'puppeteer';
+import { chromium } from 'playwright';
+
+// Force Node.js runtime (required for Playwright browser automation)
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -10,17 +14,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Team ID is required' }, { status: 400 });
   }
 
+  let browser;
   try {
-    const browser = await puppeteer.launch({
+    browser = await chromium.launch({
       headless: true,
-      executablePath: '/usr/bin/google-chrome-stable',
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
     const page = await browser.newPage();
 
     // Navigate to team page
     await page.goto(`https://myhockeyrankings.com/team-info/${teamId}/${year}`, {
-      waitUntil: 'networkidle2',
+      waitUntil: 'networkidle',
       timeout: 30000,
     });
 
@@ -54,10 +58,13 @@ export async function GET(request: NextRequest) {
       return { record: recordText, goals: goalsText, rating };
     });
 
-    await browser.close();
     return NextResponse.json(details);
   } catch (error) {
     console.error('Error fetching team details:', error);
     return NextResponse.json({ error: 'Failed to fetch team details' }, { status: 500 });
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }

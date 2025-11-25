@@ -1,12 +1,13 @@
 'use client';
 
 import { css, cx } from '@styled-system/css';
+import NextImage from 'next/image';
 
-interface TeamDetails {
-    record?: string;
-    goals?: string;
-    rating?: number;
-}
+// interface TeamDetails {
+//     record?: string;
+//     goals?: string;
+//     rating?: number;
+// }
 
 export interface Game {
     game_date: string;
@@ -58,28 +59,28 @@ const cardStyle = css({
     overflow: 'hidden',
 });
 
-const badgeStyle = css({
-    position: 'absolute',
-    top: 0,
-    right: { base: '1rem', sm: '2rem' },
-    padding: '0.5rem 1.5rem',
-    fontSize: '0.75rem',
-    fontWeight: '700',
-    letterSpacing: '1px',
-    borderRadius: '0 0 8px 8px',
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-    zIndex: 1,
-});
+// const badgeStyle = css({
+//     position: 'absolute',
+//     top: 0,
+//     right: { base: '1rem', sm: '2rem' },
+//     padding: '0.5rem 1.5rem',
+//     fontSize: '0.75rem',
+//     fontWeight: '700',
+//     letterSpacing: '1px',
+//     borderRadius: '0 0 8px 8px',
+//     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+//     zIndex: 1,
+// });
 
-const homeBadgeStyle = css({
-    background: 'linear-gradient(135deg, #dc2626, #991b1b)',
-    color: '#fff',
-});
+// const homeBadgeStyle = css({
+//     background: 'linear-gradient(135deg, #dc2626, #991b1b)',
+//     color: '#fff',
+// });
 
-const awayBadgeStyle = css({
-    background: 'linear-gradient(135deg, #dc2626, #991b1b)',
-    color: '#fff',
-});
+// const awayBadgeStyle = css({
+//     background: 'linear-gradient(135deg, #dc2626, #991b1b)',
+//     color: '#fff',
+// });
 
 const titleStyle = css({
     fontSize: '0.9rem',
@@ -199,34 +200,34 @@ const rinkNameStyle = css({
 
 
 
-const loadingStyle = css({
-    textAlign: 'center',
-    color: '#888',
-    fontSize: '0.9rem',
-    fontStyle: 'italic',
-});
+// const loadingStyle = css({
+//     textAlign: 'center',
+//     color: '#888',
+//     fontSize: '0.9rem',
+//     fontStyle: 'italic',
+// });
 
-const teamStatsStyle = css({
-    display: 'flex',
-    gap: '2rem',
-    justifyContent: 'space-around',
-});
+// const teamStatsStyle = css({
+//     display: 'flex',
+//     gap: '2rem',
+//     justifyContent: 'space-around',
+// });
 
-const teamStatStyle = css({
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-});
+// const teamStatStyle = css({
+//     flex: 1,
+//     display: 'flex',
+//     flexDirection: 'column',
+//     gap: '0.5rem',
+// });
 
-const statTeamNameStyle = css({
-    fontWeight: '600',
-    fontSize: '0.9rem',
-    color: '#fff',
-    textDecoration: 'none',
-    transition: 'color 0.2s ease',
-    marginBottom: '0.25rem',
-});
+// const statTeamNameStyle = css({
+//     fontWeight: '600',
+//     fontSize: '0.9rem',
+//     color: '#fff',
+//     textDecoration: 'none',
+//     transition: 'color 0.2s ease',
+//     marginBottom: '0.25rem',
+// });
 
 const statValueStyle = css({
     fontSize: '0.85rem',
@@ -238,20 +239,20 @@ const statLabelStyle = css({
     fontWeight: '500',
 });
 
-const statDividerStyle = css({
-    width: '1px',
-    background: 'rgba(255, 255, 255, 0.1)',
-});
+// const statDividerStyle = css({
+//     width: '1px',
+//     background: 'rgba(255, 255, 255, 0.1)',
+// });
 
-export default function GameCard({ title, game, isHome }: GameCardProps) {
+export default function GameCard({ title, game }: GameCardProps) {
     const year = new Date().getFullYear();
 
     // For the opponent team, we use the data from schedule.json
     // The schedule already has opponent_record and opponent_rating populated
-    const opponentDetails: TeamDetails = {
-        record: game?.opponent_record,
-        rating: game?.opponent_rating ? parseFloat(game.opponent_rating) : undefined,
-    };
+    // const opponentDetails: TeamDetails = {
+    //     record: game?.opponent_record,
+    //     rating: game?.opponent_rating ? parseFloat(game.opponent_rating) : undefined,
+    // };
 
     if (!game) {
         return (
@@ -279,12 +280,12 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                                 rel="noopener noreferrer"
                                 className={cx('team-link', teamLinkStyle)}
                             >
-                                {game.visitor_team_logo && <img src={game.visitor_team_logo} alt="Visitor Logo" className={logoStyle} />}
+                                {game.visitor_team_logo && <NextImage src={game.visitor_team_logo} alt="Visitor Logo" width={100} height={100} className={logoStyle} unoptimized />}
                                 <span className={teamNameStyle}>{game.visitor_team_name}</span>
                             </a>
                         ) : (
                             <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
-                                {game.visitor_team_logo && <img src={game.visitor_team_logo} alt="Visitor Logo" className={cx('team-logo', logoStyle)} />}
+                                {game.visitor_team_logo && <NextImage src={game.visitor_team_logo} alt="Visitor Logo" width={100} height={100} className={cx('team-logo', logoStyle)} unoptimized />}
                                 <span className={cx('team-name', teamNameStyle)}>{game.visitor_team_name}</span>
                             </div>
                         )}
@@ -310,12 +311,12 @@ export default function GameCard({ title, game, isHome }: GameCardProps) {
                                 rel="noopener noreferrer"
                                 className={cx('team-link', teamLinkStyle)}
                             >
-                                {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={cx('team-logo', logoStyle)} />}
+                                {game.home_team_logo && <NextImage src={game.home_team_logo} alt="Home Logo" width={100} height={100} className={cx('team-logo', logoStyle)} unoptimized />}
                                 <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </a>
                         ) : (
                             <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
-                                {game.home_team_logo && <img src={game.home_team_logo} alt="Home Logo" className={cx('team-logo', logoStyle)} />}
+                                {game.home_team_logo && <NextImage src={game.home_team_logo} alt="Home Logo" width={100} height={100} className={cx('team-logo', logoStyle)} unoptimized />}
                                 <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </div>
                         )}

@@ -90,7 +90,7 @@ export default function Home() {
                             <Link href="/tools/next-game">
                                 <strong>Next Game</strong>
                             </Link>
-                            : Track my son's hockey schedule.
+                            : Track my son&apos;s hockey schedule.
                         </li>
                         <li>
                             <Link href="/tools/knee-rehab">

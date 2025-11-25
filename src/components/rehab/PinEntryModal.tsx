@@ -5,10 +5,9 @@ import { css, cx } from '@styled-system/css';
 
 interface PinEntryModalProps {
     onSuccess: (token: string) => void;
-    onCancel?: () => void;
 }
 
-export default function PinEntryModal({ onSuccess, onCancel }: PinEntryModalProps) {
+export default function PinEntryModal({ onSuccess }: PinEntryModalProps) {
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
     const [remainingAttempts, setRemainingAttempts] = useState(3);

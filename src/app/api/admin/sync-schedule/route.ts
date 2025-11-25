@@ -3,8 +3,17 @@ import { fetchCalendarEvents } from '@/lib/fetch-calendar';
 import { transformCalendarEvents } from '@/lib/transform-calendar-events';
 import { fetchMHRSchedule, scrapeTeamDetails } from '@/lib/mhr-service';
 import { getSettings, setSchedule, setMHRSchedule } from '@/lib/kv';
+import { verifyAdminAuth } from '@/lib/auth';
+
+// Force Node.js runtime (required for Playwright browser automation in mhr-service)
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  // Verify admin authentication
+  if (!verifyAdminAuth(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     // 1. Get Settings from KV
     const settings = await getSettings();
@@ -42,6 +51,7 @@ export async function POST(request: NextRequest) {
         count: schedule.length 
     });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('Sync failed:', error);
     return NextResponse.json({ error: error.message || 'Sync failed' }, { status: 500 });

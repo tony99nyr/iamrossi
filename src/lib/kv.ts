@@ -1,73 +1,51 @@
 import { createClient } from 'redis';
+import type { Exercise, RehabEntry, Settings, Game } from '@/types';
 
 // Create Redis client
 const redis = createClient({
   url: process.env.REDIS_URL
 });
 
-// Connect to Redis (lazy connection)
+// Connect to Redis (lazy connection with retry logic)
 let isConnected = false;
-async function ensureConnected() {
-  if (!isConnected) {
-    await redis.connect();
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+
+async function ensureConnected(retries = 0): Promise<void> {
+  if (isConnected) {
+    return;
+  }
+
+  try {
+    if (!redis.isOpen) {
+      await redis.connect();
+    }
     isConnected = true;
+  } catch (error) {
+    console.error(`Redis connection attempt ${retries + 1} failed:`, error);
+
+    if (retries < MAX_RETRIES) {
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retries + 1)));
+      return ensureConnected(retries + 1);
+    }
+
+    throw new Error(`Failed to connect to Redis after ${MAX_RETRIES} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
-// Type definitions
-export interface Exercise {
-  id: string;
-  title: string;
-  description: string;
-  createdAt: string;
-}
+// Handle Redis connection errors
+redis.on('error', (err) => {
+  console.error('Redis client error:', err);
+  isConnected = false;
+});
 
-export interface RehabEntry {
-  id: string;
-  date: string;
-  exercises: { id: string; weight?: string }[];
-  isRestDay: boolean;
-  vitaminsTaken: boolean;
-  proteinShake: boolean;
-}
+redis.on('end', () => {
+  console.warn('Redis connection closed');
+  isConnected = false;
+});
 
-export interface Settings {
-  teamName: string;
-  identifiers: string[];
-  teamLogo: string;
-  mhrTeamId?: string;
-  mhrYear?: string;
-  aliases?: Record<string, string>;
-}
-
-export interface Game {
-  game_nbr?: string | number;
-  game_date: string;
-  game_time: string;
-  game_date_format?: string;
-  game_date_format_pretty?: string;
-  game_time_format?: string;
-  game_time_format_pretty?: string;
-  home_team_name: string;
-  visitor_team_name: string;
-  home_team_logo?: string;
-  visitor_team_logo?: string;
-  home_team_score?: number;
-  visitor_team_score?: number;
-  rink_name: string;
-  game_type?: string;
-  opponent_record?: string;
-  opponent_rating?: string;
-  home_team_record?: string;
-  home_team_rating?: string;
-  visitor_team_record?: string;
-  visitor_team_rating?: string;
-  game_home_team?: number | string;
-  game_visitor_team?: number | string;
-  highlightsUrl?: string;
-  fullGameUrl?: string;
-  [key: string]: any; // Allow additional properties
-}
+// Re-export types for backward compatibility
+export type { Exercise, RehabEntry, Settings, Game };
 
 // KV Keys
 const KV_KEYS = {

@@ -36,6 +36,19 @@ yarn-error.log*
 # vercel
 .vercel
 
+# large assets (should be hosted externally)
+/public/*.mp4
+/public/*.mov
+/public/*.avi
+
+# data files (after Redis migration)
+/src/data/schedule.json
+/src/data/mhr-schedule.json
+
+# deprecated scripts
+scrape_puppeteer.js
+scripts/mhr-scraper.js
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

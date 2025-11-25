@@ -1,9 +1,9 @@
-import { headers } from 'next/headers';
 import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
 import youtubeVideos from '@/data/youtube-videos.json';
 import { getSchedule, getMHRSchedule, getSettings } from '@/lib/kv';
+import { Game } from '@/types';
 
 // Force dynamic rendering since we're reading from KV
 export const dynamic = 'force-dynamic';
@@ -43,21 +43,21 @@ export const metadata: Metadata = {
     }
 };
 
-async function triggerSync() {
-    try {
-        const headersList = await headers();
-        const host = headersList.get('host') || 'localhost:3000';
-        const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+// async function triggerSync() {
+//     try {
+//         const headersList = await headers();
+//         const host = headersList.get('host') || 'localhost:3000';
+//         const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
         
-        // Fire and forget sync
-        fetch(`${protocol}://${host}/api/admin/sync-schedule`, { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        }).catch(err => console.error('Background sync failed:', err));
-    } catch (error) {
-        console.error('Failed to trigger sync:', error);
-    }
-}
+//         // Fire and forget sync
+//         fetch(`${protocol}://${host}/api/admin/sync-schedule`, { 
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' }
+//         }).catch(err => console.error('Background sync failed:', err));
+//     } catch (error) {
+//         console.error('Failed to trigger sync:', error);
+//     }
+// }
 
 // Note: Schedule staleness checking removed since KV is always fresh
 // If you need to trigger periodic syncs, implement a cron job or webhook
@@ -79,10 +79,10 @@ export default async function NextGamePage() {
     
     // Filter for future games
     const now = new Date();
-    const futureGames = schedule.filter((game: any) => {
+    const futureGames = schedule.filter((game: Game) => {
         const gameDateTime = new Date(`${game.game_date_format}T${game.game_time_format}`);
         return gameDateTime >= now;
-    }).sort((a: any, b: any) => {
+    }).sort((a: Game, b: Game) => {
         const dateA = new Date(`${a.game_date_format}T${a.game_time_format}`);
         const dateB = new Date(`${b.game_date_format}T${b.game_time_format}`);
         return dateA.getTime() - dateB.getTime();
@@ -90,7 +90,7 @@ export default async function NextGamePage() {
 
     // Filter for past games from MHR (current season only: 2025-2026)
     const currentSeasonStart = new Date('2025-08-01'); // Season typically starts in August
-    const pastGames = mhrSchedule.filter((game: any) => {
+    const pastGames = mhrSchedule.filter((game: Game) => {
         const gameDate = new Date(game.game_date_format || game.game_date);
         
         // Must be from current season (after Aug 1, 2024)
@@ -100,7 +100,7 @@ export default async function NextGamePage() {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         return gameDate < today;
-    }).sort((a: any, b: any) => {
+    }).sort((a: Game, b: Game) => {
         // Sort descending (most recent first)
         const dateA = new Date(a.game_date_format || a.game_date);
         const dateB = new Date(b.game_date_format || b.game_date);

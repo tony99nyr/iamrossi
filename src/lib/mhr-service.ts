@@ -96,6 +96,7 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
     }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchMHRSchedule(teamId: string, year: string): Promise<any[]> {
     console.log(`Fetching MHR schedule for Team ID: ${teamId}, Year: ${year}`);
     
@@ -140,6 +141,7 @@ export async function fetchMHRSchedule(teamId: string, year: string): Promise<an
             return await response.json();
         }, [teamId, year, token] as [string, string, string]);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return scheduleData as any[];
 
     } catch (error) {
@@ -173,12 +175,14 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
         const results = await res.json();
         // Find the best match. The search returns an array.
         // We prioritize "team" kind.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let teams = results.filter((r: any) => r.kind === 'team');
         
         if (teams.length === 0) return null;
 
         // If ageGroup is provided, filter by it
         if (ageGroup) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const ageGroupTeams = teams.filter((t: any) => t.name.includes(ageGroup));
             if (ageGroupTeams.length > 0) {
                 teams = ageGroupTeams;
@@ -193,6 +197,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
             // MHR names are like "Team Name 10U AA"
             
             const levelRegex = new RegExp(`\\b${preferredLevel}\\b`, 'i');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const levelMatch = teams.find((t: any) => levelRegex.test(t.name));
             
             if (levelMatch) {
@@ -208,6 +213,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
         // If preferredLevel is AA, filter out single-A teams to avoid mismatches
         if (preferredLevel === 'AA' && teams.length > 1) {
             // Filter out teams that are single-A (not AA or AAA)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const nonSingleATeams = teams.filter((t: any) => {
                 const name = t.name;
                 // Check if it has AA or AAA (good)
@@ -221,6 +227,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
                 teams = nonSingleATeams;
                 
                 // If we have both AA and AAA, prioritize AAA (higher level)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const aaaTeam = teams.find((t: any) => /\bAAA\b/i.test(t.name));
                 if (aaaTeam) {
                     console.log(`[MHR] Found AAA team (higher level): ${aaaTeam.name}`);
@@ -250,6 +257,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
     }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getMHRTeamData(opponentName: string, year: string, ageGroup: string = '10U', knownOpponents: any[] = []): Promise<MHRTeamData | null> {
     // Resolve aliases first
     const settings = await getSettingsFromKV();
@@ -276,6 +284,7 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
     const normalizedOpponent = (resolvedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     if (!Array.isArray(knownOpponents)) return null;
     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const knownMatch = knownOpponents.find((game: any) => {
         if (!game || !game.opponent_name) return false;
         const gameOpponent = game.opponent_name.toLowerCase().replace(/[^a-z0-9]/g, '');

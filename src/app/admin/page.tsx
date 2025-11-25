@@ -28,22 +28,22 @@ const containerStyle = css({
     },
 });
 
-const titleStyle = css({
-    fontSize: '3rem',
-    marginBottom: '3rem',
-    textAlign: 'center',
-    fontWeight: '800',
-    background: 'linear-gradient(135deg, #ffffff 0%, #7877c6 50%, #ff8a65 100%)',
-    backgroundClip: 'text',
-    color: 'transparent',
-    letterSpacing: '-0.03em',
-    position: 'relative',
-    zIndex: 1,
-    sm: {
-        fontSize: '2rem',
-        marginBottom: '2rem',
-    },
-});
+// const titleStyle = css({
+//     fontSize: '3rem',
+//     marginBottom: '3rem',
+//     textAlign: 'center',
+//     fontWeight: '800',
+//     background: 'linear-gradient(135deg, #ffffff 0%, #7877c6 50%, #ff8a65 100%)',
+//     backgroundClip: 'text',
+//     color: 'transparent',
+//     letterSpacing: '-0.03em',
+//     position: 'relative',
+//     zIndex: 1,
+//     sm: {
+//         fontSize: '2rem',
+//         marginBottom: '2rem',
+//     },
+// });
 
 const formStyle = css({
     width: '100%',
@@ -65,16 +65,16 @@ const formStyle = css({
     },
 });
 
-const mainStyle = css({
-    width: '100%',
-    maxWidth: '900px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2rem',
-    position: 'relative',
-    zIndex: 1,
-    animation: 'fadeIn 0.5s ease-out',
-});
+// const mainStyle = css({
+//     width: '100%',
+//     maxWidth: '900px',
+//     display: 'flex',
+//     flexDirection: 'column',
+//     gap: '2rem',
+//     position: 'relative',
+//     zIndex: 1,
+//     animation: 'fadeIn 0.5s ease-out',
+// });
 
 const inputStyle = css({
     padding: '1rem 1.25rem',
@@ -122,72 +122,72 @@ const buttonStyle = css({
     },
 });
 
-const sectionStyle = css({
-    background: 'rgba(25, 25, 30, 0.6)',
-    backdropFilter: 'blur(20px)',
-    padding: '2.5rem',
-    borderRadius: '20px',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    '&:hover': {
-        borderColor: 'rgba(255, 255, 255, 0.15)',
-        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)',
-    },
-    '& h2': {
-        fontSize: '1.5rem',
-        marginBottom: '2rem',
-        color: '#ffffff',
-        fontWeight: '700',
-        letterSpacing: '-0.02em',
-        paddingBottom: '1rem',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-    },
-    sm: {
-        padding: '2rem 1.5rem',
-    },
-});
+// const sectionStyle = css({
+//     background: 'rgba(25, 25, 30, 0.6)',
+//     backdropFilter: 'blur(20px)',
+//     padding: '2.5rem',
+//     borderRadius: '20px',
+//     border: '1px solid rgba(255, 255, 255, 0.1)',
+//     boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+//     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+//     '&:hover': {
+//         borderColor: 'rgba(255, 255, 255, 0.15)',
+//         boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)',
+//     },
+//     '& h2': {
+//         fontSize: '1.5rem',
+//         marginBottom: '2rem',
+//         color: '#ffffff',
+//         fontWeight: '700',
+//         letterSpacing: '-0.02em',
+//         paddingBottom: '1rem',
+//         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+//     },
+//     sm: {
+//         padding: '2rem 1.5rem',
+//     },
+// });
 
-const fieldStyle = css({
-    marginBottom: '1.5rem',
-    '& label': {
-        display: 'block',
-        marginBottom: '0.75rem',
-        fontSize: '0.9rem',
-        color: 'rgba(255, 255, 255, 0.8)',
-        fontWeight: '600',
-        letterSpacing: '0.02em',
-    },
-});
+// const fieldStyle = css({
+//     marginBottom: '1.5rem',
+//     '& label': {
+//         display: 'block',
+//         marginBottom: '0.75rem',
+//         fontSize: '0.9rem',
+//         color: 'rgba(255, 255, 255, 0.8)',
+//         fontWeight: '600',
+//         letterSpacing: '0.02em',
+//     },
+// });
 
-const syncButtonStyle = css({
-    width: '100%',
-    padding: '1.25rem',
-    background: 'linear-gradient(135deg, #7877c6 0%, #5e5da8 100%)',
-    color: '#ffffff',
-    border: 'none',
-    fontFamily: 'inherit',
-    fontWeight: '600',
-    cursor: 'pointer',
-    borderRadius: '12px',
-    fontSize: '1rem',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    marginTop: '1.5rem',
-    boxShadow: '0 4px 12px rgba(120, 119, 198, 0.3)',
-    '&:hover:not(:disabled)': {
-        transform: 'translateY(-2px)',
-        boxShadow: '0 6px 20px rgba(120, 119, 198, 0.4)',
-        background: 'linear-gradient(135deg, #8887d7 0%, #6f6eb9 100%)',
-    },
-    '&:active:not(:disabled)': {
-        transform: 'translateY(0)',
-    },
-    '&:disabled': {
-        opacity: 0.5,
-        cursor: 'not-allowed',
-        transform: 'none',
-    },
-});
+// const syncButtonStyle = css({
+//     width: '100%',
+//     padding: '1.25rem',
+//     background: 'linear-gradient(135deg, #7877c6 0%, #5e5da8 100%)',
+//     color: '#ffffff',
+//     border: 'none',
+//     fontFamily: 'inherit',
+//     fontWeight: '600',
+//     cursor: 'pointer',
+//     borderRadius: '12px',
+//     fontSize: '1rem',
+//     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+//     marginTop: '1.5rem',
+//     boxShadow: '0 4px 12px rgba(120, 119, 198, 0.3)',
+//     '&:hover:not(:disabled)': {
+//         transform: 'translateY(-2px)',
+//         boxShadow: '0 6px 20px rgba(120, 119, 198, 0.4)',
+//         background: 'linear-gradient(135deg, #8887d7 0%, #6f6eb9 100%)',
+//     },
+//     '&:active:not(:disabled)': {
+//         transform: 'translateY(0)',
+//     },
+//     '&:disabled': {
+//         opacity: 0.5,
+//         cursor: 'not-allowed',
+//         transform: 'none',
+//     },
+// });
 
 const messageStyle = css({
     marginTop: '1.5rem',
@@ -201,11 +201,11 @@ const messageStyle = css({
     animation: 'slideIn 0.3s ease-out',
 });
 
-const placeholderStyle = css({
-    marginTop: '1rem',
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: '0.95rem',
-});
+// const placeholderStyle = css({
+//     marginTop: '1rem',
+//     color: 'rgba(255, 255, 255, 0.5)',
+//     fontSize: '0.95rem',
+// });
 
 export default function AdminPage() {
     const [secret, setSecret] = useState('');
@@ -239,19 +239,31 @@ export default function AdminPage() {
                 setMhrTeamId(data.mhrTeamId || '');
                 setMhrYear(data.mhrYear || '');
             }
-        } catch (error) {
-            console.error('Failed to fetch settings', error);
+        } catch (_error) {
+            console.error('Failed to fetch settings', _error);
         }
     };
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (secret === 'secret-token') {
-            setIsAuthenticated(true);
-            sessionStorage.setItem('admin_auth', 'true');
-            fetchSettings();
-        } else {
-            alert('Invalid token');
+        try {
+            const res = await fetch('/api/admin/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ secret }),
+            });
+
+            if (res.ok) {
+                setIsAuthenticated(true);
+                sessionStorage.setItem('admin_auth', 'true');
+                sessionStorage.setItem('admin_secret', secret);
+                fetchSettings();
+            } else {
+                alert('Invalid token');
+            }
+        } catch (error) {
+            alert('Authentication failed');
+            console.error('Login error:', error);
         }
     };
 
@@ -260,12 +272,17 @@ export default function AdminPage() {
         setSettingsMessage('Saving...');
         try {
             const idList = identifiers.split(',').map(s => s.trim()).filter(Boolean);
+            const adminSecret = sessionStorage.getItem('admin_secret');
+
             const res = await fetch('/api/admin/settings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    teamName, 
-                    identifiers: idList, 
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${adminSecret}`,
+                },
+                body: JSON.stringify({
+                    teamName,
+                    identifiers: idList,
                     teamLogo,
                     mhrTeamId,
                     mhrYear
@@ -274,9 +291,10 @@ export default function AdminPage() {
             if (res.ok) {
                 setSettingsMessage('Settings saved successfully!');
             } else {
-                setSettingsMessage('Failed to save settings.');
+                const data = await res.json();
+                setSettingsMessage(data.error || 'Failed to save settings.');
             }
-        } catch (error) {
+        } catch {
             setSettingsMessage('Error saving settings.');
         }
     };
@@ -286,9 +304,14 @@ export default function AdminPage() {
         setSyncMessage('Syncing calendar... this may take a moment...');
         setGameCount(null);
         try {
+            const adminSecret = sessionStorage.getItem('admin_secret');
+
             const res = await fetch('/api/admin/sync-schedule', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${adminSecret}`,
+                },
                 body: JSON.stringify({}),
             });
             const data = await res.json();
@@ -301,7 +324,7 @@ export default function AdminPage() {
                     console.error('Sync error details:', data.details);
                 }
             }
-        } catch (error) {
+        } catch {
             setSyncMessage('Error: Failed to connect to server');
         } finally {
             setIsSyncing(false);
@@ -336,6 +359,7 @@ export default function AdminPage() {
                     <button onClick={() => {
                         setIsAuthenticated(false);
                         sessionStorage.removeItem('admin_auth');
+                        sessionStorage.removeItem('admin_secret');
                     }} className={logoutButtonStyle}>Logout</button>
                 </div>
 
@@ -365,7 +389,7 @@ export default function AdminPage() {
                                 placeholder="e.g. Black, Jr Canes, Carolina"
                             />
                             <small style={{ display: 'block', marginTop: '0.5rem', color: '#666' }}>
-                                Keywords used to identify "Us" in calendar events (e.g. "Black" for 10U Black).
+                                Keywords used to identify &quot;Us&quot; in calendar events (e.g. &quot;Black&quot; for 10U Black).
                             </small>
                         </div>
 

@@ -1,3 +1,4 @@
+import { head } from '@vercel/blob';
 import { css, cx } from '@styled-system/css';
 
 const containerStyle = css({
@@ -28,25 +29,27 @@ const videoStyle = css({
     zIndex: -1,
 });
 
-const contentStyle = css({
-    textAlign: 'center',
-    zIndex: 1,
-    textShadow: '0 2px 4px rgba(0, 0, 0, 0.8)',
-    '& h1': {
-        fontSize: '5rem',
-        margin: 0,
-    },
-    '& p': {
-        fontSize: '2rem',
-        margin: 0,
-    },
-});
+const VIDEO_BLOB_PATH = process.env.RICK_ROLL_BLOB_PATH ?? 'rick.mp4';
 
-export default function NotFound() {
+async function resolveVideoSource() {
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+
+    if (!token) {
+        throw new Error('BLOB_READ_WRITE_TOKEN is required to load the 404 video from Vercel Blob.');
+    }
+
+    const { downloadUrl } = await head(VIDEO_BLOB_PATH, { token });
+
+    return downloadUrl;
+}
+
+export default async function NotFound() {
+    const videoSrc = await resolveVideoSource();
+
     return (
         <div className={cx('not-found-page', containerStyle)}>
             <video autoPlay loop muted playsInline className={videoStyle}>
-                <source src="/rick.mp4" type="video/mp4" />
+                <source src={videoSrc} type="video/mp4" />
                 Your browser does not support the video tag.
             </video>
         </div>

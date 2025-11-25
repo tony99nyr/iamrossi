@@ -33,9 +33,7 @@ interface KneeRehabClientProps {
     initialEntries: RehabEntry[];
 }
 
-function formatDate(date: Date): string {
-    return date.toISOString().split('T')[0];
-}
+
 
 export default function KneeRehabClient({ 
     initialExercises, 
@@ -52,14 +50,13 @@ export default function KneeRehabClient({
     // PIN authentication state
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [showPinModal, setShowPinModal] = useState(false);
-    const [authToken, setAuthToken] = useState<string | null>(null);
     const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
 
     // Check for existing auth cookie on mount
     useEffect(() => {
         const checkAuth = async () => {
             try {
-                const response = await fetch('/api/rehab/entries');
+                await fetch('/api/rehab/entries');
                 // If we can read, we're good. Auth is only needed for mutations.
                 setIsAuthenticated(true);
             } catch (error) {
@@ -105,8 +102,8 @@ export default function KneeRehabClient({
         }
     };
 
-    const handlePinSuccess = (token: string) => {
-        setAuthToken(token);
+    const handlePinSuccess = () => {
+        // setAuthToken(token); // Unused
         setIsAuthenticated(true);
         setShowPinModal(false);
         

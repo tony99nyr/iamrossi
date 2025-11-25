@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import { useState, useRef, KeyboardEvent } from 'react';
 import { css, cx } from '@styled-system/css';
 import { searchExercises } from '@/utils/exerciseSearch';
 
@@ -33,9 +33,9 @@ export default function SmartAutocomplete({
     const filteredExercises = searchExercises(query, exercises);
     const showCreateOption = query.trim().length > 0 && filteredExercises.length === 0;
 
-    useEffect(() => {
-        setSelectedIndex(0);
-    }, [query]);
+    // useEffect(() => {
+    //     setSelectedIndex(0);
+    // }, [query]);
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (showCreateForm) return;
@@ -86,7 +86,10 @@ export default function SmartAutocomplete({
                 ref={inputRef}
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                    setQuery(e.target.value);
+                    setSelectedIndex(0);
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder}
                 className={cx('autocomplete-input', css({
@@ -175,7 +178,7 @@ export default function SmartAutocomplete({
                                 }
                             }))}
                         >
-                            + Create "{query}"
+                            + Create &quot;{query}&quot;
                         </div>
                     )}
 

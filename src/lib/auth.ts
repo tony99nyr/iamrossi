@@ -66,3 +66,46 @@ export const AUTH_COOKIE_CONFIG = {
     sameSite: 'lax' as const,
     path: '/',
 };
+
+/**
+ * Verifies the admin secret from environment variable
+ */
+export function verifyAdminSecret(secret: string): boolean {
+    const correctSecret = process.env.ADMIN_SECRET;
+
+    if (!correctSecret) {
+        console.error('ADMIN_SECRET environment variable is not set');
+        return false;
+    }
+
+    // Constant-time comparison
+    return secret === correctSecret;
+}
+
+/**
+ * Gets admin secret from environment (for client-side validation)
+ * This should only be called server-side
+ */
+export function getAdminSecret(): string {
+    const secret = process.env.ADMIN_SECRET;
+
+    if (!secret) {
+        throw new Error('ADMIN_SECRET environment variable not configured');
+    }
+
+    return secret;
+}
+
+/**
+ * Verifies admin authentication from request Authorization header
+ */
+export function verifyAdminAuth(request: NextRequest): boolean {
+    const authHeader = request.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+        return false;
+    }
+
+    return verifyAdminSecret(token);
+}

@@ -6,9 +6,11 @@ import { AnimatedLogo } from '@/components/AnimatedLogo';
 import { ThunderstormBackground } from '@/components/ThunderstormBackground';
 import { css, cx } from '@styled-system/css';
 
+import { Game } from '@/types';
+
 interface NextGameClientProps {
-    futureGames: any[];
-    pastGames?: any[];
+    futureGames: Game[];
+    pastGames?: Game[];
     settings: { mhrTeamId: string; mhrYear: string };
 }
 
@@ -71,16 +73,16 @@ const descriptionStyle = css({
     animation: 'fadeIn 1s ease-out 0.7s backwards',
 });
 
-const headerStyle = css({
-    fontSize: '3rem',
-    marginBottom: '3rem',
-    textAlign: 'center',
-    fontWeight: '800',
-    background: 'linear-gradient(to right, #fff, #888)',
-    backgroundClip: 'text',
-    color: 'transparent',
-    letterSpacing: '-0.05em',
-});
+// const headerStyle = css({
+//     fontSize: '3rem',
+//     marginBottom: '3rem',
+//     textAlign: 'center',
+//     fontWeight: '800',
+//     background: 'linear-gradient(to right, #fff, #888)',
+//     backgroundClip: 'text',
+//     color: 'transparent',
+//     letterSpacing: '-0.05em',
+// });
 
 const fullScheduleStyle = css({
     marginTop: '4rem',
@@ -96,13 +98,13 @@ const fullScheduleStyle = css({
     },
 });
 
-const listStyle = css({
-    listStyle: 'none',
-    padding: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-});
+// const listStyle = css({
+//     listStyle: 'none',
+//     padding: 0,
+//     display: 'flex',
+//     flexDirection: 'column',
+//     gap: '0.5rem',
+// });
 
 const listItemStyle = css({
     display: 'flex',
@@ -194,24 +196,25 @@ const badgesContainerStyle = css({
     alignItems: 'center',
 });
 
-interface NextGameClientProps {
-    futureGames: any[];
-    pastGames?: any[];
-}
+// interface NextGameClientProps {
+//     futureGames: any[];
+//     pastGames?: any[];
+// }
 
 // ... (styles remain same)
 
 export default function NextGameClient({ futureGames, pastGames = [], settings }: NextGameClientProps) {
     // State for accordion - first game expanded by default
     const [expandedGameId, setExpandedGameId] = useState<string | number | null>(
-        futureGames.length > 0 ? futureGames[0].game_nbr : null
+        futureGames.length > 0 ? (futureGames[0].game_nbr ?? null) : null
     );
     
     // State for Past Games section
     const [isPastGamesExpanded, setIsPastGamesExpanded] = useState(false);
     const [showAllPastGames, setShowAllPastGames] = useState(false);
 
-    const handleGameClick = (gameId: string | number, event: React.MouseEvent<HTMLDivElement>) => {
+    const handleGameClick = (gameId: string | number | undefined, event: React.MouseEvent<HTMLDivElement>) => {
+        if (gameId === undefined) return;
         // Toggle accordion - if clicking the same game, collapse it; otherwise expand the new one
         setExpandedGameId(expandedGameId === gameId ? null : gameId);
         
@@ -338,7 +341,7 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                     <p>No upcoming games found. Please sync the schedule in the Admin dashboard.</p>
                 ) : (
                     <div className={css({ display: 'flex', flexDirection: 'column', gap: '1rem' })}>
-                        {futureGames.map((game: any, index: number) => {
+                        {futureGames.map((game: Game, index: number) => {
                             const isHomeGame = game.home_team_name.includes('Carolina Junior Canes');
                             const isExpanded = expandedGameId === game.game_nbr;
                             
@@ -415,7 +418,7 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                     {isPastGamesExpanded && (
                         <>
                             <div className={css({ display: 'flex', flexDirection: 'column', gap: '1rem' })}>
-                                {(showAllPastGames ? pastGames : pastGames.slice(0, 10)).map((game: any, index: number) => {
+                                {(showAllPastGames ? pastGames : pastGames.slice(0, 10)).map((game: Game, index: number) => {
                                     // Determine if we were home or away
                                     const isHomeGame = game.home_team_name?.includes('Carolina Junior Canes');
                                     const opponentName = isHomeGame ? game.visitor_team_name : game.home_team_name;

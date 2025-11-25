@@ -203,7 +203,7 @@ export default function WeeklyCalendar({
                     const dayExercises = entry?.exercises.map(entryEx => {
                         const fullExercise = exercises.find(ex => ex.id === entryEx.id);
                         return fullExercise ? { ...fullExercise, weight: entryEx.weight } : null;
-                    }).filter(Boolean) || [];
+                    }).filter(Boolean) as { id: string; title: string; weight?: string }[] || [];
 
                     return (
                         <button
@@ -292,7 +292,7 @@ export default function WeeklyCalendar({
                                         marginBottom: '12px',
                                     }
                                 }))}>
-                                    {dayExercises.map((exercise: any, index: number) => (
+                                    {dayExercises.map((exercise) => (
                                         <div
                                             key={exercise.id}
                                             className={cx('exercise-bullet', css({

@@ -12,7 +12,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-import { css, cx } from '@styled-system/css';
+import { Analytics } from '@vercel/analytics/react';
+import { cx } from '@styled-system/css';
 import HamburgerMenu from '@/components/HamburgerMenu';
 
 export const metadata: Metadata = {
@@ -54,6 +55,7 @@ export default function RootLayout({
             <body className={cx('root-layout', `${geistSans.variable} ${geistMono.variable}`)}>
                 <HamburgerMenu />
                 {children}
+                <Analytics />
             </body>
         </html>
     );
