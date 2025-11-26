@@ -105,3 +105,26 @@ export interface MHRGameDetails {
     away: number;
   };
 }
+
+// ============================================================================
+// Observability Types
+// ============================================================================
+
+export interface ConnectionDetails {
+  effectiveType?: string;
+  downlink?: number;
+  rtt?: number;
+}
+
+export interface WebVitalSample {
+  id: string;
+  name: string;
+  label: 'web-vital' | 'custom';
+  value: number;
+  delta: number;
+  rating: 'good' | 'needs-improvement' | 'poor';
+  navigationType?: 'navigate' | 'reload' | 'back-forward' | 'prerender';
+  pathname: string;
+  timestamp: number;
+  connection?: ConnectionDetails;
+}
