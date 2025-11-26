@@ -29,7 +29,6 @@ export interface RehabEntry {
 export interface Settings {
   teamName: string;
   identifiers: string[];
-  teamLogo: string;
   mhrTeamId?: string;
   mhrYear?: string;
   aliases?: Record<string, string>;
@@ -65,6 +64,14 @@ export interface Game {
   game_visitor_team?: number | string;
   highlightsUrl?: string;
   fullGameUrl?: string;
+  // Placeholder metadata for tournaments, showcases, and TBD events
+  isPlaceholder?: boolean;
+  placeholderStartDate?: string; // ISO date string
+  placeholderEndDate?: string; // ISO date string
+  placeholderStartDatePretty?: string; // Human-readable start date
+  placeholderEndDatePretty?: string; // Human-readable end date
+  placeholderLabel?: string; // Display label (e.g., "Tier 1 Elite Tournament")
+  placeholderDescription?: string; // Description or reason for placeholder
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any; // Allow additional properties for flexibility
 }

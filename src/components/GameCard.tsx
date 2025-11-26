@@ -53,6 +53,27 @@ const TEAM_LOGO_PROPS = {
     loading: 'lazy' as const,
 };
 
+/**
+ * Check if a logo URL is valid and safe to use with next/image
+ * Only allows URLs from configured remote patterns
+ */
+function isValidLogoUrl(url: string | undefined): boolean {
+    if (!url) return false;
+
+    // List of allowed hostnames (from next.config.ts)
+    const allowedHostnames = [
+        'myhockeyrankings.com',
+        'ranktech-cdn.s3.us-east-2.amazonaws.com'
+    ];
+
+    try {
+        const urlObj = new URL(url);
+        return allowedHostnames.some(hostname => urlObj.hostname === hostname);
+    } catch {
+        return false;
+    }
+}
+
 const cardStyle = css({
     background: 'rgba(20, 20, 20, 0.6)',
     backdropFilter: 'blur(12px)',
@@ -292,9 +313,9 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 rel="noopener noreferrer"
                                 className={cx('team-link', teamLinkStyle)}
                             >
-                                {game.visitor_team_logo && (
+                                {isValidLogoUrl(game.visitor_team_logo) && (
                                     <NextImage
-                                        src={game.visitor_team_logo}
+                                        src={game.visitor_team_logo!}
                                         alt="Visitor Logo"
                                         className={logoStyle}
                                         {...TEAM_LOGO_PROPS}
@@ -304,9 +325,9 @@ export default function GameCard({ title, game }: GameCardProps) {
                             </a>
                         ) : (
                             <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
-                                {game.visitor_team_logo && (
+                                {isValidLogoUrl(game.visitor_team_logo) && (
                                     <NextImage
-                                        src={game.visitor_team_logo}
+                                        src={game.visitor_team_logo!}
                                         alt="Visitor Logo"
                                         className={cx('team-logo', logoStyle)}
                                         {...TEAM_LOGO_PROPS}
@@ -337,9 +358,9 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 rel="noopener noreferrer"
                                 className={cx('team-link', teamLinkStyle)}
                             >
-                                {game.home_team_logo && (
+                                {isValidLogoUrl(game.home_team_logo) && (
                                     <NextImage
-                                        src={game.home_team_logo}
+                                        src={game.home_team_logo!}
                                         alt="Home Logo"
                                         className={cx('team-logo', logoStyle)}
                                         {...TEAM_LOGO_PROPS}
@@ -349,9 +370,9 @@ export default function GameCard({ title, game }: GameCardProps) {
                             </a>
                         ) : (
                             <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
-                                {game.home_team_logo && (
+                                {isValidLogoUrl(game.home_team_logo) && (
                                     <NextImage
-                                        src={game.home_team_logo}
+                                        src={game.home_team_logo!}
                                         alt="Home Logo"
                                         className={cx('team-logo', logoStyle)}
                                         {...TEAM_LOGO_PROPS}

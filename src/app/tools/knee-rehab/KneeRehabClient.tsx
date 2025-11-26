@@ -114,6 +114,11 @@ export default function KneeRehabClient({
         }
     };
 
+    const handlePinCancel = () => {
+        setShowPinModal(false);
+        setPendingAction(null);
+    };
+
     const handleToggleRestDay = () => {
         requireAuth(async () => {
             const newIsRestDay = !selectedEntry?.isRestDay;
@@ -483,6 +488,7 @@ export default function KneeRehabClient({
             {showPinModal && (
                 <PinEntryModal
                     onSuccess={handlePinSuccess}
+                    onCancel={handlePinCancel}
                 />
             )}
         </div>

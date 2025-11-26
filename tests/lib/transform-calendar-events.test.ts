@@ -29,7 +29,6 @@ describe('Transform Calendar Events', () => {
     const testSettings: Settings = {
       teamName: 'Carolina Junior Canes (Black) 10U AA',
       identifiers: ['Black', 'Jr Canes', 'Carolina'],
-      teamLogo: 'https://example.com/logo.png',
       mhrTeamId: '12345',
       mhrYear: '2025',
     };
@@ -70,7 +69,7 @@ describe('Transform Calendar Events', () => {
     expect(result[0].visitor_team_name).toBe('Opponent');
   });
 
-  it('should filter out tournament events (>2 hours)', async () => {
+  it('should create placeholder for tournament events (>2 hours)', async () => {
     const events = [
       {
         summary: 'Tier 1 Elite Tournament',
@@ -80,17 +79,20 @@ describe('Transform Calendar Events', () => {
       },
       {
         summary: 'Black vs Test Team',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'), // 1 hour
+        start: new Date('2025-01-16T10:00:00'),
+        end: new Date('2025-01-16T11:00:00'), // 1 hour
         location: 'Test Rink',
       },
     ];
 
     const result = await transformCalendarEvents(events, [], '2025');
 
-    // Should only include the regular game
-    expect(result).toHaveLength(1);
-    expect(result[0].rink_name).toBe('Test Rink');
+    // Should include both: one placeholder and one regular game
+    expect(result).toHaveLength(2);
+    expect(result[0].isPlaceholder).toBe(true);
+    expect(result[0].placeholderLabel).toBe('Tier 1 Elite Tournament');
+    expect(result[1].rink_name).toBe('Test Rink');
+    expect(result[1].isPlaceholder).toBeUndefined();
   });
 
   it('should handle away games correctly', async () => {
@@ -152,7 +154,7 @@ describe('Transform Calendar Events', () => {
     expect(result[0].rink_name).toBe('TBD');
   });
 
-  it('should filter out placeholder tournament events', async () => {
+  it('should create placeholder for tournament with placeholder keyword', async () => {
     const events = [
       {
         summary: 'Tier 1 Elite Tournament - Placeholder',
@@ -170,9 +172,11 @@ describe('Transform Calendar Events', () => {
 
     const result = await transformCalendarEvents(events, [], '2025');
 
-    // Placeholder should be filtered out
-    expect(result).toHaveLength(1);
-    expect(result[0].rink_name).toBe('Test Rink');
+    // Placeholder should be created
+    expect(result).toHaveLength(2);
+    expect(result[0].isPlaceholder).toBe(true);
+    expect(result[0].placeholderLabel).toBe('Tier 1 Elite Tournament - Placeholder');
+    expect(result[1].isPlaceholder).toBeUndefined();
   });
 
   it('should use mhrYear from settings', async () => {
@@ -190,5 +194,78 @@ describe('Transform Calendar Events', () => {
 
     // Should use 2025 from settings, not the passed 2024
     expect(result).toHaveLength(1);
+  });
+
+  it('should create placeholder for multi-day events (>24 hours)', async () => {
+    const events = [
+      {
+        summary: 'Weekend Showcase',
+        start: new Date('2025-01-15T08:00:00'),
+        end: new Date('2025-01-17T18:00:00'), // 2+ days
+        location: 'Showcase Arena',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].isPlaceholder).toBe(true);
+    expect(result[0].placeholderLabel).toBe('Weekend Showcase');
+    expect(result[0].placeholderStartDatePretty).toBeDefined();
+    expect(result[0].placeholderEndDatePretty).toBeDefined();
+    expect(result[0].game_time_format_pretty).toBe('TBD');
+  });
+
+  it('should skip events with no opponent and no placeholder keywords', async () => {
+    const events = [
+      {
+        summary: 'Team Practice',
+        start: new Date('2025-01-15T10:00:00'),
+        end: new Date('2025-01-15T11:00:00'),
+        location: 'Arena',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    // Should be skipped because no opponent and not a placeholder
+    expect(result).toHaveLength(0);
+  });
+
+  it('should create placeholder for events with explicit TBD keyword', async () => {
+    const events = [
+      {
+        summary: 'Opponent TBD',
+        start: new Date('2025-01-15T10:00:00'),
+        end: new Date('2025-01-15T11:00:00'),
+        location: 'Local Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].isPlaceholder).toBe(true);
+    expect(result[0].visitor_team_name).toBe('TBD');
+    expect(result[0].home_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+  });
+
+  it('should format placeholder dates correctly', async () => {
+    const events = [
+      {
+        summary: 'Tournament TBD',
+        start: new Date('2025-01-15T10:00:00'),
+        end: new Date('2025-01-17T18:00:00'),
+        location: 'Arena',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].isPlaceholder).toBe(true);
+    expect(result[0].placeholderStartDate).toBe(new Date('2025-01-15T10:00:00').toISOString());
+    expect(result[0].placeholderEndDate).toBe(new Date('2025-01-17T18:00:00').toISOString());
+    expect(result[0].game_date_format).toBe('2025-01-15');
   });
 });

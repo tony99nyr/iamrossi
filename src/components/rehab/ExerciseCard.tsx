@@ -43,7 +43,7 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
             }))}>
                 <div className={cx('exercise-title', css({
                     color: '#ededed',
-                    fontSize: '15px',
+                    fontSize: '19px',
                     fontWeight: '500',
                     marginBottom: '4px',
                 }))}>
@@ -52,7 +52,7 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
                 {exercise.description && (
                     <div className={cx('exercise-description', css({
                         color: '#999',
-                        fontSize: '13px',
+                        fontSize: '17px',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -64,12 +64,12 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
                 {exercise.weight && (
                     <div className={cx('exercise-weight', css({
                         color: '#60a5fa',
-                        fontSize: '12px',
+                        fontSize: '16px',
                         fontWeight: '600',
                         marginTop: '4px',
                         display: 'inline-block',
                         backgroundColor: 'rgba(37, 99, 235, 0.15)',
-                        padding: '1px 6px',
+                        padding: '3px 10px',
                         borderRadius: '4px',
                     }))}>
                         {exercise.weight}
@@ -93,8 +93,8 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
                             border: 'none',
                             color: '#666',
                             cursor: 'pointer',
-                            fontSize: '14px',
-                            padding: '4px',
+                            fontSize: '22px',
+                            padding: '6px',
                             transition: 'color 0.2s ease',
                             tapHighlightColor: 'transparent',
                             _hover: {

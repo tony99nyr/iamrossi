@@ -196,6 +196,28 @@ const badgesContainerStyle = css({
     alignItems: 'center',
 });
 
+const placeholderBadgeStyle = css({
+    display: 'inline-block',
+    background: 'rgba(156, 163, 175, 0.2)',
+    color: '#9ca3af',
+    fontSize: '0.65rem',
+    fontWeight: '700',
+    padding: '0.15rem 0.5rem',
+    borderRadius: '4px',
+    letterSpacing: '0.5px',
+    border: '1px solid rgba(156, 163, 175, 0.3)',
+});
+
+const placeholderItemStyle = css({
+    opacity: 0.6,
+    borderStyle: 'dashed',
+    cursor: 'default',
+    '&:hover': {
+        background: 'rgba(255, 255, 255, 0.02)',
+        borderColor: 'rgba(255, 255, 255, 0.05)',
+    },
+});
+
 // interface NextGameClientProps {
 //     futureGames: any[];
 //     pastGames?: any[];
@@ -344,20 +366,44 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                         {futureGames.map((game: Game, index: number) => {
                             const isHomeGame = game.home_team_name.includes('Carolina Junior Canes');
                             const isExpanded = expandedGameId === game.game_nbr;
-                            
+                            const isPlaceholder = game.isPlaceholder;
+
+                            // For placeholders, show date range if available
+                            const displayDate = isPlaceholder && game.placeholderStartDatePretty && game.placeholderEndDatePretty
+                                ? `${game.placeholderStartDatePretty} → ${game.placeholderEndDatePretty}`
+                                : game.game_date_format_pretty;
+
+                            const displayTime = isPlaceholder
+                                ? game.placeholderDescription || 'Schedule TBD'
+                                : game.game_time_format_pretty;
+
                             return (
                                 <div key={`${game.game_nbr}-${index}`}>
                                     {/* Accordion Header */}
-                                    <div 
-                                        className={cx('game-list-item', listItemStyle, isExpanded && listItemActiveStyle)}
-                                        onClick={(e) => handleGameClick(game.game_nbr, e)}
+                                    <div
+                                        className={cx(
+                                            'game-list-item',
+                                            listItemStyle,
+                                            isExpanded && !isPlaceholder && listItemActiveStyle,
+                                            isPlaceholder && placeholderItemStyle
+                                        )}
+                                        onClick={(e) => !isPlaceholder && handleGameClick(game.game_nbr, e)}
+                                        style={{ cursor: isPlaceholder ? 'default' : 'pointer' }}
                                     >
-                                        <span className={dateStyle}>{game.game_date_format_pretty}</span>
+                                        <span className={dateStyle}>{displayDate}</span>
                                         <span className={opponentStyle}>
-                                            <span>{isHomeGame ? game.visitor_team_name : '@ ' + game.home_team_name}</span>
+                                            <span>
+                                                {isPlaceholder
+                                                    ? game.placeholderLabel || 'Event'
+                                                    : (isHomeGame ? game.visitor_team_name : '@ ' + game.home_team_name)
+                                                }
+                                            </span>
                                             <span className={cx('badges-container', badgesContainerStyle)}>
-                                                {isHomeGame && <span className={cx('home-badge', homeBadgeSmallStyle)}>HOME</span>}
-                                                {(game.rink_name?.toLowerCase().includes('raleigh') || 
+                                                {isPlaceholder && (
+                                                    <span className={cx('placeholder-badge', placeholderBadgeStyle)}>PLACEHOLDER</span>
+                                                )}
+                                                {!isPlaceholder && isHomeGame && <span className={cx('home-badge', homeBadgeSmallStyle)}>HOME</span>}
+                                                {!isPlaceholder && (game.rink_name?.toLowerCase().includes('raleigh') ||
                                                   game.rink_name?.toLowerCase().includes('wake') ||
                                                   game.rink_name?.toLowerCase().includes('garner') ||
                                                   game.rink_name?.toLowerCase().includes('cary') ||
@@ -366,11 +412,11 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                                                 )}
                                             </span>
                                         </span>
-                                        <span className={cx('game-time', timeStyle)}>{game.game_time_format_pretty}</span>
+                                        <span className={cx('game-time', timeStyle)}>{displayTime}</span>
                                     </div>
-                                    
-                                    {/* Accordion Content */}
-                                    {isExpanded && (
+
+                                    {/* Accordion Content - Only for non-placeholder games */}
+                                    {isExpanded && !isPlaceholder && (
                                         <div>
                                             <GameCard title="" game={game} isHome={isHomeGame} />
                                         </div>

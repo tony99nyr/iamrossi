@@ -24,7 +24,6 @@ describe('Critical Integration Flows', () => {
       const newSettings: Settings = {
         teamName: 'Test Hockey Team',
         identifiers: ['Test', 'Hockey'],
-        teamLogo: 'https://example.com/logo.png',
         mhrTeamId: '99999',
         mhrYear: '2025',
       };
@@ -101,7 +100,6 @@ describe('Critical Integration Flows', () => {
       const settings: Settings = {
         teamName: 'Test Team',
         identifiers: ['Test'],
-        teamLogo: 'https://example.com/logo.png',
         mhrTeamId: '12345',
         mhrYear: '2025',
       };
@@ -142,7 +140,6 @@ describe('Critical Integration Flows', () => {
       await setSettings({
         teamName: 'Team A',
         identifiers: ['A'],
-        teamLogo: 'logo.png',
       });
 
       // Save exercises

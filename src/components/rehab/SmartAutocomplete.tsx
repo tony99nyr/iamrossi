@@ -37,12 +37,18 @@ export default function SmartAutocomplete({
     //     setSelectedIndex(0);
     // }, [query]);
 
+    const handleInputFocus = () => {
+        setTimeout(() => {
+            inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+    };
+
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (showCreateForm) return;
 
         if (e.key === 'ArrowDown') {
             e.preventDefault();
-            setSelectedIndex(prev => 
+            setSelectedIndex(prev =>
                 Math.min(prev + 1, filteredExercises.length - 1)
             );
         } else if (e.key === 'ArrowUp') {
@@ -90,12 +96,13 @@ export default function SmartAutocomplete({
                     setQuery(e.target.value);
                     setSelectedIndex(0);
                 }}
+                onFocus={handleInputFocus}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder}
                 className={cx('autocomplete-input', css({
                     width: '100%',
-                    padding: '12px 16px',
-                    fontSize: '15px',
+                    padding: '14px 16px',
+                    fontSize: '17px',
                     backgroundColor: '#1a1a1a',
                     border: '1px solid #333',
                     borderRadius: '8px',
@@ -145,7 +152,7 @@ export default function SmartAutocomplete({
                         >
                             <div className={cx('item-title', css({
                                 color: '#ededed',
-                                fontSize: '14px',
+                                fontSize: '17px',
                                 fontWeight: '500',
                                 marginBottom: '2px',
                             }))}>
@@ -154,7 +161,7 @@ export default function SmartAutocomplete({
                             {exercise.description && (
                                 <div className={cx('item-description', css({
                                     color: '#999',
-                                    fontSize: '12px',
+                                    fontSize: '15px',
                                 }))}>
                                     {exercise.description}
                                 </div>
@@ -170,7 +177,7 @@ export default function SmartAutocomplete({
                                 cursor: 'pointer',
                                 backgroundColor: '#2a2a2a',
                                 color: '#2563eb',
-                                fontSize: '14px',
+                                fontSize: '17px',
                                 fontWeight: '500',
                                 transition: 'background-color 0.15s ease',
                                 _hover: {
@@ -189,7 +196,7 @@ export default function SmartAutocomplete({
                         }))}>
                             <div className={cx('form-title', css({
                                 color: '#ededed',
-                                fontSize: '14px',
+                                fontSize: '17px',
                                 fontWeight: '500',
                                 marginBottom: '12px',
                             }))}>
@@ -199,11 +206,16 @@ export default function SmartAutocomplete({
                                 type="text"
                                 value={newDescription}
                                 onChange={(e) => setNewDescription(e.target.value)}
+                                onFocus={(e) => {
+                                    setTimeout(() => {
+                                        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    }, 300);
+                                }}
                                 placeholder="Description (optional)"
                                 className={cx('description-input', css({
                                     width: '100%',
-                                    padding: '8px 12px',
-                                    fontSize: '13px',
+                                    padding: '12px 14px',
+                                    fontSize: '17px',
                                     backgroundColor: '#0a0a0a',
                                     border: '1px solid #333',
                                     borderRadius: '6px',
@@ -226,8 +238,8 @@ export default function SmartAutocomplete({
                                     onClick={handleCreateNew}
                                     className={cx('create-button', css({
                                         flex: 1,
-                                        padding: '8px 16px',
-                                        fontSize: '13px',
+                                        padding: '10px 16px',
+                                        fontSize: '16px',
                                         fontWeight: '500',
                                         backgroundColor: '#2563eb',
                                         color: '#fff',
@@ -250,8 +262,8 @@ export default function SmartAutocomplete({
                                     }}
                                     className={cx('cancel-button', css({
                                         flex: 1,
-                                        padding: '8px 16px',
-                                        fontSize: '13px',
+                                        padding: '10px 16px',
+                                        fontSize: '16px',
                                         fontWeight: '500',
                                         backgroundColor: 'transparent',
                                         color: '#999',

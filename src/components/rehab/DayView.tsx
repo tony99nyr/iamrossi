@@ -96,7 +96,7 @@ export default function DayView({
                 )}
                 <h2 className={cx('date-title', css({
                     color: '#ededed',
-                    fontSize: '20px',
+                    fontSize: '24px',
                     fontWeight: '600',
                     marginBottom: '16px',
                 }))}>

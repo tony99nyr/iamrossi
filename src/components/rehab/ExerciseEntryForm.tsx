@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { css, cx } from '@styled-system/css';
-import { Reorder } from 'framer-motion';
+import { Reorder, useDragControls } from 'framer-motion';
 import SmartAutocomplete from './SmartAutocomplete';
 import ExerciseCard from './ExerciseCard';
 
@@ -32,6 +32,112 @@ interface ExerciseEntryFormProps {
 
 function formatDateForInput(dateStr: string): string {
     return dateStr;
+}
+
+interface ReorderableExerciseItemProps {
+    exercise: SelectedExercise;
+    onRemove: (id: string) => void;
+    onUpdateWeight: (id: string, weight: string) => void;
+}
+
+function ReorderableExerciseItem({ exercise, onRemove, onUpdateWeight }: ReorderableExerciseItemProps) {
+    const dragControls = useDragControls();
+
+    return (
+        <Reorder.Item
+            key={exercise.id}
+            value={exercise}
+            dragListener={false}
+            dragControls={dragControls}
+            dragElastic={0.05}
+            dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
+            className={cx('exercise-item', css({
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                backgroundColor: '#1a1a1a',
+                border: '1px solid #333',
+                borderRadius: '8px',
+                padding: '12px',
+                cursor: 'default',
+                position: 'relative',
+                touchAction: 'pan-y',
+            }))}
+        >
+            <div
+                className={cx('drag-handle', css({
+                    position: 'absolute',
+                    left: '50%',
+                    top: '4px',
+                    transform: 'translateX(-50%)',
+                    width: '60px',
+                    height: '28px',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    cursor: 'grab',
+                    touchAction: 'none',
+                    _active: { cursor: 'grabbing' }
+                }))}
+                onPointerDown={(e) => dragControls.start(e)}
+            >
+                <div className={css({
+                    width: '32px',
+                    height: '4px',
+                    borderRadius: '2px',
+                    backgroundColor: '#666',
+                })} />
+            </div>
+
+            <div className={css({ paddingTop: '8px' })}>
+                <ExerciseCard
+                    exercise={exercise}
+                    onRemove={() => onRemove(exercise.id)}
+                    showRemove
+                />
+            </div>
+            <div className={cx('weight-input-container', css({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                paddingLeft: '4px',
+            }))}>
+                <label className={cx('weight-label', css({
+                    color: '#999',
+                    fontSize: '17px',
+                    fontWeight: '500',
+                }))}>
+                    Weight:
+                </label>
+                <input
+                    type="text"
+                    value={exercise.weight || ''}
+                    onChange={(e) => onUpdateWeight(exercise.id, e.target.value)}
+                    onFocus={(e) => {
+                        setTimeout(() => {
+                            e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 300);
+                    }}
+                    placeholder="e.g. 30lbs"
+                    className={cx('weight-input', css({
+                        backgroundColor: '#0a0a0a',
+                        border: '1px solid #333',
+                        borderRadius: '4px',
+                        color: '#ededed',
+                        fontSize: '17px',
+                        padding: '8px 12px',
+                        width: '140px',
+                        outline: 'none',
+                        transition: 'border-color 0.2s ease',
+                        _focus: {
+                            borderColor: '#2563eb',
+                        }
+                    }))}
+                    onPointerDown={(e) => e.stopPropagation()}
+                />
+            </div>
+        </Reorder.Item>
+    );
 }
 
 export default function ExerciseEntryForm({
@@ -78,17 +184,48 @@ export default function ExerciseEntryForm({
                 maxHeight: '90vh',
                 overflowY: 'auto',
                 animation: 'slideIn 0.3s ease-out',
+                position: 'relative',
                 md: {
                     borderRadius: '16px',
                 }
             }))}>
+                {/* Close Button */}
+                <button
+                    onClick={onCancel}
+                    className={cx('close-btn', css({
+                        position: 'absolute',
+                        top: '16px',
+                        right: '16px',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        color: 'rgba(255, 255, 255, 0.6)',
+                        fontSize: '28px',
+                        cursor: 'pointer',
+                        padding: '4px 8px',
+                        lineHeight: '1',
+                        transition: 'all 0.2s ease',
+                        userSelect: 'none',
+                        WebkitTapHighlightColor: 'transparent',
+                        _hover: {
+                            color: '#fff',
+                            transform: 'scale(1.1)',
+                        },
+                        _active: {
+                            transform: 'scale(0.95)',
+                        },
+                    }))}
+                    aria-label="Close"
+                >
+                    ✕
+                </button>
+
                 {/* Header */}
                 <div className={cx('form-header', css({
                     marginBottom: '24px',
                 }))}>
                     <h2 className={cx('form-title', css({
                         color: '#ededed',
-                        fontSize: '20px',
+                        fontSize: '22px',
                         fontWeight: '600',
                         marginBottom: '16px',
                     }))}>
@@ -102,7 +239,7 @@ export default function ExerciseEntryForm({
                         <label className={cx('field-label', css({
                             display: 'block',
                             color: '#999',
-                            fontSize: '13px',
+                            fontSize: '17px',
                             fontWeight: '500',
                             marginBottom: '8px',
                         }))}>
@@ -112,10 +249,15 @@ export default function ExerciseEntryForm({
                             type="date"
                             value={entryDate}
                             onChange={(e) => setEntryDate(e.target.value)}
+                            onFocus={(e) => {
+                                setTimeout(() => {
+                                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }, 300);
+                            }}
                             className={cx('date-input', css({
                                 width: '100%',
-                                padding: '12px 16px',
-                                fontSize: '15px',
+                                padding: '14px 16px',
+                                fontSize: '17px',
                                 backgroundColor: '#1a1a1a',
                                 border: '1px solid #333',
                                 borderRadius: '8px',
@@ -137,7 +279,7 @@ export default function ExerciseEntryForm({
                     <label className={cx('field-label', css({
                         display: 'block',
                         color: '#999',
-                        fontSize: '13px',
+                        fontSize: '17px',
                         fontWeight: '500',
                         marginBottom: '8px',
                     }))}>
@@ -159,16 +301,16 @@ export default function ExerciseEntryForm({
                         <label className={cx('field-label', css({
                             display: 'block',
                             color: '#999',
-                            fontSize: '13px',
+                            fontSize: '17px',
                             fontWeight: '500',
                             marginBottom: '12px',
                         }))}>
                             Added Exercises ({selectedExercises.length})
                         </label>
                         
-                        <Reorder.Group 
-                            axis="y" 
-                            values={selectedExercises} 
+                        <Reorder.Group
+                            axis="y"
+                            values={selectedExercises}
                             onReorder={onReorder}
                             className={cx('selected-list', css({
                                 flex: 1,
@@ -184,90 +326,12 @@ export default function ExerciseEntryForm({
                             }))}
                         >
                             {selectedExercises.map((exercise) => (
-                                <Reorder.Item 
-                                    key={exercise.id} 
-                                    value={exercise}
-                                    className={cx('exercise-item', css({
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: '8px',
-                                        backgroundColor: '#1a1a1a',
-                                        border: '1px solid #333',
-                                        borderRadius: '8px',
-                                        padding: '12px',
-                                        cursor: 'grab',
-                                        position: 'relative',
-                                        _active: {
-                                            cursor: 'grabbing',
-                                            borderColor: '#2563eb',
-                                            zIndex: 10,
-                                        }
-                                    }))}
-                                >
-                                    <div className={cx('drag-handle', css({
-                                        position: 'absolute',
-                                        left: '50%',
-                                        top: '4px',
-                                        transform: 'translateX(-50%)',
-                                        width: '40px',
-                                        height: '4px',
-                                        display: 'flex',
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        cursor: 'grab',
-                                        _active: { cursor: 'grabbing' }
-                                    }))}>
-                                        <div className={css({
-                                            width: '32px',
-                                            height: '4px',
-                                            borderRadius: '2px',
-                                            backgroundColor: '#333',
-                                        })} />
-                                    </div>
-
-                                    <div className={css({ paddingTop: '8px' })}>
-                                        <ExerciseCard
-                                            exercise={exercise}
-                                            onRemove={() => onRemoveExercise(exercise.id)}
-                                            showRemove
-                                        />
-                                    </div>
-                                    <div className={cx('weight-input-container', css({
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        paddingLeft: '4px',
-                                    }))}>
-                                        <label className={cx('weight-label', css({
-                                            color: '#999',
-                                            fontSize: '12px',
-                                            fontWeight: '500',
-                                        }))}>
-                                            Weight:
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={exercise.weight || ''}
-                                            onChange={(e) => onUpdateWeight(exercise.id, e.target.value)}
-                                            placeholder="e.g. 30lbs"
-                                            className={cx('weight-input', css({
-                                                backgroundColor: '#0a0a0a',
-                                                border: '1px solid #333',
-                                                borderRadius: '4px',
-                                                color: '#ededed',
-                                                fontSize: '12px',
-                                                padding: '4px 8px',
-                                                width: '100px',
-                                                outline: 'none',
-                                                transition: 'border-color 0.2s ease',
-                                                _focus: {
-                                                    borderColor: '#2563eb',
-                                                }
-                                            }))}
-                                            onPointerDown={(e) => e.stopPropagation()} 
-                                        />
-                                    </div>
-                                </Reorder.Item>
+                                <ReorderableExerciseItem
+                                    key={exercise.id}
+                                    exercise={exercise}
+                                    onRemove={onRemoveExercise}
+                                    onUpdateWeight={onUpdateWeight}
+                                />
                             ))}
                         </Reorder.Group>
                     </div>
@@ -284,8 +348,8 @@ export default function ExerciseEntryForm({
                         onClick={onCancel}
                         className={cx('cancel-button', css({
                             flex: 1,
-                            padding: '12px 24px',
-                            fontSize: '15px',
+                            padding: '14px 24px',
+                            fontSize: '17px',
                             fontWeight: '500',
                             backgroundColor: 'transparent',
                             color: '#999',
@@ -307,8 +371,8 @@ export default function ExerciseEntryForm({
                         disabled={selectedExercises.length === 0}
                         className={cx('save-button', css({
                             flex: 1,
-                            padding: '12px 24px',
-                            fontSize: '15px',
+                            padding: '14px 24px',
+                            fontSize: '17px',
                             fontWeight: '500',
                             backgroundColor: '#2563eb',
                             color: '#fff',

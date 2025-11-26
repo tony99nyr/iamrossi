@@ -126,7 +126,6 @@ describe('KV Operations', () => {
       const testSettings: Settings = {
         teamName: 'Test Team',
         identifiers: ['Test', 'Team'],
-        teamLogo: 'https://example.com/logo.png',
         mhrTeamId: '12345',
         mhrYear: '2025',
       };
@@ -141,7 +140,6 @@ describe('KV Operations', () => {
       const testSettings: Settings = {
         teamName: 'Test Team',
         identifiers: ['Test'],
-        teamLogo: 'https://example.com/logo.png',
       };
 
       await setSettings(testSettings);

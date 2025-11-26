@@ -7,8 +7,7 @@ async function getSettings() {
     const settings = await getSettingsFromKV();
     return settings || {
         teamName: 'Carolina Junior Canes (Black) 10U AA',
-        identifiers: ['Black', 'Jr Canes', 'Carolina', 'Jr'],
-        teamLogo: ''
+        identifiers: ['Black', 'Jr Canes', 'Carolina', 'Jr']
     };
 }
 
@@ -20,37 +19,114 @@ interface CalendarEvent {
     description?: string;
 }
 
+/**
+ * Detect if a calendar event is a placeholder (tournament, showcase, TBD)
+ */
+function isPlaceholderEvent(event: CalendarEvent, summary: string): boolean {
+    const duration = event.end.getTime() - event.start.getTime();
+    const durationHours = duration / (60 * 60 * 1000);
+
+    // Heuristic 1: Duration > 24 hours (multi-day events)
+    if (durationHours > 24) {
+        return true;
+    }
+
+    // Heuristic 2: Summary contains very specific placeholder keywords
+    // Be conservative - only catch obvious placeholder events
+    const placeholderKeywords = [
+        'tier 1 elite tournament',
+        'tbd',
+        'to be determined',
+        'placeholder',
+        'schedule tbd'
+    ];
+
+    const lowerSummary = summary.toLowerCase();
+    if (placeholderKeywords.some(keyword => lowerSummary.includes(keyword))) {
+        return true;
+    }
+
+    return false;
+}
+
 export async function transformCalendarEvents(
-    events: CalendarEvent[], 
+    events: CalendarEvent[],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mhrSchedule: any[] = [], 
+    mhrSchedule: any[] = [],
     year: string = '2025',
     mainTeamStats?: { record: string; rating: string }
 ) {
     const settings = await getSettings();
     const { mhrYear } = settings;
-    
+
     // Use mhrYear from settings if available, otherwise use the passed year parameter
     const effectiveYear = mhrYear || year;
+
+    // Fetch our team's MHR data to get logo
+    let ourTeamLogo = '';
+    if (settings.mhrTeamId) {
+        const ourTeamData = await getMHRTeamData(settings.mhrTeamId, effectiveYear);
+        ourTeamLogo = ourTeamData?.logo || '';
+        if (ourTeamData) {
+            debugLog(`[MHR] Found logo for our team: ${settings.teamName}`);
+        }
+    }
 
     const schedule = [];
 
     for (const event of events) {
-        // Filter out placeholder events
-        if (event.summary.includes('Tier 1 Elite Tournament')) continue;
+        // Check if this is a placeholder event BEFORE parsing opponent
+        // This allows us to create placeholders for multi-day events or explicit TBD events
+        const isPlaceholder = isPlaceholderEvent(event, event.summary);
 
-        // Filter out events longer than 2 hours (likely tournaments/showcases)
-        const duration = event.end.getTime() - event.start.getTime();
-        if (duration > 2 * 60 * 60 * 1000) {
-            debugLog(`Skipping event "${event.summary}" due to duration > 2h (${(duration / (60*60*1000)).toFixed(1)}h)`);
+        const { opponent, isHome } = parseEventSummary(event.summary, settings.identifiers);
+
+        if (isPlaceholder) {
+            // Create a placeholder entry
+            const startDate = new Date(event.start);
+            const endDate = new Date(event.end);
+
+            // Generate a unique ID for the placeholder
+            const placeholderId = crypto.createHash('md5').update(`${event.start}-${event.summary}`).digest('hex').substring(0, 8);
+
+            const year = startDate.getFullYear();
+            const month = String(startDate.getMonth() + 1).padStart(2, '0');
+            const day = String(startDate.getDate()).padStart(2, '0');
+            const localDateStr = `${year}-${month}-${day}`;
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const placeholderEntry: any = {
+                game_nbr: placeholderId,
+                game_date_format: localDateStr,
+                game_time_format: 'TBD',
+                game_date_format_pretty: startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                game_time_format_pretty: 'TBD',
+                home_team_name: settings.teamName,
+                visitor_team_name: 'TBD',
+                rink_name: event.location || 'TBD',
+                game_type: 'Placeholder',
+                // Placeholder-specific fields
+                isPlaceholder: true,
+                placeholderStartDate: startDate.toISOString(),
+                placeholderEndDate: endDate.toISOString(),
+                placeholderStartDatePretty: startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                placeholderEndDatePretty: endDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                placeholderLabel: event.summary,
+                placeholderDescription: `${event.summary} - Schedule TBD`,
+            };
+
+            schedule.push(placeholderEntry);
+            debugLog(`[Placeholder] Created placeholder entry for "${event.summary}"`);
             continue;
         }
 
-        const { opponent, isHome } = parseEventSummary(event.summary, settings.identifiers);
         const isHomeGame = isHome;
-        
-        // Skip if no opponent found (likely not a game)
-        if (!opponent) continue;
+
+        // Skip if no opponent found (not a valid game)
+        if (!opponent) {
+            debugLog(`Skipping event "${event.summary}" - no opponent found`);
+            continue;
+        }
 
         const gameDate = new Date(event.start);
         const gameTime = gameDate.toLocaleTimeString('en-US', { hour12: false });
@@ -127,8 +203,8 @@ export async function transformCalendarEvents(
             game_time_format_pretty: gameDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
             home_team_name: isHomeGame ? settings.teamName : (mhrData?.name || opponent),
             visitor_team_name: isHomeGame ? (mhrData?.name || opponent) : settings.teamName,
-            home_team_logo: isHomeGame ? settings.teamLogo : (mhrData?.logo || ''),
-            visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : settings.teamLogo,
+            home_team_logo: isHomeGame ? ourTeamLogo : (mhrData?.logo || ''),
+            visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : ourTeamLogo,
             home_team_score: matchedGame?.home_team_score ?? 0, // Use matched score or default to 0
             visitor_team_score: matchedGame?.visitor_team_score ?? 0, // Use matched score or default to 0
             rink_name: event.location || 'TBD',

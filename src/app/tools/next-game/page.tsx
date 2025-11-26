@@ -72,8 +72,7 @@ export default async function NextGamePage() {
         mhrTeamId: settingsData?.mhrTeamId || '19758',
         mhrYear: settingsData?.mhrYear || '2025',
         teamName: settingsData?.teamName || 'Carolina Junior Canes (Black) 10U AA',
-        identifiers: settingsData?.identifiers || ['Black', 'Jr Canes', 'Carolina', 'Jr'],
-        teamLogo: settingsData?.teamLogo || ''
+        identifiers: settingsData?.identifiers || ['Black', 'Jr Canes', 'Carolina', 'Jr']
     };
 
     

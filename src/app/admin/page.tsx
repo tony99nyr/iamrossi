@@ -215,7 +215,6 @@ export default function AdminPage() {
     const [gameCount, setGameCount] = useState<number | null>(null);
     const [teamName, setTeamName] = useState('');
     const [identifiers, setIdentifiers] = useState('');
-    const [teamLogo, setTeamLogo] = useState('');
     const [mhrTeamId, setMhrTeamId] = useState('');
     const [mhrYear, setMhrYear] = useState('');
     const [settingsMessage, setSettingsMessage] = useState('');
@@ -235,7 +234,6 @@ export default function AdminPage() {
                 const data = await res.json();
                 setTeamName(data.teamName || '');
                 setIdentifiers(Array.isArray(data.identifiers) ? data.identifiers.join(', ') : '');
-                setTeamLogo(data.teamLogo || '');
                 setMhrTeamId(data.mhrTeamId || '');
                 setMhrYear(data.mhrYear || '');
             }
@@ -283,7 +281,6 @@ export default function AdminPage() {
                 body: JSON.stringify({
                     teamName,
                     identifiers: idList,
-                    teamLogo,
                     mhrTeamId,
                     mhrYear
                 }),
@@ -412,17 +409,6 @@ export default function AdminPage() {
                                 onChange={(e) => setMhrYear(e.target.value)}
                                 className={inputStyle}
                                 placeholder="e.g. 2025"
-                            />
-                        </div>
-
-                        <div className={inputGroupStyle}>
-                            <label>Team Logo URL</label>
-                            <input
-                                type="text"
-                                value={teamLogo}
-                                onChange={(e) => setTeamLogo(e.target.value)}
-                                className={inputStyle}
-                                placeholder="https://..."
                             />
                         </div>
 

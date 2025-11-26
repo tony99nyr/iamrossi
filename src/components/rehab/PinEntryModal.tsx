@@ -5,9 +5,10 @@ import { css, cx } from '@styled-system/css';
 
 interface PinEntryModalProps {
     onSuccess: (token: string) => void;
+    onCancel?: () => void;
 }
 
-export default function PinEntryModal({ onSuccess }: PinEntryModalProps) {
+export default function PinEntryModal({ onSuccess, onCancel }: PinEntryModalProps) {
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
     const [remainingAttempts, setRemainingAttempts] = useState(3);
@@ -144,6 +145,7 @@ export default function PinEntryModal({ onSuccess }: PinEntryModalProps) {
                 width: '100%',
                 boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
                 animation: isShaking ? 'shake 0.5s' : 'none',
+                position: 'relative',
             }), isShaking ? 'shake-animation' : '')}>
                 <style jsx>{`
                     @keyframes shake {
@@ -154,7 +156,41 @@ export default function PinEntryModal({ onSuccess }: PinEntryModalProps) {
                     .shake-animation {
                         animation: shake 0.5s;
                     }
-                `}</style>                {/* Title */}
+                `}</style>
+                
+                {/* Close Button */}
+                {onCancel && (
+                    <button
+                        onClick={onCancel}
+                        className={cx('pin-close-btn', css({
+                            position: 'absolute',
+                            top: '16px',
+                            right: '16px',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            color: 'rgba(255, 255, 255, 0.6)',
+                            fontSize: '24px',
+                            cursor: 'pointer',
+                            padding: '8px',
+                            lineHeight: '1',
+                            transition: 'all 0.2s ease',
+                            userSelect: 'none',
+                            WebkitTapHighlightColor: 'transparent',
+                            _hover: {
+                                color: '#fff',
+                                transform: 'scale(1.1)',
+                            },
+                            _active: {
+                                transform: 'scale(0.95)',
+                            },
+                        }))}
+                        aria-label="Close"
+                    >
+                        ✕
+                    </button>
+                )}
+
+                {/* Title */}
                 <h2 className={cx('pin-title', css({
                     fontSize: '24px',
                     fontWeight: '600',
@@ -348,41 +384,50 @@ export default function PinEntryModal({ onSuccess }: PinEntryModalProps) {
                     </button>
                 </div>
 
-                {/* Submit Button */}
-                <button
-                    onClick={handleSubmit}
-                    disabled={!pin || isDisabled}
-                    className={cx('pin-submit-btn', css({
-                        width: '100%',
-                        backgroundColor: '#4CAF50',
-                        border: 'none',
-                        borderRadius: '12px',
-                        color: '#fff',
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        padding: '16px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                        userSelect: 'none',
-                        WebkitTapHighlightColor: 'transparent',
-                        _hover: {
-                            backgroundColor: '#45a049',
-                            transform: 'translateY(-2px)',
-                            boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)',
-                        },
-                        _active: {
-                            transform: 'translateY(0)',
-                        },
-                        _disabled: {
-                            backgroundColor: 'rgba(76, 175, 80, 0.3)',
-                            cursor: 'not-allowed',
-                            transform: 'none',
-                            boxShadow: 'none',
-                        },
-                    }))}
-                >
-                    {isSubmitting ? 'Verifying...' : 'Submit'}
-                </button>
+                {/* Submit Button - Bottom Right Arrow (Pixel Style) */}
+                <div className={cx('pin-submit-container', css({
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    alignItems: 'center',
+                    marginTop: '24px',
+                }))}>
+                    <button
+                        onClick={handleSubmit}
+                        disabled={!pin || isDisabled}
+                        className={cx('pin-submit-btn', css({
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            color: '#fff',
+                            fontSize: '24px',
+                            width: '56px',
+                            height: '56px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            userSelect: 'none',
+                            WebkitTapHighlightColor: 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            _hover: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                                transform: 'scale(1.05)',
+                            },
+                            _active: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                                transform: 'scale(0.95)',
+                            },
+                            _disabled: {
+                                opacity: 0.3,
+                                cursor: 'not-allowed',
+                                transform: 'none',
+                            },
+                        }))}
+                        aria-label="Submit PIN"
+                    >
+                        →
+                    </button>
+                </div>
 
                 {/* Attempts Remaining */}
                 {!error && remainingAttempts < 3 && cooldownSeconds === 0 && (
