@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'myhockeyrankings.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'ranktech-cdn.s3.us-east-2.amazonaws.com',
+      },
     ],
   },
 };

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getMHRTeamData } from './mhr-service';
 import { getSettings as getSettingsFromKV } from './kv';
+import { debugLog } from '@/lib/logger';
 
 async function getSettings() {
     const settings = await getSettingsFromKV();
@@ -41,7 +42,7 @@ export async function transformCalendarEvents(
         // Filter out events longer than 2 hours (likely tournaments/showcases)
         const duration = event.end.getTime() - event.start.getTime();
         if (duration > 2 * 60 * 60 * 1000) {
-            console.log(`Skipping event "${event.summary}" due to duration > 2h (${(duration / (60*60*1000)).toFixed(1)}h)`);
+            debugLog(`Skipping event "${event.summary}" due to duration > 2h (${(duration / (60*60*1000)).toFixed(1)}h)`);
             continue;
         }
 
@@ -61,7 +62,7 @@ export async function transformCalendarEvents(
         const mhrData = await getMHRTeamData(opponent, effectiveYear);
         
         if (mhrData) {
-            console.log(`[MHR] Found data for ${opponent}:`, mhrData.name);
+            debugLog(`[MHR] Found data for ${opponent}:`, mhrData.name);
         }
 
         // Use local date for matching to avoid timezone issues (e.g. Sat night game becoming Sun in UTC)
@@ -111,7 +112,7 @@ export async function transformCalendarEvents(
             
             if (matchedGame && matchedGame.game_nbr) {
                 mhrGameNbr = matchedGame.game_nbr;
-                console.log(`[MHR] Matched calendar event to MHR game ${mhrGameNbr}`);
+                debugLog(`[MHR] Matched calendar event to MHR game ${mhrGameNbr}`);
             }
         }
 

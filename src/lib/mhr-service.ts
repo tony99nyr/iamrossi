@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
+import { debugLog } from '@/lib/logger';
 
 const TEAM_MAP_FILE = path.join(process.cwd(), 'src/data/team-map.json');
 
@@ -27,7 +28,7 @@ function saveTeamMap(map: Record<string, MHRTeamData>) {
 
 // Scrape team details (record, rating) from team info page
 export async function scrapeTeamDetails(teamId: string, year: string): Promise<{ record: string; rating: string; logo: string }> {
-    console.log(`[MHR] Scraping team details for ID ${teamId}, year ${year}`);
+    debugLog(`[MHR] Scraping team details for ID ${teamId}, year ${year}`);
     
     const browser = await chromium.launch({ headless: true });
     try {
@@ -85,7 +86,7 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
             return '';
         });
 
-        console.log(`[MHR] Scraped data for ${teamId}:`, { record, rating, logo });
+        debugLog(`[MHR] Scraped data for ${teamId}:`, { record, rating, logo });
         
         return { record, rating, logo };
     } catch (error) {
@@ -98,7 +99,7 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchMHRSchedule(teamId: string, year: string): Promise<any[]> {
-    console.log(`Fetching MHR schedule for Team ID: ${teamId}, Year: ${year}`);
+    debugLog(`Fetching MHR schedule for Team ID: ${teamId}, Year: ${year}`);
     
     const browser = await chromium.launch({ headless: true });
     try {
@@ -116,7 +117,7 @@ export async function fetchMHRSchedule(teamId: string, year: string): Promise<an
             route.continue();
         });
 
-        console.log('Navigating to MHR games page...');
+        debugLog('Navigating to MHR games page...');
         await page.goto(`https://myhockeyrankings.com/team-info/${teamId}/${year}/games`, {
             waitUntil: 'domcontentloaded',
             timeout: 30000
@@ -130,7 +131,7 @@ export async function fetchMHRSchedule(teamId: string, year: string): Promise<an
             throw new Error('Could not retrieve X-Mhr-Token');
         }
 
-        console.log('Token retrieved. Fetching schedule data...');
+        debugLog('Token retrieved. Fetching schedule data...');
 
         // Fetch schedule data using the token
         const scheduleData = await page.evaluate(async ([tId, yr, tok]: [string, string, string]) => {
@@ -187,7 +188,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
             if (ageGroupTeams.length > 0) {
                 teams = ageGroupTeams;
             } else {
-                console.log(`[MHR] No teams found matching age group "${ageGroup}" for query "${query}". Returning best guess.`);
+                debugLog(`[MHR] No teams found matching age group "${ageGroup}" for query "${query}". Returning best guess.`);
             }
         }
 
@@ -201,7 +202,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
             const levelMatch = teams.find((t: any) => levelRegex.test(t.name));
             
             if (levelMatch) {
-                console.log(`[MHR] Found level match for ${preferredLevel}: ${levelMatch.name}`);
+                debugLog(`[MHR] Found level match for ${preferredLevel}: ${levelMatch.name}`);
                 return {
                     name: levelMatch.name,
                     mhrId: levelMatch.nbr,
@@ -230,7 +231,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const aaaTeam = teams.find((t: any) => /\bAAA\b/i.test(t.name));
                 if (aaaTeam) {
-                    console.log(`[MHR] Found AAA team (higher level): ${aaaTeam.name}`);
+                    debugLog(`[MHR] Found AAA team (higher level): ${aaaTeam.name}`);
                     return {
                         name: aaaTeam.name,
                         mhrId: aaaTeam.nbr,
@@ -264,12 +265,12 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
     const aliases = settings.aliases || {};
     const resolvedName = aliases[opponentName] || opponentName;
     
-    console.log(`[MHR] Getting data for opponent: ${opponentName}${resolvedName !== opponentName ? ` (resolved to: ${resolvedName})` : ''}, ageGroup: ${ageGroup}, year: ${year}`);
+    debugLog(`[MHR] Getting data for opponent: ${opponentName}${resolvedName !== opponentName ? ` (resolved to: ${resolvedName})` : ''}, ageGroup: ${ageGroup}, year: ${year}`);
     const map = getTeamMap();
     
     // 1. Check Cache (check both original and resolved names)
     if (map[resolvedName]) {
-        console.log(`[MHR] Found ${resolvedName} in cache:`, map[resolvedName]);
+        debugLog(`[MHR] Found ${resolvedName} in cache:`, map[resolvedName]);
         if (map[resolvedName].mhrId && (!map[resolvedName].record || !map[resolvedName].rating || !map[resolvedName].logo)) {
              const scrapedDetails = await scrapeTeamDetails(String(map[resolvedName].mhrId), year);
              map[resolvedName].record = scrapedDetails.record || map[resolvedName].record;
@@ -292,7 +293,7 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
     });
 
     if (knownMatch) {
-        console.log(`[MHR] Found ${resolvedName} in known opponents:`, knownMatch);
+        debugLog(`[MHR] Found ${resolvedName} in known opponents:`, knownMatch);
         const data: MHRTeamData = {
             name: knownMatch.opponent_name,
             logo: knownMatch.opponent_logo,
@@ -321,18 +322,18 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
         else if (settings.teamName.endsWith(' A')) preferredLevel = 'A';
     }
 
-    console.log(`[MHR] Searching MHR for: ${resolvedName} (Age: ${ageGroup}, Level: ${preferredLevel})`);
+    debugLog(`[MHR] Searching MHR for: ${resolvedName} (Age: ${ageGroup}, Level: ${preferredLevel})`);
     const searchResult = await searchMHRTeam(resolvedName, ageGroup, preferredLevel);
 
     if (searchResult && searchResult.mhrId) {
-        console.log(`[MHR] Search found team:`, searchResult);
+        debugLog(`[MHR] Search found team:`, searchResult);
         // Scrape additional details (record, rating) from team page
-        console.log(`[MHR] Scraping details for searched team ${searchResult.mhrId}`);
+        debugLog(`[MHR] Scraping details for searched team ${searchResult.mhrId}`);
         const scrapedDetails = await scrapeTeamDetails(searchResult.mhrId, year);
         searchResult.record = scrapedDetails.record;
         searchResult.rating = scrapedDetails.rating;
         searchResult.logo = scrapedDetails.logo;
-        console.log(`[MHR] Final data for ${resolvedName}:`, searchResult);
+        debugLog(`[MHR] Final data for ${resolvedName}:`, searchResult);
         
         // Update cache
         map[resolvedName] = searchResult;
@@ -340,6 +341,6 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
         return searchResult;
     }
 
-    console.log(`[MHR] No data found for ${resolvedName}`);
+    debugLog(`[MHR] No data found for ${resolvedName}`);
     return null;
 }

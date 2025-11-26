@@ -5,6 +5,7 @@
   "scripts": {
     "panda:prepare": "panda codegen",
     "panda:codegen": "panda codegen --watch",
+    "postinstall": "pnpm panda:prepare",
     "dev": "panda codegen && next dev",
     "build": "panda codegen && next build",
     "start": "next start",
@@ -19,6 +20,9 @@
     "validate": "pnpm type:check && pnpm test && pnpm lint && pnpm build"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.4.0",
+    "@types/three": "^0.181.0",
     "@vercel/analytics": "^1.5.0",
     "@vercel/blob": "^2.0.0",
     "clsx": "^2.1.1",
@@ -32,7 +36,8 @@
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "redis": "^5.10.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "three": "^0.181.2"
   },
   "devDependencies": {
     "@pandacss/dev": "^1.5.1",

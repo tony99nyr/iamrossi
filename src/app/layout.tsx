@@ -16,7 +16,10 @@ import { Analytics } from '@vercel/analytics/react';
 import { cx } from '@styled-system/css';
 import HamburgerMenu from '@/components/HamburgerMenu';
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://iamrossi.com';
+
 export const metadata: Metadata = {
+    metadataBase: new URL(siteUrl),
     title: 'iamrossi.com',
     description: 'Personal website and tools',
     robots: {

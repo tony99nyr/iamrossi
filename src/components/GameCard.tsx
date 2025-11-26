@@ -41,6 +41,18 @@ interface GameCardProps {
     isHome?: boolean;
 }
 
+const LOGO_BLUR_DATA_URL =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAj2bXfwAAAABJRU5ErkJggg==';
+
+const TEAM_LOGO_PROPS = {
+    width: 100,
+    height: 100,
+    sizes: '(max-width: 768px) 80px, 100px',
+    placeholder: 'blur' as const,
+    blurDataURL: LOGO_BLUR_DATA_URL,
+    loading: 'lazy' as const,
+};
+
 const cardStyle = css({
     background: 'rgba(20, 20, 20, 0.6)',
     backdropFilter: 'blur(12px)',
@@ -280,12 +292,26 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 rel="noopener noreferrer"
                                 className={cx('team-link', teamLinkStyle)}
                             >
-                                {game.visitor_team_logo && <NextImage src={game.visitor_team_logo} alt="Visitor Logo" width={100} height={100} className={logoStyle} unoptimized />}
+                                {game.visitor_team_logo && (
+                                    <NextImage
+                                        src={game.visitor_team_logo}
+                                        alt="Visitor Logo"
+                                        className={logoStyle}
+                                        {...TEAM_LOGO_PROPS}
+                                    />
+                                )}
                                 <span className={teamNameStyle}>{game.visitor_team_name}</span>
                             </a>
                         ) : (
                             <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
-                                {game.visitor_team_logo && <NextImage src={game.visitor_team_logo} alt="Visitor Logo" width={100} height={100} className={cx('team-logo', logoStyle)} unoptimized />}
+                                {game.visitor_team_logo && (
+                                    <NextImage
+                                        src={game.visitor_team_logo}
+                                        alt="Visitor Logo"
+                                        className={cx('team-logo', logoStyle)}
+                                        {...TEAM_LOGO_PROPS}
+                                    />
+                                )}
                                 <span className={cx('team-name', teamNameStyle)}>{game.visitor_team_name}</span>
                             </div>
                         )}
@@ -311,12 +337,26 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 rel="noopener noreferrer"
                                 className={cx('team-link', teamLinkStyle)}
                             >
-                                {game.home_team_logo && <NextImage src={game.home_team_logo} alt="Home Logo" width={100} height={100} className={cx('team-logo', logoStyle)} unoptimized />}
+                                {game.home_team_logo && (
+                                    <NextImage
+                                        src={game.home_team_logo}
+                                        alt="Home Logo"
+                                        className={cx('team-logo', logoStyle)}
+                                        {...TEAM_LOGO_PROPS}
+                                    />
+                                )}
                                 <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </a>
                         ) : (
                             <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
-                                {game.home_team_logo && <NextImage src={game.home_team_logo} alt="Home Logo" width={100} height={100} className={cx('team-logo', logoStyle)} unoptimized />}
+                                {game.home_team_logo && (
+                                    <NextImage
+                                        src={game.home_team_logo}
+                                        alt="Home Logo"
+                                        className={cx('team-logo', logoStyle)}
+                                        {...TEAM_LOGO_PROPS}
+                                    />
+                                )}
                                 <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </div>
                         )}

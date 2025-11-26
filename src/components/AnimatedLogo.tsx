@@ -75,8 +75,8 @@ export const AnimatedLogo = () => {
              src="/assets/logo-stick.png" 
              alt="Logo Stick" 
              fill
+             sizes="(max-width: 768px) 240px, (max-width: 1200px) 360px, 500px"
              style={{ objectFit: 'contain' }} 
-             unoptimized
            />
         </div>
 

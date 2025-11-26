@@ -12,26 +12,32 @@ import {
 } from '@/lib/game/physics';
 import { findSlashCollisions } from '@/lib/game/collision';
 import {
-  createFruit,
-  getRandomFruit,
   spawnInitialToolIcons,
   spawnInitialFruits,
   spawnRandomObject,
 } from '@/lib/game/objects';
 import { createParticleExplosion } from '@/lib/game/particles';
 import GameObject3D from './GameObject3D';
+import GameScene from './GameScene';
 import GameCanvas, { type GameCanvasHandle } from './GameCanvas';
 import WoodBackground from './WoodBackground';
 import LeaderboardDisplay from './LeaderboardDisplay';
 import { css } from '@styled-system/css';
 import './animations.css';
 
+type LeaderboardApiResponse = {
+  success: boolean;
+  leaderboard: Array<{
+    score: number;
+  }>;
+};
+
 export default function FruitNinjaGame() {
   const router = useRouter();
 
   // Canvas ref
   const canvasRef = useRef<GameCanvasHandle>(null);
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(Date.now());
 
   // Game state
@@ -54,9 +60,15 @@ export default function FruitNinjaGame() {
     isSlashing: false,
     currentSlash: [] as SlashPoint[],
   });
+  const handleObjectSlicedRef = useRef<(object: GameObject) => void>(() => {});
+  const objectsRef = useRef<GameObject[]>([]);
 
   // Screen dimensions
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    objectsRef.current = objects;
+  }, [objects]);
 
   // Set screen dimensions and spawn initial objects
   useEffect(() => {
@@ -85,25 +97,24 @@ export default function FruitNinjaGame() {
 
   // Fetch predicted rank when final score is set
   useEffect(() => {
-    if (finalScore > 0 && !predictedRank) {
-      fetchPredictedRank();
-    }
-  }, [finalScore]);
+    if (finalScore <= 0 || predictedRank) return;
 
-  const fetchPredictedRank = async () => {
-    try {
-      const response = await fetch(`/api/game/leaderboard?limit=100`);
-      const data = await response.json();
+    const fetchPredictedRank = async () => {
+      try {
+        const response = await fetch(`/api/game/leaderboard?limit=100`);
+        const data = (await response.json()) as LeaderboardApiResponse;
 
-      if (data.success) {
-        // Count how many scores are higher than this one
-        const higherScores = data.leaderboard.filter((entry: any) => entry.score > finalScore);
-        setPredictedRank(higherScores.length + 1);
+        if (data.success) {
+          const higherScores = data.leaderboard.filter((entry) => entry.score > finalScore);
+          setPredictedRank(higherScores.length + 1);
+        }
+      } catch (error) {
+        console.error('Failed to fetch predicted rank:', error);
       }
-    } catch (error) {
-      console.error('Failed to fetch predicted rank:', error);
-    }
-  };
+    };
+
+    fetchPredictedRank();
+  }, [finalScore, predictedRank]);
 
   // Main game loop
   useEffect(() => {
@@ -150,16 +161,26 @@ export default function FruitNinjaGame() {
         })
         .filter((p) => p.life > 0);
 
+      const activeObjects = objectsRef.current;
+
       // Check collisions with current slash
       if (gameStateRef.current.currentSlash.length > 1) {
-        const collisions = findSlashCollisions(gameStateRef.current.currentSlash, objects);
+        const collisions = findSlashCollisions(gameStateRef.current.currentSlash, activeObjects);
 
         if (collisions.length > 0) {
+          // Handle side effects (scoring, particles, navigation) OUTSIDE the state updater
+          collisions.forEach(hit => {
+             // Only process if not already sliced (though activeObjects should filter them, double check)
+             if (!hit.sliced) {
+                handleObjectSlicedRef.current(hit);
+             }
+          });
+
+          // Update state to mark objects as sliced
           setObjects((prev) =>
             prev.map((obj) => {
               const hit = collisions.find((c) => c.id === obj.id);
               if (hit) {
-                handleObjectSliced(hit);
                 return { ...obj, sliced: true };
               }
               return obj;
@@ -178,7 +199,7 @@ export default function FruitNinjaGame() {
       if (
         gamePhase === 'playing' &&
         now - gameStateRef.current.lastSpawnTime > gameStateRef.current.spawnInterval &&
-        objects.length < GAME_CONFIG.maxObjectsOnScreen
+        activeObjects.length < GAME_CONFIG.maxObjectsOnScreen
       ) {
         const newObject = spawnRandomObject(dimensions.width, dimensions.height);
         setObjects((prev) => [...prev, newObject]);
@@ -215,7 +236,7 @@ export default function FruitNinjaGame() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [dimensions, gamePhase, objects.length]);
+  }, [dimensions.width, dimensions.height, gamePhase]);
 
   // Handle object sliced
   const handleObjectSliced = (object: GameObject) => {
@@ -264,6 +285,7 @@ export default function FruitNinjaGame() {
       setScore((prev) => prev + object.points);
     }
   };
+  handleObjectSlicedRef.current = handleObjectSliced;
 
   // Mouse/touch slash handlers
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -319,22 +341,11 @@ export default function FruitNinjaGame() {
         onPointerCancel={handlePointerUp}
         onPointerLeave={handlePointerUp}
       >
-        {/* 3D Perspective Container */}
-        <div
-          className={perspectiveContainerStyle}
-          style={{
-            width: `${dimensions.width}px`,
-            height: `${dimensions.height}px`,
-          }}
-        >
-          {/* 3D Objects */}
-          {objects.filter(obj => !obj.sliced).map((obj) => (
-            <GameObject3D key={obj.id} object={obj} />
-          ))}
+        {/* 3D Scene */}
+        <GameScene objects={objects.filter(obj => !obj.sliced)} />
 
-          {/* 2D Canvas Overlay for Slashes */}
-          <GameCanvas ref={canvasRef} width={dimensions.width} height={dimensions.height} />
-        </div>
+        {/* 2D Canvas Overlay for Slashes */}
+        <GameCanvas ref={canvasRef} width={dimensions.width} height={dimensions.height} />
 
         {/* Score display during game */}
         {gamePhase === 'playing' && (
@@ -447,13 +458,6 @@ const gameContainerStyle = css({
   userSelect: 'none',
   WebkitUserSelect: 'none',
   touchAction: 'none', // Prevent scrolling on touch
-});
-
-const perspectiveContainerStyle = css({
-  position: 'relative',
-  perspective: '1200px',
-  perspectiveOrigin: '50% 50%',
-  transformStyle: 'preserve-3d',
 });
 
 const scoreStyle = css({

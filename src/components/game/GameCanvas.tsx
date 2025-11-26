@@ -1,6 +1,6 @@
 import { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import type { SlashTrail, Particle } from '@/types/game';
-import { CANVAS_SETTINGS, PARTICLE_SETTINGS } from '@/lib/game/constants';
+import { CANVAS_SETTINGS } from '@/lib/game/constants';
 import { css } from '@styled-system/css';
 
 export interface GameCanvasHandle {
@@ -57,11 +57,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           ctx.shadowBlur = CANVAS_SETTINGS.slashGlowBlur;
           ctx.shadowColor = CANVAS_SETTINGS.slashGlowColor;
 
-          ctx.beginPath();
-          ctx.moveTo(slash.points[0].x, slash.points[0].y);
-          for (let i = 1; i < slash.points.length; i++) {
-            ctx.lineTo(slash.points[i].x, slash.points[i].y);
-          }
+          drawJaggedLine(ctx, slash.points);
           ctx.stroke();
 
           // Main slash line
@@ -69,11 +65,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           ctx.lineWidth = CANVAS_SETTINGS.slashLineWidth;
           ctx.shadowBlur = 0;
 
-          ctx.beginPath();
-          ctx.moveTo(slash.points[0].x, slash.points[0].y);
-          for (let i = 1; i < slash.points.length; i++) {
-            ctx.lineTo(slash.points[i].x, slash.points[i].y);
-          }
+          drawJaggedLine(ctx, slash.points);
           ctx.stroke();
 
           ctx.restore();
@@ -131,3 +123,38 @@ const canvasStyle = css({
   pointerEvents: 'none', // Allow events to pass through to objects below
   zIndex: 10, // Above 3D objects
 });
+
+// Helper to draw a jagged line between points
+function drawJaggedLine(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[]) {
+  if (points.length < 2) return;
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+
+  for (let i = 1; i < points.length; i++) {
+    const p1 = points[i - 1];
+    const p2 = points[i];
+    
+    // Distance between points
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    // If points are far enough, add a jagged intermediate point
+    if (dist > 10) {
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+      
+      // Perpendicular offset
+      const perpX = -dy / dist;
+      const perpY = dx / dist;
+      
+      // Random offset amount (jaggedness)
+      const offset = (Math.random() - 0.5) * 10;
+      
+      ctx.lineTo(midX + perpX * offset, midY + perpY * offset);
+    }
+    
+    ctx.lineTo(p2.x, p2.y);
+  }
+}

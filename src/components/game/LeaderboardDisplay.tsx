@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { css } from '@styled-system/css';
+import './animations.css';
 
 interface LeaderboardEntry {
   name: string;
@@ -20,19 +21,6 @@ export default function LeaderboardDisplay({ highlightRank, onScrollComplete }: 
   const [loading, setLoading] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetchLeaderboard();
-  }, []);
-
-  useEffect(() => {
-    if (highlightRank && leaderboard.length > 0 && scrollContainerRef.current) {
-      // Wait a bit for render, then start scroll animation
-      setTimeout(() => {
-        scrollToHighlight();
-      }, 500);
-    }
-  }, [highlightRank, leaderboard]);
-
   const fetchLeaderboard = async () => {
     try {
       const response = await fetch('/api/game/leaderboard');
@@ -48,7 +36,7 @@ export default function LeaderboardDisplay({ highlightRank, onScrollComplete }: 
     }
   };
 
-  const scrollToHighlight = () => {
+  const scrollToHighlight = useCallback(() => {
     if (!scrollContainerRef.current || !highlightRank) return;
 
     const container = scrollContainerRef.current;
@@ -75,7 +63,23 @@ export default function LeaderboardDisplay({ highlightRank, onScrollComplete }: 
         setTimeout(onScrollComplete, 2000); // Approximate scroll duration
       }
     }, 2000); // Wait 2 seconds before scrolling up
-  };
+  }, [highlightRank, onScrollComplete]);
+
+  useEffect(() => {
+    fetchLeaderboard();
+  }, []);
+
+  useEffect(() => {
+    if (!highlightRank || leaderboard.length === 0 || !scrollContainerRef.current) return;
+
+    const timeoutId = window.setTimeout(() => {
+      scrollToHighlight();
+    }, 500);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [highlightRank, leaderboard, scrollToHighlight]);
 
   if (loading) {
     return (
@@ -183,15 +187,7 @@ const highlightedEntryStyle = css({
   backgroundColor: 'rgba(255, 215, 0, 0.3)',
   borderRadius: '8px',
   border: '2px solid #FFD700',
-  animation: 'pulse 2s ease-in-out infinite',
-  '@keyframes pulse': {
-    '0%, 100%': {
-      boxShadow: '0 0 10px rgba(255, 215, 0, 0.5)',
-    },
-    '50%': {
-      boxShadow: '0 0 20px rgba(255, 215, 0, 0.8)',
-    },
-  },
+  animation: 'pulseHighlight 2s ease-in-out infinite',
 });
 
 const rankStyle = css({

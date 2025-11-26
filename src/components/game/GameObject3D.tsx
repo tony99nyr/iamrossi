@@ -1,65 +1,85 @@
+import { useRef, useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { useTexture, Text, Html } from '@react-three/drei';
+import * as THREE from 'three';
 import type { GameObject } from '@/types/game';
-import { calculateShadow } from '@/lib/game/physics';
-import { css } from '@styled-system/css';
 
 interface GameObject3DProps {
   object: GameObject;
-  onSlice?: (id: string) => void;
 }
 
+const TEXTURE_MAP: Record<string, string> = {
+  '🍎': '/assets/game/apple.png',
+  '🍊': '/assets/game/orange.png',
+  '🍉': '/assets/game/watermelon.png',
+  '🍓': '/assets/game/strawberry.png',
+  '💣': '/assets/game/bomb.png',
+};
+
 export default function GameObject3D({ object }: GameObject3DProps) {
+  const meshRef = useRef<THREE.Mesh>(null);
   const { position, rotation, scale, emoji, type } = object;
 
-  // Calculate dynamic shadow based on rotation
-  const shadow = calculateShadow(rotation);
-
-  // Add gentle hover animation for intro objects (tool icons and static fruits)
-  const hoverAnimation = type === 'toolIcon'
-    ? { animation: 'gentleHover 3s ease-in-out infinite' }
-    : type === 'fruit'
-    ? { animation: 'gentleHover 3.5s ease-in-out infinite' }
-    : {};
+  // Load texture if available
+  const textureUrl = TEXTURE_MAP[emoji];
+  // We can't conditionally call hooks, so we need a strategy.
+  // We can use a separate component for TexturedObject vs TextObject, 
+  // or just useTexture inside a sub-component.
+  // Let's split it.
+  
+  const isTextured = !!textureUrl;
 
   return (
-    <div
-      data-object-id={object.id}
-      className={objectStyle}
-      style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        transform: `
-          translateZ(${position.z}px)
-          rotateX(${rotation.x}deg)
-          rotateY(${rotation.y}deg)
-          rotateZ(${rotation.z}deg)
-          scale(${scale})
-        `,
-        filter: `drop-shadow(${shadow.shadowX}px ${shadow.shadowY}px ${shadow.blur}px rgba(0, 0, 0, 0.6))`,
-        willChange: 'transform', // Optimize for animation
-        pointerEvents: 'none', // Don't interfere with mouse events
-        ...hoverAnimation,
-      }}
+    <group
+      position={[position.x, -position.y, position.z]} // Flip Y to match DOM coordinates
+      rotation={[
+        THREE.MathUtils.degToRad(rotation.x),
+        THREE.MathUtils.degToRad(rotation.y),
+        THREE.MathUtils.degToRad(rotation.z)
+      ]}
+      scale={scale}
     >
-      <span className={emojiStyle}>{emoji}</span>
-    </div>
+      {isTextured ? (
+        <TexturedObject emoji={emoji} textureUrl={textureUrl} type={type} />
+      ) : (
+        <EmojiObject emoji={emoji} />
+      )}
+    </group>
   );
 }
 
-const objectStyle = css({
-  position: 'absolute',
-  transformStyle: 'preserve-3d',
-  transition: 'none', // No CSS transitions, RAF handles animation
-  userSelect: 'none',
-  WebkitUserSelect: 'none',
-});
+function TexturedObject({ emoji, textureUrl, type }: { emoji: string, textureUrl: string, type: string }) {
+  const texture = useTexture(textureUrl);
+  
+  // Geometry based on type?
+  // Fruits -> Sphere
+  // Bomb -> Sphere
+  // Banana -> Cylinder (if we had it)
+  
+  return (
+    <mesh castShadow receiveShadow>
+      <sphereGeometry args={[45, 32, 32]} />
+      <meshStandardMaterial 
+        map={texture} 
+        roughness={0.4} 
+        metalness={type === 'bomb' ? 0.8 : 0.1} 
+      />
+    </mesh>
+  );
+}
 
-const emojiStyle = css({
-  fontSize: '100px',
-  display: 'block',
-  lineHeight: '1',
-  textAlign: 'center',
-  userSelect: 'none',
-  WebkitUserSelect: 'none',
-  // Center the emoji relative to its position
-  transform: 'translate(-50%, -50%)',
-});
+function EmojiObject({ emoji }: { emoji: string }) {
+  return (
+    <Text
+      fontSize={80}
+      color="white"
+      anchorX="center"
+      anchorY="middle"
+      outlineWidth={2}
+      outlineColor="black"
+    >
+      {emoji}
+    </Text>
+  );
+}
+
