@@ -8,7 +8,7 @@ export async function GET() {
   return NextResponse.json({
     envVars,
     hasDriveCreds: !!process.env.GOOGLE_DRIVE_CREDENTIALS,
-    hasRefreshToken: !!process.env.GOOGLE_REFRESH_TOKEN,
-    hasDriveRefreshToken: !!process.env.GOOGLE_DRIVE_REFRESH_TOKEN,
+    refreshTokenPrefix: (process.env.GOOGLE_REFRESH_TOKEN || process.env.GOOGLE_DRIVE_REFRESH_TOKEN || '').substring(0, 5) + '...',
+    hasRefreshToken: !!(process.env.GOOGLE_REFRESH_TOKEN || process.env.GOOGLE_DRIVE_REFRESH_TOKEN),
   });
 }
