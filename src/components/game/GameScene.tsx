@@ -86,10 +86,18 @@ function GameCamera() {
 }
 
 import { useThree } from '@react-three/fiber';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 function ResizeHandler() {
   const { camera, size } = useThree();
+  
+  // Compute camera bounds based on size
+  const cameraBounds = useMemo(() => ({
+    left: 0,
+    right: size.width,
+    top: 0,
+    bottom: -size.height,
+  }), [size.width, size.height]);
   
   useEffect(() => {
     if (camera.type === 'OrthographicCamera') {
@@ -97,13 +105,10 @@ function ResizeHandler() {
       // Configure camera to match DOM coordinates (0,0 at top-left)
       // X: 0 to width
       // Y: 0 to -height (since 3D Y is up, we use negative Y for down)
-      cam.left = 0;
-      cam.right = size.width;
-      cam.top = 0;
-      cam.bottom = -size.height;
+      Object.assign(cam, cameraBounds);
       cam.updateProjectionMatrix();
     }
-  }, [camera, size]);
+  }, [camera, cameraBounds]);
   
   return null;
 }

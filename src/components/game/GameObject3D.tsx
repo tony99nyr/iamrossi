@@ -1,6 +1,4 @@
-import { useRef, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { useTexture, Text, Html } from '@react-three/drei';
+import { useTexture, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GameObject } from '@/types/game';
 
@@ -17,7 +15,6 @@ const TEXTURE_MAP: Record<string, string> = {
 };
 
 export default function GameObject3D({ object }: GameObject3DProps) {
-  const meshRef = useRef<THREE.Mesh>(null);
   const { position, rotation, scale, emoji, type } = object;
 
   // Load texture if available
@@ -40,7 +37,7 @@ export default function GameObject3D({ object }: GameObject3DProps) {
       scale={scale}
     >
       {isTextured ? (
-        <TexturedObject emoji={emoji} textureUrl={textureUrl} type={type} />
+        <TexturedObject textureUrl={textureUrl} type={type} />
       ) : (
         <EmojiObject emoji={emoji} />
       )}
@@ -48,7 +45,7 @@ export default function GameObject3D({ object }: GameObject3DProps) {
   );
 }
 
-function TexturedObject({ emoji, textureUrl, type }: { emoji: string, textureUrl: string, type: string }) {
+function TexturedObject({ textureUrl, type }: { textureUrl: string, type: string }) {
   const texture = useTexture(textureUrl);
   
   // Geometry based on type?

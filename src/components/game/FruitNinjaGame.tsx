@@ -17,7 +17,6 @@ import {
   spawnRandomObject,
 } from '@/lib/game/objects';
 import { createParticleExplosion } from '@/lib/game/particles';
-import GameObject3D from './GameObject3D';
 import GameScene from './GameScene';
 import GameCanvas, { type GameCanvasHandle } from './GameCanvas';
 import WoodBackground from './WoodBackground';
