@@ -8,9 +8,12 @@ import { google } from 'googleapis';
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret to prevent unauthorized access
+    // Verify cron secret or admin secret to prevent unauthorized access
     const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    const isValidCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
+    const isValidAdmin = authHeader === `Bearer ${process.env.ADMIN_SECRET}`;
+    
+    if (!isValidCron && !isValidAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -29,11 +32,16 @@ export async function GET(request: NextRequest) {
     // Upload to Google Drive if credentials are configured
     if (process.env.GOOGLE_DRIVE_CREDENTIALS) {
       try {
-        await uploadToGoogleDrive(backupData);
+        const result = await uploadToGoogleDrive(backupData);
+        console.log('✅ Google Drive upload successful:', result);
       } catch (error) {
-        console.error('Failed to upload to Google Drive:', error);
+        console.error('❌ Failed to upload to Google Drive:', error);
+        console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
+        console.error('Stack:', error instanceof Error ? error.stack : 'No stack trace');
         // Continue even if Google Drive upload fails
       }
+    } else {
+      console.warn('⚠️  GOOGLE_DRIVE_CREDENTIALS not configured, skipping Google Drive upload');
     }
 
     return NextResponse.json({

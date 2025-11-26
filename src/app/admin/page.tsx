@@ -218,6 +218,8 @@ export default function AdminPage() {
     const [mhrTeamId, setMhrTeamId] = useState('');
     const [mhrYear, setMhrYear] = useState('');
     const [settingsMessage, setSettingsMessage] = useState('');
+    const [isBackingUp, setIsBackingUp] = useState(false);
+    const [backupMessage, setBackupMessage] = useState('');
 
     useEffect(() => {
         const auth = sessionStorage.getItem('admin_auth');
@@ -325,6 +327,33 @@ export default function AdminPage() {
             setSyncMessage('Error: Failed to connect to server');
         } finally {
             setIsSyncing(false);
+        }
+    };
+
+    const handleBackup = async () => {
+        setIsBackingUp(true);
+        setBackupMessage('Creating backup...');
+        try {
+            const adminSecret = sessionStorage.getItem('admin_secret');
+            
+            const res = await fetch('/api/backup', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${adminSecret}`,
+                },
+            });
+            
+            const data = await res.json();
+            if (res.ok) {
+                setBackupMessage(`✅ Backup successful! ${data.stats.exercises} exercises and ${data.stats.entries} entries backed up to Google Drive.`);
+            } else {
+                setBackupMessage(`❌ Error: ${data.error || 'Backup failed'}`);
+            }
+        } catch (error) {
+            setBackupMessage('❌ Error: Failed to connect to server');
+            console.error('Backup error:', error);
+        } finally {
+            setIsBackingUp(false);
         }
     };
 
@@ -441,6 +470,29 @@ export default function AdminPage() {
                         {gameCount !== null && (
                             <div className={statsStyle}>
                                 <strong>{gameCount}</strong> games synced successfully
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className={cardStyle}>
+                    <h2>Database Backup</h2>
+                    <p className={descriptionStyle}>
+                        Manually trigger a backup of all rehab data to Google Drive. Backups run automatically daily at 2 AM UTC.
+                    </p>
+                    
+                    <div className={syncSectionStyle}>
+                        <button 
+                            onClick={handleBackup} 
+                            disabled={isBackingUp}
+                            className={isBackingUp ? disabledButtonStyle : buttonStyle}
+                        >
+                            {isBackingUp ? 'Backing up...' : '💾 Backup to Google Drive'}
+                        </button>
+                        
+                        {backupMessage && (
+                            <div className={messageStyle}>
+                                {backupMessage}
                             </div>
                         )}
                     </div>
