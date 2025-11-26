@@ -35,12 +35,17 @@ async function resolveVideoSource() {
     const token = process.env.BLOB_READ_WRITE_TOKEN;
 
     if (!token) {
-        throw new Error('BLOB_READ_WRITE_TOKEN is required to load the 404 video from Vercel Blob.');
+        console.warn('BLOB_READ_WRITE_TOKEN missing; falling back to static 404 background.');
+        return null;
     }
 
-    const { downloadUrl } = await head(VIDEO_BLOB_PATH, { token });
-
-    return downloadUrl;
+    try {
+        const { downloadUrl } = await head(VIDEO_BLOB_PATH, { token });
+        return downloadUrl;
+    } catch (error) {
+        console.error('Failed to resolve Blob video for 404 page:', error);
+        return null;
+    }
 }
 
 export default async function NotFound() {
@@ -48,10 +53,12 @@ export default async function NotFound() {
 
     return (
         <div className={cx('not-found-page', containerStyle)}>
-            <video autoPlay loop muted playsInline className={videoStyle}>
-                <source src={videoSrc} type="video/mp4" />
-                Your browser does not support the video tag.
-            </video>
+            {videoSrc ? (
+                <video autoPlay loop muted playsInline className={videoStyle}>
+                    <source src={videoSrc} type="video/mp4" />
+                    Your browser does not support the video tag.
+                </video>
+            ) : null}
         </div>
     );
 }

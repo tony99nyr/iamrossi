@@ -1,5 +1,5 @@
 import { createClient } from 'redis';
-import type { Exercise, RehabEntry, Settings, Game } from '@/types';
+import type { Exercise, RehabEntry, Settings, Game, WebVitalSample } from '@/types';
 
 // Create Redis client
 const redis = createClient({
@@ -55,6 +55,7 @@ const KV_KEYS = {
   SCHEDULE: 'admin:schedule',
   MHR_SCHEDULE: 'admin:mhr-schedule',
   GAME_LEADERBOARD: 'game:leaderboard',
+  ANALYTICS_WEB_VITALS: 'analytics:web-vitals',
 } as const;
 
 // Exercise operations
@@ -198,4 +199,15 @@ export async function findLeaderboardEntry(name: string, timestamp: number): Pro
   const rank = await redis.zRevRank(KV_KEYS.GAME_LEADERBOARD, member);
 
   return rank !== null ? rank + 1 : null; // Convert to 1-indexed
+}
+
+const MAX_WEB_VITAL_SAMPLES = 500;
+
+/**
+ * Persist recent Web Vitals samples for quick inspection
+ */
+export async function logWebVitalSample(sample: WebVitalSample): Promise<void> {
+  await ensureConnected();
+  await redis.lPush(KV_KEYS.ANALYTICS_WEB_VITALS, JSON.stringify(sample));
+  await redis.lTrim(KV_KEYS.ANALYTICS_WEB_VITALS, 0, MAX_WEB_VITAL_SAMPLES - 1);
 }
