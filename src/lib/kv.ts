@@ -216,3 +216,43 @@ export async function logWebVitalSample(sample: WebVitalSample): Promise<void> {
   await redis.lPush(KV_KEYS.ANALYTICS_WEB_VITALS, JSON.stringify(sample));
   await redis.lTrim(KV_KEYS.ANALYTICS_WEB_VITALS, 0, MAX_WEB_VITAL_SAMPLES - 1);
 }
+
+/**
+ * Get ALL data from Redis for backup
+ */
+export async function getAllData(): Promise<Record<string, any>> {
+  await ensureConnected();
+  const keys = await redis.keys('*');
+  const backup: Record<string, any> = {};
+
+  for (const key of keys) {
+    const type = await redis.type(key);
+    switch (type) {
+      case 'string':
+        const val = await redis.get(key);
+        try {
+            backup[key] = JSON.parse(val || 'null');
+        } catch {
+            backup[key] = val;
+        }
+        break;
+      case 'list':
+        backup[key] = await redis.lRange(key, 0, -1);
+        break;
+      case 'set':
+        backup[key] = await redis.sMembers(key);
+        break;
+      case 'zset':
+        // Store as array of {value, score} objects
+        backup[key] = await redis.zRangeWithScores(key, 0, -1);
+        break;
+      case 'hash':
+        backup[key] = await redis.hGetAll(key);
+        break;
+      default:
+        console.warn(`Unknown type ${type} for key ${key}`);
+        backup[key] = `<unknown type: ${type}>`;
+    }
+  }
+  return backup;
+}

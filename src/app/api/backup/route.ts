@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getExercises, getEntries } from '@/lib/kv';
+import { getAllData } from '@/lib/kv';
 import { google } from 'googleapis';
 
 /**
@@ -17,16 +17,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Fetch data from Redis
-    const exercises = await getExercises();
-    const entries = await getEntries();
+    // Fetch all data from Redis
+    const allData = await getAllData();
 
     // Prepare backup data
     const timestamp = new Date().toISOString();
     const backupData = {
       timestamp,
-      exercises,
-      entries,
+      data: allData,
     };
 
     // Upload to Google Drive if credentials are configured
@@ -54,8 +52,7 @@ export async function GET(request: NextRequest) {
       success: true,
       timestamp: new Date().toISOString(),
       stats: {
-        exercises: exercises.length,
-        entries: entries.length,
+        keys: Object.keys(allData).length,
       },
       googleDrive: {
         uploaded: !!driveResult,

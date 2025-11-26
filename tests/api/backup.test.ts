@@ -5,8 +5,7 @@ import * as kv from '@/lib/kv';
 
 // Mock the KV functions
 vi.mock('@/lib/kv', () => ({
-  getExercises: vi.fn(),
-  getEntries: vi.fn(),
+  getAllData: vi.fn(),
 }));
 
 // Mock googleapis
@@ -14,6 +13,9 @@ vi.mock('googleapis', () => ({
   google: {
     auth: {
       GoogleAuth: vi.fn().mockImplementation(() => ({})),
+      OAuth2: vi.fn().mockImplementation(() => ({
+        setCredentials: vi.fn(),
+      })),
     },
     drive: vi.fn().mockReturnValue({
       files: {
@@ -30,30 +32,31 @@ vi.mock('googleapis', () => ({
 }));
 
 describe('/api/backup', () => {
-  const mockExercises = [
-    {
-      id: 'ex-1',
-      title: 'Test Exercise',
-      description: 'Test description',
-      createdAt: '2025-11-26T00:00:00.000Z',
-    },
-  ];
-
-  const mockEntries = [
-    {
-      id: 'entry-1',
-      date: '2025-11-26',
-      exercises: [{ id: 'ex-1', weight: '10lb' }],
-      isRestDay: false,
-      vitaminsTaken: true,
-      proteinShake: true,
-    },
-  ];
+  const mockAllData = {
+    'rehab:exercises': [
+      {
+        id: 'ex-1',
+        title: 'Test Exercise',
+        description: 'Test description',
+        createdAt: '2025-11-26T00:00:00.000Z',
+      },
+    ],
+    'rehab:entries': [
+      {
+        id: 'entry-1',
+        date: '2025-11-26',
+        exercises: [{ id: 'ex-1', weight: '10lb' }],
+        isRestDay: false,
+        vitaminsTaken: true,
+        proteinShake: true,
+      },
+    ],
+    'some:other:key': 'some-value',
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(kv.getExercises).mockResolvedValue(mockExercises);
-    vi.mocked(kv.getEntries).mockResolvedValue(mockEntries);
+    vi.mocked(kv.getAllData).mockResolvedValue(mockAllData);
     
     // Set required environment variables
     process.env.CRON_SECRET = 'test-secret-123';
@@ -102,7 +105,7 @@ describe('/api/backup', () => {
   });
 
   describe('Data Export', () => {
-    it('should fetch exercises and entries from Redis', async () => {
+    it('should fetch all data from Redis', async () => {
       const request = new NextRequest('http://localhost:3000/api/backup', {
         headers: {
           authorization: 'Bearer test-secret-123',
@@ -111,8 +114,7 @@ describe('/api/backup', () => {
 
       await GET(request);
 
-      expect(kv.getExercises).toHaveBeenCalledTimes(1);
-      expect(kv.getEntries).toHaveBeenCalledTimes(1);
+      expect(kv.getAllData).toHaveBeenCalledTimes(1);
     });
 
     it('should return success with correct stats', async () => {
@@ -128,8 +130,7 @@ describe('/api/backup', () => {
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
       expect(data.stats).toEqual({
-        exercises: 1,
-        entries: 1,
+        keys: 3,
       });
       expect(data.timestamp).toBeDefined();
     });
@@ -207,7 +208,7 @@ describe('/api/backup', () => {
 
   describe('Error Handling', () => {
     it('should return 500 if Redis fetch fails', async () => {
-      vi.mocked(kv.getExercises).mockRejectedValue(new Error('Redis error'));
+      vi.mocked(kv.getAllData).mockRejectedValue(new Error('Redis error'));
 
       const request = new NextRequest('http://localhost:3000/api/backup', {
         headers: {
