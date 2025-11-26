@@ -1,9 +1,13 @@
 import { css } from '@styled-system/css';
 
-export default function WoodBackground() {
+interface WoodBackgroundProps {
+  isIntro?: boolean;
+}
+
+export default function WoodBackground({ isIntro = false }: WoodBackgroundProps) {
   return (
-    <div className={backgroundStyle}>
-      <div className={overlayStyle} />
+    <div className={backgroundStyle} data-intro={isIntro}>
+      <div className={overlayStyle} data-intro={isIntro} />
     </div>
   );
 }
@@ -18,6 +22,17 @@ const backgroundStyle = css({
   backgroundSize: 'cover',
   backgroundPosition: 'center',
   zIndex: -1,
+  transition: 'filter 0.5s ease, opacity 0.5s ease',
+  
+  '&[data-intro="true"]': {
+    filter: 'blur(8px)',
+    opacity: 0.4,
+  },
+  
+  '&[data-intro="false"]': {
+    filter: 'blur(0px)',
+    opacity: 1,
+  },
 });
 
 const overlayStyle = css({
@@ -28,5 +43,9 @@ const overlayStyle = css({
   height: '100%',
   background: 'radial-gradient(circle at center, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.6) 100%)',
   pointerEvents: 'none',
+  transition: 'background 0.5s ease',
+  
+  '&[data-intro="true"]': {
+    background: 'radial-gradient(circle at center, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.7) 100%)',
+  },
 });
-

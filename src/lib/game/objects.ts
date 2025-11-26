@@ -181,25 +181,26 @@ export function spawnInitialToolIcons(
 }
 
 /**
- * Spawn initial fruits for intro phase (static positions with gentle hover)
+ * Spawn initial fruit for intro phase (single fruit at bottom center)
  */
 export function spawnInitialFruits(
   screenWidth: number,
-  screenHeight: number,
-  count: number = 3
+  screenHeight: number
 ): GameObject[] {
-  return Array.from({ length: count }, (_, index) => {
-    const fruit = createFruit(getRandomFruit(), screenWidth, screenHeight);
-    // Position horizontally across screen, below tool icons
-    fruit.position.x = (screenWidth / (count + 1)) * (index + 1);
-    fruit.position.y = screenHeight * 0.55;
-    // No velocity - static position
-    fruit.velocity.y = 0;
-    fruit.velocity.x = 0;
-    // Gentle rotation
-    fruit.rotationSpeed.x = 1;
-    fruit.rotationSpeed.y = 1;
-    fruit.rotationSpeed.z = 0.5;
-    return fruit;
-  });
+  const fruit = createFruit('apple', screenWidth, screenHeight);
+  
+  // Position at bottom center
+  fruit.position.x = screenWidth / 2;
+  fruit.position.y = screenHeight * 0.85; // Near bottom
+  
+  // No velocity - static position
+  fruit.velocity.y = 0;
+  fruit.velocity.x = 0;
+  
+  // Gentle rotation for visual interest
+  fruit.rotationSpeed.x = 1;
+  fruit.rotationSpeed.y = 1;
+  fruit.rotationSpeed.z = 0.5;
+  
+  return [fruit];
 }

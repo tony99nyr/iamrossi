@@ -16,3 +16,29 @@
     box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
   }
 }
+
+/* Shake animation for lives penalty */
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-4px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(4px);
+  }
+}
+
+/* Blink red animation for lives penalty */
+@keyframes blink {
+  0%, 100% {
+    color: #fff;
+  }
+  25%, 75% {
+    color: #FF3B30;
+  }
+  50% {
+    color: #fff;
+  }
+}

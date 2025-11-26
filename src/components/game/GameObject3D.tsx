@@ -1,4 +1,6 @@
 import { useTexture, Text } from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
+import { useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { GameObject } from '@/types/game';
 
@@ -12,6 +14,10 @@ const TEXTURE_MAP: Record<string, string> = {
   '🍉': '/assets/game/watermelon.png',
   '🍓': '/assets/game/strawberry.png',
   '💣': '/assets/game/bomb.png',
+  '🍍': '/assets/game/apple.png', // Fallback to apple for pineapple
+  '🏒': '/assets/game/apple.png', // Fallback for hockey stick
+  '🌀': '/assets/game/apple.png', // Fallback for canes
+  '🎵': '/assets/game/apple.png', // Fallback for rick
 };
 
 export default function GameObject3D({ object }: GameObject3DProps) {
@@ -19,11 +25,6 @@ export default function GameObject3D({ object }: GameObject3DProps) {
 
   // Load texture if available
   const textureUrl = TEXTURE_MAP[emoji];
-  // We can't conditionally call hooks, so we need a strategy.
-  // We can use a separate component for TexturedObject vs TextObject, 
-  // or just useTexture inside a sub-component.
-  // Let's split it.
-  
   const isTextured = !!textureUrl;
 
   return (
@@ -47,21 +48,59 @@ export default function GameObject3D({ object }: GameObject3DProps) {
 
 function TexturedObject({ textureUrl, type }: { textureUrl: string, type: string }) {
   const texture = useTexture(textureUrl);
+  const outlineRef = useRef<THREE.Mesh>(null);
+  const [pulsePhase, setPulsePhase] = useState(0);
   
-  // Geometry based on type?
-  // Fruits -> Sphere
-  // Bomb -> Sphere
-  // Banana -> Cylinder (if we had it)
+  // Animate bomb outline
+  useFrame((state, delta) => {
+    if (type === 'bomb' && outlineRef.current) {
+      setPulsePhase((prev) => prev + delta * 3);
+      const scale = 1 + Math.sin(pulsePhase) * 0.15;
+      outlineRef.current.scale.setScalar(scale);
+    }
+  });
+  
+  const isBomb = type === 'bomb';
   
   return (
-    <mesh castShadow receiveShadow>
-      <sphereGeometry args={[45, 32, 32]} />
-      <meshStandardMaterial 
-        map={texture} 
-        roughness={0.4} 
-        metalness={type === 'bomb' ? 0.8 : 0.1} 
-      />
-    </mesh>
+    <>
+      {/* Main object */}
+      <mesh castShadow receiveShadow>
+        <sphereGeometry args={[45, 32, 32]} />
+        <meshStandardMaterial 
+          map={texture} 
+          roughness={0.4} 
+          metalness={isBomb ? 0.8 : 0.1} 
+        />
+      </mesh>
+      
+      {/* Threatening red outline for bombs */}
+      {isBomb && (
+        <>
+          {/* Outer glow */}
+          <mesh ref={outlineRef}>
+            <sphereGeometry args={[52, 32, 32]} />
+            <meshBasicMaterial
+              color="#FF0000"
+              transparent
+              opacity={0.4}
+              side={THREE.BackSide}
+            />
+          </mesh>
+          
+          {/* Inner red rim */}
+          <mesh>
+            <sphereGeometry args={[48, 32, 32]} />
+            <meshBasicMaterial
+              color="#FF3333"
+              transparent
+              opacity={0.6}
+              side={THREE.BackSide}
+            />
+          </mesh>
+        </>
+      )}
+    </>
   );
 }
 
@@ -79,4 +118,3 @@ function EmojiObject({ emoji }: { emoji: string }) {
     </Text>
   );
 }
-

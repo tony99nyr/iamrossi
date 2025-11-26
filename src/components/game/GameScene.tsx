@@ -4,42 +4,21 @@ import { Canvas } from '@react-three/fiber';
 import { OrthographicCamera, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import GameObject3D from './GameObject3D';
+import ExplosionEffect from './ExplosionEffect';
 import type { GameObject } from '@/types/game';
 import { Suspense } from 'react';
 
 interface GameSceneProps {
   objects: GameObject[];
+  explosions?: Array<{ id: string; position: { x: number; y: number; z: number } }>;
+  onExplosionComplete?: (id: string) => void;
 }
 
-export default function GameScene({ objects }: GameSceneProps) {
+export default function GameScene({ objects, explosions = [], onExplosionComplete }: GameSceneProps) {
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}>
       <Canvas shadows dpr={[1, 2]}>
         <Suspense fallback={null}>
-            {/* Orthographic camera to match pixel coordinates 1:1. 
-                Zoom is 1. Position is centered. 
-                We need to configure it to match window size, but R3F's default OrthographicCamera 
-                might need manual adjustment or we can just map coordinates.
-                
-                Actually, the easiest way to keep existing physics (pixels) working is to use 
-                an Orthographic camera where the view size matches the window size.
-                
-                However, R3F's default camera is Perspective. 
-                Let's use OrthographicCamera makeDefault and set zoom to 1.
-                We need to handle resize to keep coordinate system consistent if we want 1 unit = 1 pixel.
-                
-                Alternatively, we can just map the pixel coordinates to a normalized -1 to 1 space 
-                or a fixed world space.
-                
-                Let's try to map pixel coordinates to world space.
-                If we use OrthographicCamera with zoom=1, 
-                left = -width/2, right = width/2, top = height/2, bottom = -height/2.
-                
-                Our game physics uses (0,0) as top-left (standard DOM).
-                So we need to transform:
-                x_3d = x_phys - width/2
-                y_3d = -(y_phys - height/2)  (flip Y)
-            */}
             <GameCamera />
             
             <ambientLight intensity={0.5} />
@@ -48,6 +27,14 @@ export default function GameScene({ objects }: GameSceneProps) {
 
             {objects.map((obj) => (
             <GameObject3D key={obj.id} object={obj} />
+            ))}
+            
+            {explosions.map((explosion) => (
+              <ExplosionEffect
+                key={explosion.id}
+                position={explosion.position}
+                onComplete={() => onExplosionComplete?.(explosion.id)}
+              />
             ))}
         </Suspense>
       </Canvas>

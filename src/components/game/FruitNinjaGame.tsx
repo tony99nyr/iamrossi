@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { GameObject, GamePhase, SlashTrail, Particle, SlashPoint } from '@/types/game';
-import { GAME_CONFIG, TOOL_ICONS } from '@/lib/game/constants';
+import { GAME_CONFIG } from '@/lib/game/constants';
 import {
   updatePosition,
   updateRotation,
@@ -12,7 +12,6 @@ import {
 } from '@/lib/game/physics';
 import { findSlashCollisions } from '@/lib/game/collision';
 import {
-  spawnInitialToolIcons,
   spawnInitialFruits,
   spawnRandomObject,
 } from '@/lib/game/objects';
@@ -21,6 +20,7 @@ import GameScene from './GameScene';
 import GameCanvas, { type GameCanvasHandle } from './GameCanvas';
 import WoodBackground from './WoodBackground';
 import LeaderboardDisplay from './LeaderboardDisplay';
+import NavigationMenu from './NavigationMenu';
 import { css } from '@styled-system/css';
 import './animations.css';
 
@@ -49,6 +49,8 @@ export default function FruitNinjaGame() {
   const [predictedRank, setPredictedRank] = useState<number | null>(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [savedRank, setSavedRank] = useState<number | null>(null);
+  const [explosions, setExplosions] = useState<Array<{ id: string; position: { x: number; y: number; z: number } }>>([]);
+  const [livesShaking, setLivesShaking] = useState(false);
 
   // Refs for performance-critical data (no re-renders)
   const gameStateRef = useRef({
@@ -61,6 +63,7 @@ export default function FruitNinjaGame() {
   });
   const handleObjectSlicedRef = useRef<(object: GameObject) => void>(() => {});
   const objectsRef = useRef<GameObject[]>([]);
+  const scoreRef = useRef(0);
 
   // Screen dimensions
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -68,6 +71,10 @@ export default function FruitNinjaGame() {
   useEffect(() => {
     objectsRef.current = objects;
   }, [objects]);
+  
+  useEffect(() => {
+    scoreRef.current = score;
+  }, [score]);
 
   // Set screen dimensions and spawn initial objects
   useEffect(() => {
@@ -84,14 +91,12 @@ export default function FruitNinjaGame() {
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Spawn initial tool icons and fruits on mount
+  // Spawn initial fruit on mount (single fruit at bottom center)
   useEffect(() => {
     if (dimensions.width === 0 || gamePhase !== 'intro') return;
 
-    const toolIcons = spawnInitialToolIcons(dimensions.width, dimensions.height);
-    const fruits = spawnInitialFruits(dimensions.width, dimensions.height, 3);
-
-    setObjects([...toolIcons, ...fruits]);
+    const fruits = spawnInitialFruits(dimensions.width, dimensions.height);
+    setObjects(fruits);
   }, [dimensions.width, dimensions.height, gamePhase]);
 
   // Fetch predicted rank when final score is set
@@ -140,8 +145,38 @@ export default function FruitNinjaGame() {
           return obj;
         });
 
-        // Remove off-screen objects (only during playing phase)
+        // Remove off-screen objects and penalize missed fruits (only during playing phase)
         if (gamePhase === 'playing') {
+          const offScreenObjects = updated.filter((obj) => obj.isOffScreen);
+          
+          // Check for missed fruits (not sliced and went off screen)
+          offScreenObjects.forEach((obj) => {
+            if ((obj.type === 'fruit' || obj.type === 'bonus') && !obj.sliced) {
+              // Missed a fruit - lose a life
+              setLives((prev) => {
+                const newLives = prev - 1;
+                setLivesShaking(true);
+                setTimeout(() => setLivesShaking(false), 600);
+                
+                if (newLives <= 0) {
+                  // Game over
+                  setFinalScore(scoreRef.current);
+                  setGamePhase('intro');
+                  setObjects([]);
+                  
+                  setTimeout(() => {
+                    if (dimensions.width > 0) {
+                      const fruits = spawnInitialFruits(dimensions.width, dimensions.height);
+                      setObjects(fruits);
+                    }
+                  }, 100);
+                }
+                
+                return newLives;
+              });
+            }
+          });
+          
           return updated.filter((obj) => !obj.isOffScreen);
         }
 
@@ -243,26 +278,27 @@ export default function FruitNinjaGame() {
     const particles = createParticleExplosion(object);
     gameStateRef.current.particles.push(...particles);
 
-    if (object.type === 'toolIcon' && object.toolType) {
-      // Navigate to tool
-      const toolPath = TOOL_ICONS[object.toolType].path;
-      router.push(toolPath);
-    } else if (object.type === 'bomb') {
-      // Hit a bomb - lose a life
+    if (object.type === 'bomb') {
+      // Hit a bomb - create explosion and lose a life
+      const explosionId = `explosion-${Date.now()}`;
+      setExplosions((prev) => [...prev, {
+        id: explosionId,
+        position: { x: object.position.x, y: object.position.y, z: object.position.z },
+      }]);
+      
       setLives((prev) => {
         const newLives = prev - 1;
         if (newLives <= 0) {
           // Game over - save final score and return to intro
-          setFinalScore(score);
+          setFinalScore(scoreRef.current);
           setGamePhase('intro');
           setObjects([]);
 
           // Respawn intro objects after a brief delay
           setTimeout(() => {
             if (dimensions.width > 0) {
-              const toolIcons = spawnInitialToolIcons(dimensions.width, dimensions.height);
-              const fruits = spawnInitialFruits(dimensions.width, dimensions.height, 3);
-              setObjects([...toolIcons, ...fruits]);
+              const fruits = spawnInitialFruits(dimensions.width, dimensions.height);
+              setObjects(fruits);
             }
           }, 100);
         }
@@ -321,16 +357,48 @@ export default function FruitNinjaGame() {
         startTime: Date.now(),
         fadeOutTime: GAME_CONFIG.slashTrailFadeTime,
       });
+      
+      // Check if slash intersects with any menu items (only in intro phase)
+      if (gamePhase === 'intro') {
+        checkMenuSlash(gameStateRef.current.currentSlash);
+      }
     }
 
     gameStateRef.current.isSlashing = false;
     gameStateRef.current.currentSlash = [];
   };
+  
+  // Check if slash intersects with menu items
+  const checkMenuSlash = (slashPoints: SlashPoint[]) => {
+    // Get menu item elements and check for intersection
+    const menuButtons = document.querySelectorAll('[data-menu-item]');
+    
+    menuButtons.forEach((button) => {
+      const rect = button.getBoundingClientRect();
+      const intersects = slashPoints.some(point => 
+        point.x >= rect.left && 
+        point.x <= rect.right && 
+        point.y >= rect.top && 
+        point.y <= rect.bottom
+      );
+      
+      if (intersects) {
+        const path = button.getAttribute('data-path');
+        if (path) {
+          router.push(path);
+        }
+      }
+    });
+  };
+  
+  const handleExplosionComplete = (id: string) => {
+    setExplosions((prev) => prev.filter((exp) => exp.id !== id));
+  };
 
   return (
     <>
       {/* Wood background */}
-      <WoodBackground />
+      <WoodBackground isIntro={gamePhase === 'intro'} />
 
       <div
         className={gameContainerStyle}
@@ -340,8 +408,15 @@ export default function FruitNinjaGame() {
         onPointerCancel={handlePointerUp}
         onPointerLeave={handlePointerUp}
       >
+        {/* Navigation Menu (only in intro phase) */}
+        {gamePhase === 'intro' && <NavigationMenu />}
+        
         {/* 3D Scene */}
-        <GameScene objects={objects.filter(obj => !obj.sliced)} />
+        <GameScene 
+          objects={objects.filter(obj => !obj.sliced)} 
+          explosions={explosions}
+          onExplosionComplete={handleExplosionComplete}
+        />
 
         {/* 2D Canvas Overlay for Slashes */}
         <GameCanvas ref={canvasRef} width={dimensions.width} height={dimensions.height} />
@@ -349,7 +424,7 @@ export default function FruitNinjaGame() {
         {/* Score display during game */}
         {gamePhase === 'playing' && (
           <div className={scoreStyle}>
-            Score: {score} | Lives: {lives}
+            Score: {score} | <span className={livesStyle} data-shaking={livesShaking}>Lives: {lives}</span>
           </div>
         )}
 
@@ -468,6 +543,15 @@ const scoreStyle = css({
   color: '#fff',
   textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)',
   zIndex: 50,
+});
+
+const livesStyle = css({
+  display: 'inline-block',
+  transition: 'color 0.1s ease',
+  
+  '&[data-shaking="true"]': {
+    animation: 'shake 0.6s ease-in-out, blink 0.6s ease-in-out',
+  },
 });
 
 const finalScoreStyle = css({
