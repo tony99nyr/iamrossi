@@ -30,16 +30,20 @@ export async function GET(request: NextRequest) {
     };
 
     // Upload to Google Drive if credentials are configured
+    let driveResult = null;
+    let driveError = null;
+    
     if (process.env.GOOGLE_DRIVE_CREDENTIALS || 
         process.env.GOOGLE_REFRESH_TOKEN || 
         process.env.GOOGLE_DRIVE_REFRESH_TOKEN) {
       try {
-        const result = await uploadToGoogleDrive(backupData);
-        console.log('✅ Google Drive upload successful:', result);
+        driveResult = await uploadToGoogleDrive(backupData);
+        console.log('✅ Google Drive upload successful:', driveResult);
       } catch (error) {
         console.error('❌ Failed to upload to Google Drive:', error);
         console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
         console.error('Stack:', error instanceof Error ? error.stack : 'No stack trace');
+        driveError = error instanceof Error ? error.message : 'Unknown error';
         // Continue even if Google Drive upload fails
       }
     } else {
@@ -48,11 +52,17 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      timestamp,
+      timestamp: new Date().toISOString(),
       stats: {
         exercises: exercises.length,
         entries: entries.length,
       },
+      googleDrive: {
+        uploaded: !!driveResult,
+        fileId: driveResult?.id,
+        link: driveResult?.webViewLink,
+        error: driveError
+      }
     });
   } catch (error) {
     console.error('Backup error:', error);
