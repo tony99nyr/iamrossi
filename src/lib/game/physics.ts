@@ -11,11 +11,62 @@ export function random(min: number, max: number): number {
 /**
  * Generate random velocity for object spawn
  */
-export function generateVelocity(isToolIcon: boolean = false): Vector2D {
-  const velocityY = random(GAME_CONFIG.minVelocityY, GAME_CONFIG.maxVelocityY);
+/**
+ * Generate random velocity for object spawn
+ * Constrains horizontal velocity based on screen width to keep objects on screen
+ */
+/**
+ * Generate random velocity for object spawn
+ * Constrains horizontal velocity based on screen width
+ * Calculates vertical velocity based on screen height to ensure varied throw heights
+ */
+/**
+ * Generate random velocity for object spawn
+ * Constrains horizontal velocity based on screen width and spawn position
+ * Calculates vertical velocity based on screen height to ensure varied throw heights
+ */
+export function generateVelocity(
+  isToolIcon: boolean = false, 
+  screenWidth: number = 1024, 
+  screenHeight: number = 768,
+  spawnX: number = 512
+): Vector2D {
+  // Calculate vertical velocity to reach a target height
+  const gravity = GAME_CONFIG.gravity;
+  const minHeightRatio = 0.5;
+  const maxHeightRatio = 1.1;
+  const targetHeight = screenHeight * random(minHeightRatio, maxHeightRatio);
+  const velocityY = -Math.sqrt(2 * gravity * targetHeight);
+  
+  // Calculate flight time
+  const flightTime = (2 * Math.abs(velocityY)) / gravity;
+  
+  // Determine direction and max horizontal distance
+  // We want to keep the object fully on screen, so account for radius (approx 60px)
+  const margin = 60;
+  const direction = Math.random() > 0.5 ? 1 : -1;
+  
+  let maxDist = 0;
+  if (direction === 1) {
+    // Moving right: max dist is distance to right edge minus margin
+    maxDist = Math.max(0, screenWidth - margin - spawnX);
+  } else {
+    // Moving left: max dist is distance to left edge minus margin
+    maxDist = Math.max(0, spawnX - margin);
+  }
+  
+  // Calculate max safe velocity
+  const maxSafeVx = maxDist / flightTime;
+  
+  // Clamp to config limits
+  const configMaxVx = GAME_CONFIG.maxVelocityX;
+  const actualMaxVx = Math.min(configMaxVx, maxSafeVx);
+  
+  // Ensure a minimum horizontal spread, but don't exceed safe limit
+  const minVx = Math.min(0.5, actualMaxVx * 0.5);
 
   return {
-    x: random(GAME_CONFIG.minVelocityX, GAME_CONFIG.maxVelocityX),
+    x: random(minVx, actualMaxVx) * direction,
     y: isToolIcon ? velocityY * GAME_CONFIG.toolIconVelocityYMultiplier : velocityY,
   };
 }
@@ -97,7 +148,7 @@ export function isOffScreen(object: GameObject, width: number, height: number): 
  */
 export function generateSpawnPosition(screenWidth: number, screenHeight: number): Vector3D {
   return {
-    x: random(100, screenWidth - 100), // Spawn within horizontal bounds
+    x: random(screenWidth * 0.15, screenWidth * 0.85), // Spawn within horizontal bounds (15-85%)
     y: screenHeight + 50, // Just below screen
     z: 0, // No depth offset for spawn
   };

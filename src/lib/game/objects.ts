@@ -12,7 +12,7 @@ export function createFruit(
 ): GameObject {
   const fruitData = FRUITS[variant];
   const position = generateSpawnPosition(screenWidth, screenHeight);
-  const velocity = generateVelocity(false);
+  const velocity = generateVelocity(false, screenWidth, screenHeight, position.x);
   const rotationSpeed = generateRotationSpeed();
 
   return {
@@ -43,7 +43,7 @@ export function createToolIcon(
 ): GameObject {
   const toolData = TOOL_ICONS[toolType];
   const position = generateSpawnPosition(screenWidth, screenHeight);
-  const velocity = generateVelocity(true); // Tool icons fall slower
+  const velocity = generateVelocity(true, screenWidth, screenHeight, position.x); // Tool icons fall slower
   const rotationSpeed = generateRotationSpeed();
 
   return {
@@ -72,7 +72,7 @@ export function createBomb(
   screenHeight: number
 ): GameObject {
   const position = generateSpawnPosition(screenWidth, screenHeight);
-  const velocity = generateVelocity(false);
+  const velocity = generateVelocity(false, screenWidth, screenHeight, position.x);
   const rotationSpeed = generateRotationSpeed();
 
   return {
@@ -102,7 +102,7 @@ export function createBonusItem(
 ): GameObject {
   const bonusData = BONUS_ITEMS[variant];
   const position = generateSpawnPosition(screenWidth, screenHeight);
-  const velocity = generateVelocity(false);
+  const velocity = generateVelocity(false, screenWidth, screenHeight, position.x);
   const rotationSpeed = generateRotationSpeed();
 
   return {
