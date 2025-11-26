@@ -2,8 +2,13 @@ import { createClient } from 'redis';
 import type { Exercise, RehabEntry, Settings, Game, WebVitalSample } from '@/types';
 
 // Create Redis client
+// Use TEST_REDIS_URL in test environments to avoid wiping production data
+const redisUrl = process.env.NODE_ENV === 'test' && process.env.TEST_REDIS_URL
+  ? process.env.TEST_REDIS_URL
+  : process.env.REDIS_URL;
+
 const redis = createClient({
-  url: process.env.REDIS_URL
+  url: redisUrl
 });
 
 // Connect to Redis (lazy connection with retry logic)

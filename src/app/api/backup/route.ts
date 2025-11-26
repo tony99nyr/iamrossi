@@ -69,9 +69,10 @@ async function uploadToGoogleDrive(backupData: any) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const fileName = `rehab-backup-${timestamp}.json`;
 
-  // Convert JSON to buffer
+  // Convert JSON to readable stream
+  const { Readable } = await import('stream');
   const fileContent = JSON.stringify(backupData, null, 2);
-  const buffer = Buffer.from(fileContent, 'utf-8');
+  const stream = Readable.from([fileContent]);
 
   // Upload file
   const response = await drive.files.create({
@@ -81,7 +82,7 @@ async function uploadToGoogleDrive(backupData: any) {
     },
     media: {
       mimeType: 'application/json',
-      body: buffer,
+      body: stream,
     },
     fields: 'id, name, webViewLink',
   });

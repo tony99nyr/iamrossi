@@ -18,8 +18,10 @@ import {
 describe('KV Operations', () => {
   beforeEach(async () => {
     // Since we're using real Redis now, flush all data before each test
+    // IMPORTANT: Use TEST_REDIS_URL to avoid wiping production data!
     const { createClient } = await import('redis');
-    const client = createClient({ url: process.env.REDIS_URL });
+    const testRedisUrl = process.env.TEST_REDIS_URL || process.env.REDIS_URL;
+    const client = createClient({ url: testRedisUrl });
     await client.connect();
     await client.flushAll();
     await client.quit();
