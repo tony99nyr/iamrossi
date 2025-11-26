@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Upload to Google Drive if credentials are configured
-    if (process.env.GOOGLE_DRIVE_CREDENTIALS) {
+    if (process.env.GOOGLE_DRIVE_CREDENTIALS || process.env.GOOGLE_REFRESH_TOKEN) {
       try {
         const result = await uploadToGoogleDrive(backupData);
         console.log('✅ Google Drive upload successful:', result);
@@ -62,15 +62,50 @@ export async function GET(request: NextRequest) {
 }
 
 async function uploadToGoogleDrive(backupData: any) {
-  // Parse service account credentials
-  const credentials = JSON.parse(process.env.GOOGLE_DRIVE_CREDENTIALS || '{}');
+  let auth;
   
-  // Initialize Google Drive API
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/drive.file'],
-  });
+  // Check for OAuth credentials (preferred for personal accounts)
+  if (process.env.GOOGLE_REFRESH_TOKEN && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    const { google } = await import('googleapis');
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      'https://developers.google.com/oauthplayground' // Redirect URI
+    );
+    
+    oauth2Client.setCredentials({
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+    });
+    
+    auth = oauth2Client;
+    console.log('Using OAuth 2.0 authentication');
+  } 
+  // Fallback to Service Account (works for Workspace/Shared Drives)
+  else if (process.env.GOOGLE_DRIVE_CREDENTIALS) {
+    // Parse service account credentials
+    // Handle both single-quoted (fixed) and double-quoted formats
+    let credentials;
+    try {
+        const rawCreds = process.env.GOOGLE_DRIVE_CREDENTIALS;
+        // If it was fixed to be single quoted in .env, dotenv might have loaded it correctly now
+        // But if it still has issues, we try to parse carefully
+        credentials = JSON.parse(rawCreds);
+    } catch (e) {
+        console.error('Error parsing GOOGLE_DRIVE_CREDENTIALS:', e);
+        throw new Error('Invalid GOOGLE_DRIVE_CREDENTIALS format');
+    }
+    
+    const { google } = await import('googleapis');
+    auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/drive.file'],
+    });
+    console.log('Using Service Account authentication');
+  } else {
+    throw new Error('No valid Google Drive credentials found');
+  }
 
+  const { google } = await import('googleapis');
   const drive = google.drive({ version: 'v3', auth });
 
   // Create filename with timestamp
