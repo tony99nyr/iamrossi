@@ -54,6 +54,7 @@ const KV_KEYS = {
   SETTINGS: 'admin:settings',
   SCHEDULE: 'admin:schedule',
   MHR_SCHEDULE: 'admin:mhr-schedule',
+  GAME_LEADERBOARD: 'game:leaderboard',
 } as const;
 
 // Exercise operations
@@ -114,4 +115,87 @@ export async function getMHRSchedule(): Promise<Game[]> {
 export async function setMHRSchedule(schedule: Game[]): Promise<void> {
   await ensureConnected();
   await redis.set(KV_KEYS.MHR_SCHEDULE, JSON.stringify(schedule));
+}
+
+// Leaderboard operations
+export interface LeaderboardEntry {
+  name: string;
+  score: number;
+  timestamp: number;
+  rank: number;
+}
+
+/**
+ * Get top N scores from leaderboard
+ */
+export async function getLeaderboard(limit: number = 100): Promise<LeaderboardEntry[]> {
+  await ensureConnected();
+
+  // Get scores in descending order with scores
+  const results = await redis.zRangeWithScores(
+    KV_KEYS.GAME_LEADERBOARD,
+    0,
+    limit - 1,
+    { REV: true }
+  );
+
+  return results.map((entry, index) => {
+    const [name, timestamp] = entry.value.split(':');
+    return {
+      name,
+      score: entry.score,
+      timestamp: parseInt(timestamp),
+      rank: index + 1,
+    };
+  });
+}
+
+/**
+ * Add a score to the leaderboard
+ */
+export async function addScore(name: string, score: number): Promise<void> {
+  await ensureConnected();
+
+  const timestamp = Date.now();
+  const member = `${name}:${timestamp}`;
+
+  // Add to sorted set (score is the sort key)
+  await redis.zAdd(KV_KEYS.GAME_LEADERBOARD, {
+    score,
+    value: member,
+  });
+
+  // Keep only top 100 scores
+  const count = await redis.zCard(KV_KEYS.GAME_LEADERBOARD);
+  if (count > 100) {
+    await redis.zRemRangeByRank(KV_KEYS.GAME_LEADERBOARD, 0, count - 101);
+  }
+}
+
+/**
+ * Calculate what rank a score would get (without saving it)
+ */
+export async function getScoreRank(score: number): Promise<number> {
+  await ensureConnected();
+
+  // Count how many scores are higher
+  const higherScores = await redis.zCount(
+    KV_KEYS.GAME_LEADERBOARD,
+    score + 1,
+    '+inf'
+  );
+
+  return higherScores + 1; // Rank is 1-indexed
+}
+
+/**
+ * Find a specific entry by name and timestamp
+ */
+export async function findLeaderboardEntry(name: string, timestamp: number): Promise<number | null> {
+  await ensureConnected();
+
+  const member = `${name}:${timestamp}`;
+  const rank = await redis.zRevRank(KV_KEYS.GAME_LEADERBOARD, member);
+
+  return rank !== null ? rank + 1 : null; // Convert to 1-indexed
 }
