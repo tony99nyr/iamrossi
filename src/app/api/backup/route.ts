@@ -30,7 +30,9 @@ export async function GET(request: NextRequest) {
     };
 
     // Upload to Google Drive if credentials are configured
-    if (process.env.GOOGLE_DRIVE_CREDENTIALS || process.env.GOOGLE_REFRESH_TOKEN) {
+    if (process.env.GOOGLE_DRIVE_CREDENTIALS || 
+        process.env.GOOGLE_REFRESH_TOKEN || 
+        process.env.GOOGLE_DRIVE_REFRESH_TOKEN) {
       try {
         const result = await uploadToGoogleDrive(backupData);
         console.log('✅ Google Drive upload successful:', result);
@@ -65,16 +67,20 @@ async function uploadToGoogleDrive(backupData: any) {
   let auth;
   
   // Check for OAuth credentials (preferred for personal accounts)
-  if (process.env.GOOGLE_REFRESH_TOKEN && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_DRIVE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_DRIVE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN || process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+
+  if (refreshToken && clientId && clientSecret) {
     const { google } = await import('googleapis');
     const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
+      clientId,
+      clientSecret,
       'https://developers.google.com/oauthplayground' // Redirect URI
     );
     
     oauth2Client.setCredentials({
-      refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+      refresh_token: refreshToken
     });
     
     auth = oauth2Client;
