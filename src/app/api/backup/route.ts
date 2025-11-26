@@ -123,7 +123,7 @@ async function uploadToGoogleDrive(backupData: any) {
 
   // Create filename with timestamp
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const fileName = `rehab-backup-${timestamp}.json`;
+  const fileName = `iamrossi-backup-${timestamp}.json`;
 
   // Convert JSON to readable stream
   const { Readable } = await import('stream');
