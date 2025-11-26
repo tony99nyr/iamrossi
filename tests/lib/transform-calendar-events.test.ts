@@ -13,6 +13,14 @@ vi.mock('@/lib/mhr-service', () => ({
       rating: '85.5',
     });
   }),
+  scrapeTeamDetails: vi.fn((teamId: string, year: string) => {
+    // Return mock team details for our team
+    return Promise.resolve({
+      record: '15-8-3',
+      rating: '92.3',
+      logo: 'https://myhockeyrankings.com/logos/test-logo.png',
+    });
+  }),
 }));
 
 describe('Transform Calendar Events', () => {

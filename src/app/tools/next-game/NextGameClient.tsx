@@ -364,18 +364,13 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                 ) : (
                     <div className={css({ display: 'flex', flexDirection: 'column', gap: '1rem' })}>
                         {futureGames.map((game: Game, index: number) => {
-                            const isHomeGame = game.home_team_name.includes('Carolina Junior Canes');
+                            // Determine if this is a home game based on mhrTeamId
+                            const isHomeGame = String(game.game_home_team) === String(settings.mhrTeamId);
                             const isExpanded = expandedGameId === game.game_nbr;
                             const isPlaceholder = game.isPlaceholder;
 
-                            // For placeholders, show date range if available
-                            const displayDate = isPlaceholder && game.placeholderStartDatePretty && game.placeholderEndDatePretty
-                                ? `${game.placeholderStartDatePretty} → ${game.placeholderEndDatePretty}`
-                                : game.game_date_format_pretty;
-
-                            const displayTime = isPlaceholder
-                                ? game.placeholderDescription || 'Schedule TBD'
-                                : game.game_time_format_pretty;
+                            // Date is already formatted correctly for both regular games and placeholders
+                            const displayDate = game.game_date_format_pretty;
 
                             return (
                                 <div key={`${game.game_nbr}-${index}`}>
@@ -384,8 +379,7 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                                         className={cx(
                                             'game-list-item',
                                             listItemStyle,
-                                            isExpanded && !isPlaceholder && listItemActiveStyle,
-                                            isPlaceholder && placeholderItemStyle
+                                            isExpanded && !isPlaceholder && listItemActiveStyle
                                         )}
                                         onClick={(e) => !isPlaceholder && handleGameClick(game.game_nbr, e)}
                                         style={{ cursor: isPlaceholder ? 'default' : 'pointer' }}
@@ -398,21 +392,20 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                                                     : (isHomeGame ? game.visitor_team_name : '@ ' + game.home_team_name)
                                                 }
                                             </span>
-                                            <span className={cx('badges-container', badgesContainerStyle)}>
-                                                {isPlaceholder && (
-                                                    <span className={cx('placeholder-badge', placeholderBadgeStyle)}>PLACEHOLDER</span>
-                                                )}
-                                                {!isPlaceholder && isHomeGame && <span className={cx('home-badge', homeBadgeSmallStyle)}>HOME</span>}
-                                                {!isPlaceholder && (game.rink_name?.toLowerCase().includes('raleigh') ||
-                                                  game.rink_name?.toLowerCase().includes('wake') ||
-                                                  game.rink_name?.toLowerCase().includes('garner') ||
-                                                  game.rink_name?.toLowerCase().includes('cary') ||
-                                                  game.rink_name?.toLowerCase().includes('invisalign')) && (
-                                                    <span className={cx('local-badge', localBadgeSmallStyle)}>LOCAL</span>
-                                                )}
-                                            </span>
+                                            {!isPlaceholder && (
+                                                <span className={cx('badges-container', badgesContainerStyle)}>
+                                                    {isHomeGame && <span className={cx('home-badge', homeBadgeSmallStyle)}>HOME</span>}
+                                                    {(game.rink_name?.toLowerCase().includes('raleigh') ||
+                                                      game.rink_name?.toLowerCase().includes('wake') ||
+                                                      game.rink_name?.toLowerCase().includes('garner') ||
+                                                      game.rink_name?.toLowerCase().includes('cary') ||
+                                                      game.rink_name?.toLowerCase().includes('invisalign')) && (
+                                                        <span className={cx('local-badge', localBadgeSmallStyle)}>LOCAL</span>
+                                                    )}
+                                                </span>
+                                            )}
                                         </span>
-                                        <span className={cx('game-time', timeStyle)}>{displayTime}</span>
+                                        {!isPlaceholder && <span className={cx('game-time', timeStyle)}>{game.game_time_format_pretty}</span>}
                                     </div>
 
                                     {/* Accordion Content - Only for non-placeholder games */}
@@ -465,8 +458,8 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                         <>
                             <div className={css({ display: 'flex', flexDirection: 'column', gap: '1rem' })}>
                                 {(showAllPastGames ? pastGames : pastGames.slice(0, 10)).map((game: Game, index: number) => {
-                                    // Determine if we were home or away
-                                    const isHomeGame = game.home_team_name?.includes('Carolina Junior Canes');
+                                    // Determine if we were home or away based on mhrTeamId
+                                    const isHomeGame = String(game.game_home_team) === String(settings.mhrTeamId);
                                     const opponentName = isHomeGame ? game.visitor_team_name : game.home_team_name;
                                     const ourScore = isHomeGame ? game.game_home_score : game.game_visitor_score;
                                     const theirScore = isHomeGame ? game.game_visitor_score : game.game_home_score;

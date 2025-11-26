@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getMHRTeamData } from './mhr-service';
+import { getMHRTeamData, scrapeTeamDetails } from './mhr-service';
 import { getSettings as getSettingsFromKV } from './kv';
 import { debugLog } from '@/lib/logger';
 
@@ -20,30 +20,36 @@ interface CalendarEvent {
 }
 
 /**
- * Detect if a calendar event is a placeholder (tournament, showcase, TBD)
+ * Detect if a calendar event is a placeholder (tournament, showcase, playoffs, TBD)
  */
 function isPlaceholderEvent(event: CalendarEvent, summary: string): boolean {
     const duration = event.end.getTime() - event.start.getTime();
     const durationHours = duration / (60 * 60 * 1000);
+    const lowerSummary = summary.toLowerCase();
 
-    // Heuristic 1: Duration > 24 hours (multi-day events)
+    // Heuristic 1: Duration > 24 hours (multi-day events like tournaments)
     if (durationHours > 24) {
         return true;
     }
 
-    // Heuristic 2: Summary contains very specific placeholder keywords
-    // Be conservative - only catch obvious placeholder events
-    const placeholderKeywords = [
-        'tier 1 elite tournament',
+    // Heuristic 2: Explicit TBD/placeholder keywords
+    const explicitKeywords = [
         'tbd',
         'to be determined',
         'placeholder',
         'schedule tbd'
     ];
-
-    const lowerSummary = summary.toLowerCase();
-    if (placeholderKeywords.some(keyword => lowerSummary.includes(keyword))) {
+    if (explicitKeywords.some(keyword => lowerSummary.includes(keyword))) {
         return true;
+    }
+
+    // Heuristic 3: Tournament/showcase/playoffs keywords (but not if it has vs/@ indicating a specific game)
+    const hasVersusOrAt = /\s(vs\.?|versus|@|at)\s/i.test(summary);
+    if (!hasVersusOrAt) {
+        const eventKeywords = ['tournament', 'showcase', 'playoffs'];
+        if (eventKeywords.some(keyword => lowerSummary.includes(keyword))) {
+            return true;
+        }
     }
 
     return false;
@@ -65,10 +71,14 @@ export async function transformCalendarEvents(
     // Fetch our team's MHR data to get logo
     let ourTeamLogo = '';
     if (settings.mhrTeamId) {
-        const ourTeamData = await getMHRTeamData(settings.mhrTeamId, effectiveYear);
-        ourTeamLogo = ourTeamData?.logo || '';
-        if (ourTeamData) {
-            debugLog(`[MHR] Found logo for our team: ${settings.teamName}`);
+        try {
+            const ourTeamData = await scrapeTeamDetails(settings.mhrTeamId, effectiveYear);
+            ourTeamLogo = ourTeamData?.logo || '';
+            if (ourTeamData?.logo) {
+                debugLog(`[MHR] Found logo for our team: ${settings.teamName}`);
+            }
+        } catch (error) {
+            debugLog(`[MHR] Error fetching logo for our team:`, error);
         }
     }
 
@@ -94,13 +104,23 @@ export async function transformCalendarEvents(
             const day = String(startDate.getDate()).padStart(2, '0');
             const localDateStr = `${year}-${month}-${day}`;
 
+            // Format date range: "Dec 13-15" or "Dec 31-Jan 2"
+            const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
+            const endMonth = endDate.toLocaleDateString('en-US', { month: 'short' });
+            const startDay = startDate.getDate();
+            const endDay = endDate.getDate();
+
+            const dateRangePretty = startMonth === endMonth
+                ? `${startMonth} ${startDay}-${endDay}`
+                : `${startMonth} ${startDay}-${endMonth} ${endDay}`;
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const placeholderEntry: any = {
                 game_nbr: placeholderId,
                 game_date_format: localDateStr,
-                game_time_format: 'TBD',
-                game_date_format_pretty: startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-                game_time_format_pretty: 'TBD',
+                game_time_format: '00:00:00', // Use valid time for date filtering/sorting
+                game_date_format_pretty: dateRangePretty, // Use compact date range format
+                game_time_format_pretty: 'TBD', // Display TBD to user
                 home_team_name: settings.teamName,
                 visitor_team_name: 'TBD',
                 rink_name: event.location || 'TBD',
@@ -109,8 +129,8 @@ export async function transformCalendarEvents(
                 isPlaceholder: true,
                 placeholderStartDate: startDate.toISOString(),
                 placeholderEndDate: endDate.toISOString(),
-                placeholderStartDatePretty: startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-                placeholderEndDatePretty: endDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                placeholderStartDatePretty: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                placeholderEndDatePretty: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                 placeholderLabel: event.summary,
                 placeholderDescription: `${event.summary} - Schedule TBD`,
             };

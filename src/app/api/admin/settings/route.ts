@@ -13,8 +13,7 @@ export async function GET() {
     // Default settings if not found in KV
     return NextResponse.json({
       teamName: 'Carolina Junior Canes (Black) 10U AA',
-      identifiers: ['Black', 'Jr Canes', 'Carolina', 'Jr'],
-      teamLogo: 'https://ranktech-cdn.s3.us-east-2.amazonaws.com/myhockey_prod/logos/0022e6_a.png'
+      identifiers: ['Black', 'Jr Canes', 'Carolina', 'Jr']
     });
   } catch (error) {
     console.error('Error loading settings:', error);
@@ -30,20 +29,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { teamName, identifiers, teamLogo, mhrTeamId, mhrYear, aliases } = body;
+    const { teamName, identifiers, mhrTeamId, mhrYear, aliases } = body;
 
     if (!teamName || !Array.isArray(identifiers)) {
       return NextResponse.json({ error: 'Invalid settings format' }, { status: 400 });
     }
 
-    // Build settings object with all fields
+    // Get existing settings to preserve fields not in the request
+    const existingSettings = await getSettings();
+
+    // Build settings object - merge with existing to avoid losing fields
     const settings: Settings = {
+      ...existingSettings, // Preserve existing fields
       teamName,
       identifiers,
-      teamLogo,
-      ...(mhrTeamId && { mhrTeamId }),
-      ...(mhrYear && { mhrYear }),
-      ...(aliases && { aliases }),
+      // Update optional fields if provided
+      ...(mhrTeamId !== undefined && { mhrTeamId }),
+      ...(mhrYear !== undefined && { mhrYear }),
+      ...(aliases !== undefined && { aliases }),
     };
 
     // Save settings to KV
