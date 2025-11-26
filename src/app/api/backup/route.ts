@@ -69,20 +69,20 @@ async function uploadToGoogleDrive(backupData: any) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const fileName = `rehab-backup-${timestamp}.json`;
 
+  // Convert JSON to buffer
+  const fileContent = JSON.stringify(backupData, null, 2);
+  const buffer = Buffer.from(fileContent, 'utf-8');
+
   // Upload file
-  const fileMetadata = {
-    name: fileName,
-    parents: [process.env.GOOGLE_DRIVE_FOLDER_ID], // Optional: specify folder
-  };
-
-  const media = {
-    mimeType: 'application/json',
-    body: JSON.stringify(backupData, null, 2),
-  };
-
   const response = await drive.files.create({
-    requestBody: fileMetadata,
-    media: media,
+    requestBody: {
+      name: fileName,
+      parents: process.env.GOOGLE_DRIVE_FOLDER_ID ? [process.env.GOOGLE_DRIVE_FOLDER_ID] : undefined,
+    },
+    media: {
+      mimeType: 'application/json',
+      body: buffer,
+    },
     fields: 'id, name, webViewLink',
   });
 
