@@ -44,7 +44,9 @@ export default function NavigationMenu({ onNavigate }: NavigationMenuProps) {
           data-menu-item="true"
           data-path={item.path}
         >
-          {item.label}
+          <span className={textWrapperStyle} data-hovered={hoveredIndex === index}>
+            {item.label}
+          </span>
         </button>
       ))}
     </nav>
@@ -78,30 +80,35 @@ const menuItemStyle = css({
   position: 'relative',
   letterSpacing: '0.02em',
   textAlign: 'center',
-  
-  '&::before': {
-    content: '""',
-    position: 'absolute',
-    bottom: 0,
-    left: '50%',
-    transform: 'translateX(-50%) scaleX(0)',
-    width: '100%',
-    height: '1px',
-    background: '#58a6ff',
-    transition: 'transform 0.3s ease',
-  },
 
   '&[data-hovered="true"]': {
     color: '#58a6ff',
     textShadow: '0 2px 12px rgba(88, 166, 255, 0.6), 0 0 40px rgba(88, 166, 255, 0.4)',
     transform: 'scale(1.05) translateY(-2px)',
-    
-    '&::before': {
-      transform: 'translateX(-50%) scaleX(1)',
-    },
   },
 
   '&:active': {
     transform: 'scale(1.02) translateY(-1px)',
+  },
+});
+
+const textWrapperStyle = css({
+  display: 'inline-block',
+  position: 'relative',
+  
+  '&::after': {
+    content: '""',
+    position: 'absolute',
+    bottom: '-4px',
+    left: 0,
+    right: 0,
+    height: '1px',
+    background: '#58a6ff',
+    transform: 'scaleX(0)',
+    transition: 'transform 0.3s ease',
+  },
+  
+  '&[data-hovered="true"]::after': {
+    transform: 'scaleX(1)',
   },
 });
