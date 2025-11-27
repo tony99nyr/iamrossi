@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { css, cx } from '@styled-system/css';
 import { Reorder, useDragControls } from 'framer-motion';
 import SmartAutocomplete from './SmartAutocomplete';
@@ -153,6 +153,32 @@ export default function ExerciseEntryForm({
     onCancel,
 }: ExerciseEntryFormProps) {
     const [entryDate, setEntryDate] = useState(formatDateForInput(date));
+
+    // Prevent background scrolling when modal is open
+    useEffect(() => {
+        // Save current scroll position
+        const scrollY = window.scrollY;
+        const scrollX = window.scrollX;
+        
+        // Apply fixed positioning to body
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${scrollY}px`;
+        document.body.style.left = `-${scrollX}px`;
+        document.body.style.width = '100%';
+        document.body.style.overflow = 'hidden';
+
+        // Cleanup: restore scrolling on unmount
+        return () => {
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.left = '';
+            document.body.style.width = '';
+            document.body.style.overflow = '';
+            
+            // Restore scroll position
+            window.scrollTo(scrollX, scrollY);
+        };
+    }, []);
 
     const handleCreateNew = async (title: string, description: string) => {
         const newExercise = await onCreateExercise(title, description);
