@@ -7,26 +7,9 @@ import DayView from '@/components/rehab/DayView';
 import ExerciseEntryForm from '@/components/rehab/ExerciseEntryForm';
 import ExerciseEditModal from '@/components/rehab/ExerciseEditModal';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
+import type { Exercise, RehabEntry, ExerciseEntry } from '@/types';
 
-interface Exercise {
-    id: string;
-    title: string;
-    description: string;
-    createdAt: string;
-}
-
-interface RehabEntry {
-    id: string;
-    date: string;
-    exercises: { id: string; weight?: string }[];
-    isRestDay: boolean;
-    vitaminsTaken: boolean;
-    proteinShake: boolean;
-}
-
-interface SelectedExercise extends Exercise {
-    weight?: string;
-}
+interface SelectedExercise extends Exercise, Omit<ExerciseEntry, 'id'> {}
 
 interface KneeRehabClientProps {
     initialExercises: Exercise[];
@@ -236,7 +219,16 @@ export default function KneeRehabClient({
     const handleAddExerciseClick = () => {
         const currentExercises = selectedEntry?.exercises.map(entryEx => {
             const fullExercise = exercises.find(ex => ex.id === entryEx.id);
-            return fullExercise ? { ...fullExercise, weight: entryEx.weight || '' } : null;
+            if (!fullExercise) return null;
+            return {
+                ...fullExercise,
+                timeElapsed: entryEx.timeElapsed,
+                weight: entryEx.weight,
+                reps: entryEx.reps,
+                sets: entryEx.sets,
+                painLevel: entryEx.painLevel,
+                difficultyLevel: entryEx.difficultyLevel,
+            };
         }).filter(Boolean) as SelectedExercise[] || [];
         
         setFormExercises(currentExercises);
@@ -245,7 +237,7 @@ export default function KneeRehabClient({
 
     const handleFormAddExercise = (exercise: Exercise) => {
         if (!formExercises.find(e => e.id === exercise.id)) {
-            setFormExercises(prev => [...prev, { ...exercise, weight: '' }]);
+            setFormExercises(prev => [...prev, { ...exercise }]);
         }
     };
 
@@ -253,9 +245,9 @@ export default function KneeRehabClient({
         setFormExercises(prev => prev.filter(e => e.id !== id));
     };
 
-    const handleFormUpdateWeight = (id: string, weight: string) => {
+    const handleFormUpdateExerciseData = (id: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => {
         setFormExercises(prev => prev.map(e => 
-            e.id === id ? { ...e, weight } : e
+            e.id === id ? { ...e, ...data } : e
         ));
     };
 
@@ -365,7 +357,15 @@ export default function KneeRehabClient({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         date: selectedDate,
-                        exercises: formExercises.map(e => ({ id: e.id, weight: e.weight })),
+                        exercises: formExercises.map(e => ({
+                            id: e.id,
+                            timeElapsed: e.timeElapsed,
+                            weight: e.weight,
+                            reps: e.reps,
+                            sets: e.sets,
+                            painLevel: e.painLevel,
+                            difficultyLevel: e.difficultyLevel,
+                        })),
                         isRestDay: selectedEntry?.isRestDay || false,
                         vitaminsTaken: selectedEntry?.vitaminsTaken || false,
                         proteinShake: selectedEntry?.proteinShake || false,
@@ -463,7 +463,7 @@ export default function KneeRehabClient({
                     selectedExercises={formExercises}
                     onAddExercise={handleFormAddExercise}
                     onRemoveExercise={handleFormRemoveExercise}
-                    onUpdateWeight={handleFormUpdateWeight}
+                    onUpdateExerciseData={handleFormUpdateExerciseData}
                     onReorder={handleFormReorder}
                     onCreateExercise={handleCreateExercise}
                     onSave={handleSaveEntry}

@@ -5,17 +5,9 @@ import { css, cx } from '@styled-system/css';
 import { Reorder, useDragControls } from 'framer-motion';
 import SmartAutocomplete from './SmartAutocomplete';
 import ExerciseCard from './ExerciseCard';
+import type { Exercise, ExerciseEntry } from '@/types';
 
-interface Exercise {
-    id: string;
-    title: string;
-    description: string;
-    createdAt: string;
-}
-
-interface SelectedExercise extends Exercise {
-    weight?: string;
-}
+interface SelectedExercise extends Exercise, Omit<ExerciseEntry, 'id'> {}
 
 interface ExerciseEntryFormProps {
     date: string;
@@ -23,7 +15,7 @@ interface ExerciseEntryFormProps {
     selectedExercises: SelectedExercise[];
     onAddExercise: (exercise: Exercise) => void;
     onRemoveExercise: (id: string) => void;
-    onUpdateWeight: (id: string, weight: string) => void;
+    onUpdateExerciseData: (id: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => void;
     onReorder: (exercises: SelectedExercise[]) => void;
     onCreateExercise: (title: string, description: string) => Promise<Exercise>;
     onSave: () => void;
@@ -37,10 +29,10 @@ function formatDateForInput(dateStr: string): string {
 interface ReorderableExerciseItemProps {
     exercise: SelectedExercise;
     onRemove: (id: string) => void;
-    onUpdateWeight: (id: string, weight: string) => void;
+    onUpdateExerciseData: (id: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => void;
 }
 
-function ReorderableExerciseItem({ exercise, onRemove, onUpdateWeight }: ReorderableExerciseItemProps) {
+function ReorderableExerciseItem({ exercise, onRemove, onUpdateExerciseData }: ReorderableExerciseItemProps) {
     const dragControls = useDragControls();
 
     return (
@@ -96,45 +88,193 @@ function ReorderableExerciseItem({ exercise, onRemove, onUpdateWeight }: Reorder
                     showRemove
                 />
             </div>
-            <div className={cx('weight-input-container', css({
-                display: 'flex',
-                alignItems: 'center',
+            
+            {/* Exercise Data Inputs */}
+            <div className={cx('exercise-data-inputs', css({
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
                 gap: '8px',
                 paddingLeft: '4px',
             }))}>
-                <label className={cx('weight-label', css({
-                    color: '#999',
-                    fontSize: '17px',
-                    fontWeight: '500',
-                }))}>
-                    Weight:
-                </label>
-                <input
-                    type="text"
-                    value={exercise.weight || ''}
-                    onChange={(e) => onUpdateWeight(exercise.id, e.target.value)}
-                    onFocus={(e) => {
-                        setTimeout(() => {
-                            e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }, 300);
-                    }}
-                    placeholder="e.g. 30lbs"
-                    className={cx('weight-input', css({
-                        backgroundColor: '#0a0a0a',
-                        border: '1px solid #333',
-                        borderRadius: '4px',
-                        color: '#ededed',
-                        fontSize: '17px',
-                        padding: '8px 12px',
-                        width: '140px',
-                        outline: 'none',
-                        transition: 'border-color 0.2s ease',
-                        _focus: {
-                            borderColor: '#2563eb',
-                        }
-                    }))}
-                    onPointerDown={(e) => e.stopPropagation()}
-                />
+                {/* Time Elapsed */}
+                <div className={css({ display: 'flex', flexDirection: 'column', gap: '4px' })}>
+                    <label className={css({ color: '#999', fontSize: '14px', fontWeight: '500' })}>
+                        Time
+                    </label>
+                    <input
+                        type="text"
+                        value={exercise.timeElapsed || ''}
+                        onChange={(e) => onUpdateExerciseData(exercise.id, { timeElapsed: e.target.value })}
+                        placeholder="e.g. 45 min"
+                        className={cx('time-input', css({
+                            backgroundColor: '#0a0a0a',
+                            border: '1px solid #333',
+                            borderRadius: '4px',
+                            color: '#ededed',
+                            fontSize: '15px',
+                            padding: '6px 10px',
+                            outline: 'none',
+                            transition: 'border-color 0.2s ease',
+                            _focus: { borderColor: '#2563eb' }
+                        }))}
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                </div>
+
+                {/* Weight */}
+                <div className={css({ display: 'flex', flexDirection: 'column', gap: '4px' })}>
+                    <label className={css({ color: '#999', fontSize: '14px', fontWeight: '500' })}>
+                        Weight
+                    </label>
+                    <input
+                        type="text"
+                        value={exercise.weight || ''}
+                        onChange={(e) => onUpdateExerciseData(exercise.id, { weight: e.target.value })}
+                        placeholder="e.g. 135lb"
+                        className={cx('weight-input', css({
+                            backgroundColor: '#0a0a0a',
+                            border: '1px solid #333',
+                            borderRadius: '4px',
+                            color: '#ededed',
+                            fontSize: '15px',
+                            padding: '6px 10px',
+                            outline: 'none',
+                            transition: 'border-color 0.2s ease',
+                            _focus: { borderColor: '#2563eb' }
+                        }))}
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                </div>
+
+                {/* Reps */}
+                <div className={css({ display: 'flex', flexDirection: 'column', gap: '4px' })}>
+                    <label className={css({ color: '#999', fontSize: '14px', fontWeight: '500' })}>
+                        Reps
+                    </label>
+                    <input
+                        type="number"
+                        value={exercise.reps || ''}
+                        onChange={(e) => onUpdateExerciseData(exercise.id, { reps: e.target.value ? parseInt(e.target.value) : undefined })}
+                        placeholder="12"
+                        className={cx('reps-input', css({
+                            backgroundColor: '#0a0a0a',
+                            border: '1px solid #333',
+                            borderRadius: '4px',
+                            color: '#ededed',
+                            fontSize: '15px',
+                            padding: '6px 10px',
+                            outline: 'none',
+                            transition: 'border-color 0.2s ease',
+                            _focus: { borderColor: '#2563eb' }
+                        }))}
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                </div>
+
+                {/* Sets */}
+                <div className={css({ display: 'flex', flexDirection: 'column', gap: '4px' })}>
+                    <label className={css({ color: '#999', fontSize: '14px', fontWeight: '500' })}>
+                        Sets
+                    </label>
+                    <input
+                        type="number"
+                        value={exercise.sets || ''}
+                        onChange={(e) => onUpdateExerciseData(exercise.id, { sets: e.target.value ? parseInt(e.target.value) : undefined })}
+                        placeholder="4"
+                        className={cx('sets-input', css({
+                            backgroundColor: '#0a0a0a',
+                            border: '1px solid #333',
+                            borderRadius: '4px',
+                            color: '#ededed',
+                            fontSize: '15px',
+                            padding: '6px 10px',
+                            outline: 'none',
+                            transition: 'border-color 0.2s ease',
+                            _focus: { borderColor: '#2563eb' }
+                        }))}
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                </div>
+
+                {/* Pain Level */}
+                <div className={css({ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: '1 / -1' })}>
+                    <label className={css({ color: '#999', fontSize: '14px', fontWeight: '500', display: 'flex', justifyContent: 'space-between' })}>
+                        <span>Pain Level</span>
+                        <span className={css({ color: '#ededed' })}>{exercise.painLevel ?? 0}/10</span>
+                    </label>
+                    <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        value={exercise.painLevel || 0}
+                        onChange={(e) => onUpdateExerciseData(exercise.id, { painLevel: parseInt(e.target.value) })}
+                        className={cx('pain-slider', css({
+                            width: '100%',
+                            height: '6px',
+                            borderRadius: '3px',
+                            outline: 'none',
+                            background: 'linear-gradient(to right, #10b981 0%, #f59e0b 50%, #ef4444 100%)',
+                            WebkitAppearance: 'none',
+                            '&::-webkit-slider-thumb': {
+                                appearance: 'none',
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#ededed',
+                                cursor: 'pointer',
+                            },
+                            '&::-moz-range-thumb': {
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#ededed',
+                                cursor: 'pointer',
+                                border: 'none',
+                            }
+                        }))}
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                </div>
+
+                {/* Difficulty Level */}
+                <div className={css({ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: '1 / -1' })}>
+                    <label className={css({ color: '#999', fontSize: '14px', fontWeight: '500', display: 'flex', justifyContent: 'space-between' })}>
+                        <span>Difficulty</span>
+                        <span className={css({ color: '#ededed' })}>{exercise.difficultyLevel ?? 1}/10</span>
+                    </label>
+                    <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={exercise.difficultyLevel || 1}
+                        onChange={(e) => onUpdateExerciseData(exercise.id, { difficultyLevel: parseInt(e.target.value) })}
+                        className={cx('difficulty-slider', css({
+                            width: '100%',
+                            height: '6px',
+                            borderRadius: '3px',
+                            outline: 'none',
+                            background: 'linear-gradient(to right, #10b981 0%, #3b82f6 50%, #8b5cf6 100%)',
+                            WebkitAppearance: 'none',
+                            '&::-webkit-slider-thumb': {
+                                appearance: 'none',
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#ededed',
+                                cursor: 'pointer',
+                            },
+                            '&::-moz-range-thumb': {
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#ededed',
+                                cursor: 'pointer',
+                                border: 'none',
+                            }
+                        }))}
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                </div>
             </div>
         </Reorder.Item>
     );
@@ -146,7 +286,7 @@ export default function ExerciseEntryForm({
     selectedExercises,
     onAddExercise,
     onRemoveExercise,
-    onUpdateWeight,
+    onUpdateExerciseData,
     onReorder,
     onCreateExercise,
     onSave,
@@ -356,7 +496,7 @@ export default function ExerciseEntryForm({
                                     key={exercise.id}
                                     exercise={exercise}
                                     onRemove={onRemoveExercise}
-                                    onUpdateWeight={onUpdateWeight}
+                                    onUpdateExerciseData={onUpdateExerciseData}
                                 />
                             ))}
                         </Reorder.Group>

@@ -13,10 +13,20 @@ export interface Exercise {
   createdAt: string;
 }
 
+export interface ExerciseEntry {
+  id: string;
+  timeElapsed?: string;  // e.g., "45 min", "1:30:00"
+  weight?: string;       // e.g., "135lb", "30lb"
+  reps?: number;         // e.g., 12
+  sets?: number;         // e.g., 4
+  painLevel?: number;    // 0-10 scale
+  difficultyLevel?: number; // 1-10 scale
+}
+
 export interface RehabEntry {
   id: string;
   date: string;
-  exercises: { id: string; weight?: string }[];
+  exercises: ExerciseEntry[];
   isRestDay: boolean;
   vitaminsTaken: boolean;
   proteinShake: boolean;
