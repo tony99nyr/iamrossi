@@ -416,11 +416,7 @@ export default function KneeRehabClient({
                 maxWidth: '1440px',
                 margin: '0 auto',
             }))}>
-                {/* Header */}
-                <header className={cx('page-header', css({
-                    marginBottom: '72px',
-                }))}>
-                </header>
+
 
                 {/* Calendar */}
                 <div className={cx('calendar-section', css({

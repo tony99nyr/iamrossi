@@ -33,6 +33,7 @@ export interface Game {
     game_nbr?: string | number;
     highlightsUrl?: string;
     fullGameUrl?: string;
+    isPlaceholder?: boolean;
 }
 
 interface GameCardProps {
@@ -90,6 +91,12 @@ const cardStyle = css({
     transition: 'box-shadow 0.3s ease',
     position: 'relative',
     overflow: 'hidden',
+});
+
+const placeholderCardStyle = css({
+    background: 'rgba(60, 20, 20, 0.6)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 100, 100, 0.15)',
 });
 
 // const badgeStyle = css({
@@ -297,7 +304,7 @@ export default function GameCard({ title, game }: GameCardProps) {
     }
 
     return (
-        <div className={cx('game-card', cardStyle)}>
+        <div className={cx('game-card', cardStyle, game.isPlaceholder && placeholderCardStyle)}>
             <div className={cx('game-content', contentStyle)}>
                 <div className={cx('date-row', dateRowStyle)}>
                     <span>{game.game_date_format_pretty || game.game_date}</span>

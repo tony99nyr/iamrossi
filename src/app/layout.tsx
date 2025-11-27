@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { cx } from '@styled-system/css';
-import HamburgerMenu from '@/components/HamburgerMenu';
+import ConditionalFooter from '@/components/ConditionalFooter';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://iamrossi.com';
 
@@ -57,8 +57,8 @@ export default function RootLayout({
     return (
         <html lang="en">
             <body className={cx('root-layout', `${geistSans.variable} ${geistMono.variable}`)}>
-                <HamburgerMenu />
                 {children}
+                <ConditionalFooter />
                 <Analytics />
                 <SpeedInsights />
             </body>

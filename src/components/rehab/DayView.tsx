@@ -35,7 +35,7 @@ function formatDateHeader(dateStr: string): string {
     const date = new Date(dateStr + 'T00:00:00');
     return date.toLocaleDateString('en-US', { 
         weekday: 'long', 
-        month: 'long', 
+        month: 'short', 
         day: 'numeric',
         year: 'numeric'
     });
@@ -64,6 +64,9 @@ export default function DayView({
             {/* Date Header */}
             <div className={cx('day-header', css({
                 marginBottom: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
             }))}>
                 {onBack && (
                     <button
@@ -73,7 +76,7 @@ export default function DayView({
                             alignItems: 'center',
                             justifyContent: 'center',
                             padding: '8px 12px',
-                            marginBottom: '12px',
+                            marginBottom: '0',
                             backgroundColor: 'transparent',
                             border: '1px solid #333',
                             borderRadius: '8px',
@@ -94,12 +97,20 @@ export default function DayView({
                         📅
                     </button>
                 )}
-                <h2 className={cx('date-title', css({
-                    color: '#ededed',
-                    fontSize: '24px',
-                    fontWeight: '600',
-                    marginBottom: '16px',
-                }))}>
+                <h2 
+                    onClick={onBack}
+                    className={cx('date-title', css({
+                        color: '#ededed',
+                        fontSize: '24px',
+                        fontWeight: '600',
+                        marginBottom: '0',
+                        cursor: 'pointer',
+                        transition: 'opacity 0.2s ease',
+                        _hover: {
+                            opacity: 0.8,
+                        }
+                    }))}
+                >
                     {formatDateHeader(date)}
                 </h2>
             </div>

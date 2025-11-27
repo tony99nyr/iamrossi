@@ -133,24 +133,44 @@ export function getRandomFruit(): FruitVariant {
 
 /**
  * Spawn a random game object based on weighted probabilities
+ * Accepts optional bomb weight and velocity multiplier for difficulty scaling
  */
 export function spawnRandomObject(
   screenWidth: number,
-  screenHeight: number
+  screenHeight: number,
+  bombWeight: number = 15,
+  velocityMultiplier: number = 1.0
 ): GameObject {
-  const rand = Math.random() * 100;
+  // Adjust spawn weights based on difficulty
+  const fruitWeight = 60;
+  const bonusWeight = 10;
+  const totalWeight = fruitWeight + bombWeight + bonusWeight;
+  
+  const rand = Math.random() * totalWeight;
 
-  if (rand < 60) {
-    // 60% chance - Fruit
-    return createFruit(getRandomFruit(), screenWidth, screenHeight);
-  } else if (rand < 75) {
-    // 15% chance - Bomb
-    return createBomb(screenWidth, screenHeight);
+  if (rand < fruitWeight) {
+    // Fruit
+    const fruit = createFruit(getRandomFruit(), screenWidth, screenHeight);
+    // Apply velocity multiplier
+    fruit.velocity.x *= velocityMultiplier;
+    fruit.velocity.y *= velocityMultiplier;
+    return fruit;
+  } else if (rand < fruitWeight + bombWeight) {
+    // Bomb
+    const bomb = createBomb(screenWidth, screenHeight);
+    // Apply velocity multiplier
+    bomb.velocity.x *= velocityMultiplier;
+    bomb.velocity.y *= velocityMultiplier;
+    return bomb;
   } else {
-    // 10% chance - Bonus (puck, canes, rick)
+    // Bonus
     const bonuses: BonusVariant[] = ['puck', 'canes', 'rick'];
     const variant = bonuses[Math.floor(Math.random() * bonuses.length)];
-    return createBonusItem(variant, screenWidth, screenHeight);
+    const bonus = createBonusItem(variant, screenWidth, screenHeight);
+    // Apply velocity multiplier
+    bonus.velocity.x *= velocityMultiplier;
+    bonus.velocity.y *= velocityMultiplier;
+    return bonus;
   }
 }
 

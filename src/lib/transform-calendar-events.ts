@@ -114,6 +114,30 @@ export async function transformCalendarEvents(
                 ? `${startMonth} ${startDay}-${endDay}`
                 : `${startMonth} ${startDay}-${endMonth} ${endDay}`;
 
+            // Clean up the summary by removing our team name identifiers
+            let cleanSummary = event.summary;
+            // Sort identifiers by length (descending) to avoid partial matches
+            // Add "10U" to the list of identifiers to remove
+            const identifiersToRemove = [...settings.identifiers, '10U'].sort((a, b) => b.length - a.length);
+            
+            for (const id of identifiersToRemove) {
+                // Create a regex that matches the identifier with optional surrounding whitespace/punctuation
+                // We want to remove "Jr Canes 10U Black", "Jr Canes", etc.
+                const regex = new RegExp(`\\b${id}\\b`, 'gi');
+                cleanSummary = cleanSummary.replace(regex, '').trim();
+            }
+            
+            // Clean up any double spaces or leading/trailing punctuation that might remain
+            cleanSummary = cleanSummary
+                .replace(/\s+/g, ' ')
+                .replace(/^[-–—:\s]+|[-–—:\s]+$/g, '')
+                .trim();
+
+            // If we stripped everything (unlikely but possible), fall back to original
+            if (!cleanSummary) {
+                cleanSummary = event.summary;
+            }
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const placeholderEntry: any = {
                 game_nbr: placeholderId,
@@ -131,12 +155,12 @@ export async function transformCalendarEvents(
                 placeholderEndDate: endDate.toISOString(),
                 placeholderStartDatePretty: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                 placeholderEndDatePretty: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                placeholderLabel: event.summary,
-                placeholderDescription: `${event.summary} - Schedule TBD`,
+                placeholderLabel: cleanSummary,
+                placeholderDescription: `${cleanSummary} - Schedule TBD`,
             };
 
             schedule.push(placeholderEntry);
-            debugLog(`[Placeholder] Created placeholder entry for "${event.summary}"`);
+            debugLog(`[Placeholder] Created placeholder entry for "${cleanSummary}" (was "${event.summary}")`);
             continue;
         }
 

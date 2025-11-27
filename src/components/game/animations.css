@@ -42,3 +42,16 @@
     color: #fff;
   }
 }
+
+/* Score pop-in animation */
+@keyframes scorePopIn {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}

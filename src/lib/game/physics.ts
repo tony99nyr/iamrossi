@@ -29,7 +29,8 @@ export function generateVelocity(
   isToolIcon: boolean = false, 
   screenWidth: number = 1024, 
   screenHeight: number = 768,
-  spawnX: number = 512
+  spawnX: number = 512,
+  velocityMultiplier: number = 1.0
 ): Vector2D {
   // Calculate vertical velocity to reach a target height
   const gravity = GAME_CONFIG.gravity;
@@ -66,8 +67,8 @@ export function generateVelocity(
   const minVx = Math.min(0.5, actualMaxVx * 0.5);
 
   return {
-    x: random(minVx, actualMaxVx) * direction,
-    y: isToolIcon ? velocityY * GAME_CONFIG.toolIconVelocityYMultiplier : velocityY,
+    x: random(minVx, actualMaxVx) * direction * velocityMultiplier,
+    y: (isToolIcon ? velocityY * GAME_CONFIG.toolIconVelocityYMultiplier : velocityY) * velocityMultiplier,
   };
 }
 
@@ -174,7 +175,10 @@ export function normalizeRotation(rotation: number): number {
 
 /**
  * Calculate spawn interval with some randomness
+ * Accepts optional difficulty config for dynamic intervals
  */
-export function calculateSpawnInterval(): number {
-  return random(GAME_CONFIG.minSpawnInterval, GAME_CONFIG.maxSpawnInterval);
+export function calculateSpawnInterval(minInterval?: number, maxInterval?: number): number {
+  const min = minInterval ?? GAME_CONFIG.minSpawnInterval;
+  const max = maxInterval ?? GAME_CONFIG.maxSpawnInterval;
+  return random(min, max);
 }

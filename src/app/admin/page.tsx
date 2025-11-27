@@ -379,7 +379,7 @@ export default function AdminPage() {
 
     return (
         <div className={cx('admin-page', containerStyle)}>
-            <div className={dashboardStyle}>
+            <div className={css({ width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '2rem', zIndex: 1 })}>
                 <div className={headerRowStyle}>
                     <h1 className={headerStyle}>Admin Dashboard</h1>
                     <button onClick={() => {
@@ -391,7 +391,7 @@ export default function AdminPage() {
 
                 <div className={cardStyle}>
                     <h2>Team Configuration</h2>
-                    <p className={descriptionStyle}>Configure your team name and identifiers for schedule parsing.</p>
+                    <p className={css({ color: 'rgba(255, 255, 255, 0.6)', marginBottom: '1.5rem', lineHeight: '1.5' })}>Configure your team name and identifiers for schedule parsing.</p>
                     
                     <form onSubmit={handleSaveSettings} className={formStyle}>
                         <div className={inputGroupStyle}>
@@ -448,11 +448,11 @@ export default function AdminPage() {
 
                 <div className={cardStyle}>
                     <h2>Calendar Sync</h2>
-                    <p className={descriptionStyle}>
+                    <p className={css({ color: 'rgba(255, 255, 255, 0.6)', marginBottom: '1.5rem', lineHeight: '1.5' })}>
                         Sync schedule from Google Calendar. This will fetch the latest events and update the schedule.
                     </p>
                     
-                    <div className={syncSectionStyle}>
+                    <div className={css({ display: 'flex', flexDirection: 'column', gap: '1rem' })}>
                         <button 
                             onClick={handleSync} 
                             disabled={isSyncing}
@@ -477,11 +477,11 @@ export default function AdminPage() {
 
                 <div className={cardStyle}>
                     <h2>Database Backup</h2>
-                    <p className={descriptionStyle}>
+                    <p className={css({ color: 'rgba(255, 255, 255, 0.6)', marginBottom: '1.5rem', lineHeight: '1.5' })}>
                         Manually trigger a backup of all rehab data to Google Drive. Backups run automatically daily at 2 AM UTC.
                     </p>
                     
-                    <div className={syncSectionStyle}>
+                    <div className={css({ display: 'flex', flexDirection: 'column', gap: '1rem' })}>
                         <button 
                             onClick={handleBackup} 
                             disabled={isBackingUp}
@@ -522,14 +522,7 @@ const headerStyle = css({
     margin: 0,
 });
 
-const dashboardStyle = css({
-    width: '100%',
-    maxWidth: '800px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2rem',
-    zIndex: 1,
-});
+
 
 const headerRowStyle = css({
     display: 'flex',
@@ -569,11 +562,7 @@ const cardStyle = css({
     },
 });
 
-const descriptionStyle = css({
-    color: 'rgba(255, 255, 255, 0.6)',
-    marginBottom: '1.5rem',
-    lineHeight: '1.5',
-});
+
 
 const inputGroupStyle = css({
     display: 'flex',
@@ -586,11 +575,7 @@ const inputGroupStyle = css({
     },
 });
 
-const syncSectionStyle = css({
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-});
+
 
 const disabledButtonStyle = css({
     padding: '1rem 1.5rem',

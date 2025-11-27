@@ -20,7 +20,7 @@
 - Memoize expensive calculations with `useMemo` only when necessary (don't over-optimize)
 
 ## Panda CSS
-- If 3 or less styles in a css() block do it inline rather than extracting
+- If 5 or less styles in a css() block do it inline rather than extracting
 - Ensure all classNames and css rules are static and deterministic
 - Use tokens from `panda.config.ts` for colors, spacing, animations
 - Prefer Panda patterns (`stack()`, `flex()`, etc.) for common layouts

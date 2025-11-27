@@ -16,11 +16,11 @@ import {
   spawnRandomObject,
 } from '@/lib/game/objects';
 import { createParticleExplosion } from '@/lib/game/particles';
+import { calculateDifficulty, type DifficultyConfig } from '@/lib/game/difficulty';
 import GameScene from './GameScene';
 import GameCanvas, { type GameCanvasHandle } from './GameCanvas';
 import WoodBackground from './WoodBackground';
 import LeaderboardDisplay from './LeaderboardDisplay';
-import NavigationMenu from './NavigationMenu';
 import { css } from '@styled-system/css';
 import './animations.css';
 
@@ -51,13 +51,16 @@ export default function FruitNinjaGame() {
   const [savedRank, setSavedRank] = useState<number | null>(null);
   const [explosions, setExplosions] = useState<Array<{ id: string; position: { x: number; y: number; z: number } }>>([]);
   const [livesShaking, setLivesShaking] = useState(false);
+  const [difficulty, setDifficulty] = useState<DifficultyConfig>(calculateDifficulty(0));
+  const [personalBest, setPersonalBest] = useState(0);
+  const [isNewPersonalBest, setIsNewPersonalBest] = useState(false);
 
   // Refs for performance-critical data (no re-renders)
   const gameStateRef = useRef({
     slashes: [] as SlashTrail[],
     particles: [] as Particle[],
     lastSpawnTime: 0,
-    spawnInterval: calculateSpawnInterval(),
+    spawnInterval: calculateSpawnInterval(difficulty.minSpawnInterval, difficulty.maxSpawnInterval),
     isSlashing: false,
     currentSlash: [] as SlashPoint[],
   });
@@ -74,7 +77,12 @@ export default function FruitNinjaGame() {
   
   useEffect(() => {
     scoreRef.current = score;
-  }, [score]);
+    // Update difficulty when score changes
+    const newDifficulty = calculateDifficulty(score);
+    if (newDifficulty.tier !== difficulty.tier) {
+      setDifficulty(newDifficulty);
+    }
+  }, [score, difficulty.tier]);
 
   // Set screen dimensions and spawn initial objects
   useEffect(() => {
@@ -89,7 +97,24 @@ export default function FruitNinjaGame() {
     window.addEventListener('resize', updateDimensions);
 
     return () => window.removeEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
   }, []);
+
+  // Load player name and personal best from local storage
+  useEffect(() => {
+    const savedName = localStorage.getItem('fruitNinja_playerName');
+    const savedBest = localStorage.getItem('fruitNinja_personalBest');
+    
+    if (savedName) setPlayerName(savedName);
+    if (savedBest) setPersonalBest(parseInt(savedBest, 10));
+  }, []);
+
+  // Save player name to local storage when changed
+  useEffect(() => {
+    if (playerName) {
+      localStorage.setItem('fruitNinja_playerName', playerName);
+    }
+  }, [playerName]);
 
   // Spawn initial fruit on mount (single fruit at bottom center)
   useEffect(() => {
@@ -159,9 +184,30 @@ export default function FruitNinjaGame() {
                 setTimeout(() => setLivesShaking(false), 600);
                 
                 if (newLives <= 0) {
-                  // Game over
-                  setFinalScore(scoreRef.current);
+                  // Game Over
                   setGamePhase('intro');
+                  setFinalScore(scoreRef.current);
+                  
+                  // Check for personal best
+                  if (scoreRef.current > personalBest) {
+                    setPersonalBest(scoreRef.current);
+                    localStorage.setItem('fruitNinja_personalBest', scoreRef.current.toString());
+                    setIsNewPersonalBest(true);
+                  } else {
+                    setIsNewPersonalBest(false);
+                  }
+                  
+                  // Fetch predicted rank
+                  fetch('/api/game/leaderboard')
+                    .then(res => res.json())
+                    .then((data: LeaderboardApiResponse) => {
+                      if (data.success) {
+                        // Simple client-side prediction
+                        const rank = data.leaderboard.filter(entry => entry.score > scoreRef.current).length + 1;
+                        setPredictedRank(rank);
+                      }
+                    });
+                  
                   setObjects([]);
                   
                   setTimeout(() => {
@@ -233,12 +279,39 @@ export default function FruitNinjaGame() {
       if (
         gamePhase === 'playing' &&
         now - gameStateRef.current.lastSpawnTime > gameStateRef.current.spawnInterval &&
-        activeObjects.length < GAME_CONFIG.maxObjectsOnScreen
+        activeObjects.length < difficulty.maxObjectsOnScreen
       ) {
-        const newObject = spawnRandomObject(dimensions.width, dimensions.height);
-        setObjects((prev) => [...prev, newObject]);
+        // Determine number of objects to spawn based on difficulty
+        const rand = Math.random();
+        let spawnCount = 1;
+        
+        if (rand < difficulty.multiSpawnChances.quad) {
+          spawnCount = 4;
+        } else if (rand < difficulty.multiSpawnChances.quad + difficulty.multiSpawnChances.triple) {
+          spawnCount = 3;
+        } else if (rand < difficulty.multiSpawnChances.quad + difficulty.multiSpawnChances.triple + difficulty.multiSpawnChances.double) {
+          spawnCount = 2;
+        }
+        
+        // Spawn objects
+        const newObjects: GameObject[] = [];
+        for (let i = 0; i < spawnCount; i++) {
+          newObjects.push(
+            spawnRandomObject(
+              dimensions.width,
+              dimensions.height,
+              difficulty.bombWeight,
+              difficulty.velocityMultiplier
+            )
+          );
+        }
+        
+        setObjects((prev) => [...prev, ...newObjects]);
         gameStateRef.current.lastSpawnTime = now;
-        gameStateRef.current.spawnInterval = calculateSpawnInterval();
+        gameStateRef.current.spawnInterval = calculateSpawnInterval(
+          difficulty.minSpawnInterval,
+          difficulty.maxSpawnInterval
+        );
       }
 
       // Render canvas
@@ -270,7 +343,7 @@ export default function FruitNinjaGame() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [dimensions.width, dimensions.height, gamePhase]);
+  }, [dimensions.width, dimensions.height, gamePhase, personalBest, playerName]);
 
   // Handle object sliced
   const handleObjectSliced = (object: GameObject) => {
@@ -348,7 +421,6 @@ export default function FruitNinjaGame() {
       gameStateRef.current.currentSlash.shift();
     }
   };
-
   const handlePointerUp = () => {
     if (gameStateRef.current.isSlashing && gameStateRef.current.currentSlash.length > 1) {
       // Add slash to trails for visual effect
@@ -357,39 +429,12 @@ export default function FruitNinjaGame() {
         startTime: Date.now(),
         fadeOutTime: GAME_CONFIG.slashTrailFadeTime,
       });
-      
-      // Check if slash intersects with any menu items (only in intro phase)
-      if (gamePhase === 'intro') {
-        checkMenuSlash(gameStateRef.current.currentSlash);
-      }
     }
 
     gameStateRef.current.isSlashing = false;
     gameStateRef.current.currentSlash = [];
   };
-  
-  // Check if slash intersects with menu items
-  const checkMenuSlash = (slashPoints: SlashPoint[]) => {
-    // Get menu item elements and check for intersection
-    const menuButtons = document.querySelectorAll('[data-menu-item]');
-    
-    menuButtons.forEach((button) => {
-      const rect = button.getBoundingClientRect();
-      const intersects = slashPoints.some(point => 
-        point.x >= rect.left && 
-        point.x <= rect.right && 
-        point.y >= rect.top && 
-        point.y <= rect.bottom
-      );
-      
-      if (intersects) {
-        const path = button.getAttribute('data-path');
-        if (path) {
-          router.push(path);
-        }
-      }
-    });
-  };
+
   
   const handleExplosionComplete = (id: string) => {
     setExplosions((prev) => prev.filter((exp) => exp.id !== id));
@@ -408,8 +453,22 @@ export default function FruitNinjaGame() {
         onPointerCancel={handlePointerUp}
         onPointerLeave={handlePointerUp}
       >
-        {/* Navigation Menu (only in intro phase) */}
-        {gamePhase === 'intro' && <NavigationMenu />}
+        {/* Start Game Button (only in intro phase) */}
+        {gamePhase === 'intro' && (
+          <button 
+            onClick={() => {
+              setGamePhase('playing');
+              setScore(0);
+              setLives(GAME_CONFIG.maxLives);
+              setFinalScore(0);
+              setObjects([]);
+              gameStateRef.current.lastSpawnTime = Date.now();
+            }}
+            className={startButtonStyle}
+          >
+            Start Game
+          </button>
+        )}
         
         {/* 3D Scene */}
         <GameScene 
@@ -423,88 +482,145 @@ export default function FruitNinjaGame() {
 
         {/* Score display during game */}
         {gamePhase === 'playing' && (
-          <div className={scoreStyle}>
-            Score: {score} | <span className={livesStyle} data-shaking={livesShaking}>Lives: {lives}</span>
-          </div>
-        )}
-
-        {/* Final score display in intro after game over */}
-        {gamePhase === 'intro' && finalScore > 0 && !showLeaderboard && (
           <>
-            <div className={finalScoreStyle}>
-              Final Score: {finalScore}
-              {predictedRank && (
-                <div className={rankPreviewStyle}>
-                  You ranked #{predictedRank}!
-                </div>
-              )}
-            </div>
-
-            {/* Name entry for score submission */}
-            <div className={nameEntryStyle}>
-              <input
-                type="text"
-                placeholder="Enter your name"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                maxLength={20}
-                className={nameInputStyle}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && playerName.trim()) {
-                    handleSubmitScore();
-                  }
+            <div className={scoreStyle} key={score}>
+              {score}
+              <div 
+                className={difficultyPhaseStyle}
+                style={{ 
+                  color: difficulty.color,
+                  textShadow: `0 0 ${difficulty.tier * 5}px ${difficulty.color}, 2px 2px 4px rgba(0,0,0,0.8)`
                 }}
-              />
-              <button
-                onClick={handleSubmitScore}
-                disabled={!playerName.trim()}
-                className={submitButtonStyle}
               >
-                Save Score
-              </button>
+                {difficulty.name}
+              </div>
+            </div>
+            <div className={livesContainerStyle}>
+              {Array.from({ length: GAME_CONFIG.maxLives }).map((_, index) => (
+                <span
+                  key={index}
+                  className={lifeIconStyle}
+                  data-active={index < lives}
+                  data-shaking={livesShaking && index === lives}
+                >
+                  ✕
+                </span>
+              ))}
             </div>
           </>
         )}
 
-        {/* Leaderboard display after saving */}
-        {showLeaderboard && savedRank && (
-          <LeaderboardDisplay
-            highlightRank={savedRank}
-            onScrollComplete={() => {
-              // After scroll animation, can close or keep open
-            }}
-          />
-        )}
+        {/* Post-Game Overlay */}
+        {gamePhase === 'intro' && finalScore >= 0 && (
+          <div className={postGameOverlayStyle}>
+            <div className={postGameContainerStyle}>
+              {/* Header with Final Score */}
+              <div className={postGameHeaderStyle}>
+                <h2 className={css({ fontSize: '2.5rem', fontWeight: 'bold', color: '#FFD700', margin: 0 })}>Game Over!</h2>
+                <div className={css({ fontSize: '3rem', fontWeight: 'bold', color: '#FFA500', marginTop: '0.5rem' })}>
+                  {finalScore}
+                </div>
+                {predictedRank && (
+                  <div className={css({ fontSize: '1.25rem', color: '#fff', marginTop: '0.5rem' })}>
+                    Rank #{predictedRank}
+                  </div>
+                )}
+              </div>
 
-        {/* Close leaderboard button */}
-        {showLeaderboard && (
-          <button
-            onClick={() => {
-              setShowLeaderboard(false);
-              setFinalScore(0);
-              setPredictedRank(null);
-              setSavedRank(null);
-            }}
-            className={closeLeaderboardButtonStyle}
-          >
-            Close
-          </button>
+              {/* Leaderboard */}
+              {!showLeaderboard && (
+                <div className={postGameLeaderboardStyle}>
+                  <LeaderboardDisplay
+                    highlightRank={undefined}
+                    onScrollComplete={() => {}}
+                  />
+                </div>
+              )}
+
+              {/* Leaderboard after save */}
+              {showLeaderboard && savedRank && (
+                <div className={postGameLeaderboardStyle}>
+                  <LeaderboardDisplay
+                    highlightRank={savedRank}
+                    onScrollComplete={() => {}}
+                  />
+                </div>
+              )}
+
+              {/* Save Score Form */}
+              {!showLeaderboard && (
+                <div className={postGameFormStyle}>
+                  <input
+                    type="text"
+                    placeholder="Enter your name"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    maxLength={20}
+                    className={postGameInputStyle}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && playerName.trim()) {
+                        handleSubmitScore();
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={handleSubmitScore}
+                    disabled={!playerName.trim()}
+                    className={postGameSaveButtonStyle}
+                  >
+                    Save Score
+                  </button>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className={postGameActionsStyle}>
+                <button
+                  onClick={() => {
+                    // Try Again
+                    setGamePhase('playing');
+                    setScore(0);
+                    setLives(GAME_CONFIG.maxLives);
+                    setFinalScore(0);
+                    setPredictedRank(null);
+                    setSavedRank(null);
+                    setShowLeaderboard(false);
+                    setPlayerName('');
+                    setObjects([]);
+                    gameStateRef.current.lastSpawnTime = Date.now();
+                  }}
+                  className={postGameTryAgainButtonStyle}
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => {
+                    // Quit - return to homepage
+                    window.location.href = '/';
+                  }}
+                  className={postGameQuitButtonStyle}
+                >
+                  Quit
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </>
   );
 
   // Handle score submission
-  async function handleSubmitScore() {
-    if (!playerName.trim() || finalScore === 0) return;
+  async function submitScore(scoreToSubmit: number, nameToSubmit: string) {
+    if (!nameToSubmit.trim() || scoreToSubmit === 0) return;
 
     try {
       const response = await fetch('/api/game/leaderboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: playerName.trim(),
-          score: finalScore,
+          name: nameToSubmit,
+          score: scoreToSubmit,
         }),
       });
 
@@ -513,11 +629,14 @@ export default function FruitNinjaGame() {
       if (data.success) {
         setSavedRank(data.rank);
         setShowLeaderboard(true);
-        setPlayerName('');
       }
     } catch (error) {
       console.error('Failed to submit score:', error);
     }
+  }
+
+  function handleSubmitScore() {
+    submitScore(finalScore, playerName.trim());
   }
 }
 
@@ -538,19 +657,53 @@ const scoreStyle = css({
   position: 'fixed',
   top: '2rem',
   left: '2rem',
-  fontSize: '2rem',
+  fontSize: { base: '3rem', md: '4rem' },
   fontWeight: 'bold',
-  color: '#fff',
-  textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)',
+  color: '#FFD700',
+  textShadow: '3px 3px 6px rgba(0, 0, 0, 0.9), 0 0 20px rgba(255, 215, 0, 0.5)',
+  zIndex: 50,
+  animation: 'scorePopIn 0.3s ease-out',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+});
+
+const difficultyPhaseStyle = css({
+  fontSize: { base: '1rem', md: '1.25rem' },
+  fontWeight: '800',
+  marginTop: '-0.5rem',
+  textTransform: 'uppercase',
+  letterSpacing: '0.1em',
+  transition: 'all 0.5s ease',
+  animation: 'fadeIn 0.5s ease-out',
+});
+
+const livesContainerStyle = css({
+  position: 'fixed',
+  top: '2rem',
+  right: '2rem',
+  display: 'flex',
+  gap: '0.75rem',
   zIndex: 50,
 });
 
-const livesStyle = css({
-  display: 'inline-block',
-  transition: 'color 0.1s ease',
+const lifeIconStyle = css({
+  fontSize: { base: '2rem', md: '2.5rem' },
+  fontWeight: 'bold',
+  transition: 'all 0.3s ease',
+  
+  '&[data-active="true"]': {
+    color: '#FF3B30',
+    textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(255, 59, 48, 0.6)',
+  },
+  
+  '&[data-active="false"]': {
+    color: 'rgba(255, 255, 255, 0.2)',
+    textShadow: '2px 2px 4px rgba(0, 0, 0, 0.5)',
+  },
   
   '&[data-shaking="true"]': {
-    animation: 'shake 0.6s ease-in-out, blink 0.6s ease-in-out',
+    animation: 'shake 0.6s ease-in-out',
   },
 });
 
@@ -622,6 +775,172 @@ const submitButtonStyle = css({
     backgroundColor: '#999',
     cursor: 'not-allowed',
     transform: 'none',
+  },
+});
+
+// Post-Game Overlay Styles
+const postGameOverlayStyle = css({
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: 'rgba(0, 0, 0, 0.95)',
+  backdropFilter: 'blur(10px)',
+  zIndex: 200,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '2rem',
+});
+
+const postGameContainerStyle = css({
+  backgroundColor: 'rgba(20, 20, 20, 0.95)',
+  borderRadius: '20px',
+  border: '2px solid rgba(255, 215, 0, 0.3)',
+  padding: { base: '1.5rem', md: '2rem' },
+  maxWidth: '600px',
+  width: '100%',
+  maxHeight: '90vh',
+  overflowY: 'auto',
+  boxShadow: '0 10px 50px rgba(255, 215, 0, 0.2)',
+});
+
+const postGameHeaderStyle = css({
+  textAlign: 'center',
+  marginBottom: '1.5rem',
+  paddingBottom: '1rem',
+  borderBottom: '1px solid rgba(255, 215, 0, 0.2)',
+});
+
+const postGameLeaderboardStyle = css({
+  marginBottom: '1.5rem',
+  maxHeight: '300px',
+  overflowY: 'auto',
+});
+
+const postGameFormStyle = css({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '1rem',
+  marginBottom: '1.5rem',
+  padding: '1rem',
+  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  borderRadius: '12px',
+});
+
+const postGameInputStyle = css({
+  fontSize: '1.1rem',
+  padding: '0.75rem 1rem',
+  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  color: '#fff',
+  border: '2px solid rgba(255, 215, 0, 0.3)',
+  borderRadius: '8px',
+  fontWeight: '500',
+  outline: 'none',
+  '&::placeholder': {
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  '&:focus': {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: '#FFD700',
+  },
+});
+
+const postGameSaveButtonStyle = css({
+  fontSize: '1.1rem',
+  padding: '0.75rem 1.5rem',
+  backgroundColor: '#FFD700',
+  color: '#000',
+  border: 'none',
+  borderRadius: '8px',
+  cursor: 'pointer',
+  fontWeight: 'bold',
+  transition: 'all 0.2s',
+  '&:hover': {
+    backgroundColor: '#FFA500',
+    transform: 'scale(1.02)',
+  },
+  '&:active': {
+    transform: 'scale(0.98)',
+  },
+  '&:disabled': {
+    backgroundColor: '#666',
+    cursor: 'not-allowed',
+    transform: 'none',
+  },
+});
+
+const postGameActionsStyle = css({
+  display: 'flex',
+  gap: '1rem',
+  justifyContent: 'center',
+});
+
+const postGameTryAgainButtonStyle = css({
+  fontSize: '1.1rem',
+  padding: '0.75rem 2rem',
+  backgroundColor: '#4CAF50',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '8px',
+  cursor: 'pointer',
+  fontWeight: 'bold',
+  transition: 'all 0.2s',
+  '&:hover': {
+    backgroundColor: '#45a049',
+    transform: 'scale(1.05)',
+  },
+  '&:active': {
+    transform: 'scale(0.98)',
+  },
+});
+
+const postGameQuitButtonStyle = css({
+  fontSize: '1.1rem',
+  padding: '0.75rem 2rem',
+  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  color: '#fff',
+  border: '2px solid rgba(255, 255, 255, 0.3)',
+  borderRadius: '8px',
+  cursor: 'pointer',
+  fontWeight: 'bold',
+  transition: 'all 0.2s',
+  '&:hover': {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    transform: 'scale(1.05)',
+  },
+  '&:active': {
+    transform: 'scale(0.98)',
+  },
+});
+
+const startButtonStyle = css({
+  position: 'fixed',
+  top: '50%',
+  left: '50%',
+  transform: 'translate(-50%, -50%)',
+  fontSize: { base: '1.6rem', md: '1.8rem' },
+  fontWeight: '600',
+  color: '#fff',
+  backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  border: '2px solid rgba(255, 255, 255, 0.3)',
+  borderRadius: '12px',
+  padding: { base: '1rem 2rem', md: '1.25rem 3rem' },
+  cursor: 'pointer',
+  zIndex: 100,
+  textShadow: '0 2px 4px rgba(0, 0, 0, 0.8)',
+  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+  transition: 'all 0.3s ease',
+  '&:hover': {
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    transform: 'translate(-50%, -50%) scale(1.05)',
+    boxShadow: '0 6px 30px rgba(0, 0, 0, 0.7)',
+  },
+  '&:active': {
+    transform: 'translate(-50%, -50%) scale(0.98)',
   },
 });
 

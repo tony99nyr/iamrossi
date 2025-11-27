@@ -123,54 +123,48 @@ export default function LeaderboardDisplay({ highlightRank, onScrollComplete }: 
 }
 
 const containerStyle = css({
-  position: 'fixed',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: '90%',
-  maxWidth: '600px',
-  height: '80vh',
-  maxHeight: '700px',
-  backgroundColor: 'rgba(0, 0, 0, 0.95)',
-  border: '4px solid #FFD700',
-  borderRadius: '16px',
+  position: 'relative',
+  width: '100%',
+  height: '100%',
+  backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  border: '2px solid #FFD700',
+  borderRadius: '12px',
   overflow: 'hidden',
-  zIndex: 200,
-  boxShadow: '0 0 40px rgba(255, 215, 0, 0.5)',
+  boxShadow: '0 0 20px rgba(255, 215, 0, 0.3)',
 });
 
 const headerStyle = css({
-  fontSize: '2.5rem',
+  fontSize: { base: '1.25rem', md: '1.5rem' },
   fontWeight: 'bold',
   color: '#FFD700',
   textAlign: 'center',
-  padding: '1.5rem',
+  padding: '0.75rem',
   backgroundColor: 'rgba(255, 215, 0, 0.1)',
   borderBottom: '2px solid #FFD700',
   textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)',
 });
 
 const listStyle = css({
-  padding: '1rem',
+  padding: '0.5rem',
   overflowY: 'auto',
-  height: 'calc(100% - 100px)',
+  height: 'calc(100% - 70px)',
   '&::-webkit-scrollbar': {
-    width: '10px',
+    width: '8px',
   },
   '&::-webkit-scrollbar-track': {
     background: 'rgba(255, 255, 255, 0.1)',
   },
   '&::-webkit-scrollbar-thumb': {
     background: '#FFD700',
-    borderRadius: '5px',
+    borderRadius: '4px',
   },
 });
 
 const entryStyle = css({
   display: 'flex',
   alignItems: 'center',
-  padding: '1rem',
-  marginBottom: '0.5rem',
+  padding: '0.5rem',
+  marginBottom: '0.25rem',
   backgroundColor: 'rgba(255, 255, 255, 0.05)',
   borderRadius: '8px',
   transition: 'all 0.3s',
@@ -182,8 +176,8 @@ const entryStyle = css({
 const highlightedEntryStyle = css({
   display: 'flex',
   alignItems: 'center',
-  padding: '1rem',
-  marginBottom: '0.5rem',
+  padding: '0.5rem',
+  marginBottom: '0.25rem',
   backgroundColor: 'rgba(255, 215, 0, 0.3)',
   borderRadius: '8px',
   border: '2px solid #FFD700',
@@ -191,26 +185,26 @@ const highlightedEntryStyle = css({
 });
 
 const rankStyle = css({
-  fontSize: '1.5rem',
+  fontSize: '1.2rem',
   fontWeight: 'bold',
   color: '#FFD700',
-  minWidth: '60px',
+  minWidth: '40px',
   textAlign: 'center',
 });
 
 const nameStyle = css({
-  fontSize: '1.5rem',
+  fontSize: '1.2rem',
   fontWeight: '600',
   color: '#fff',
   flex: 1,
-  paddingLeft: '1rem',
+  paddingLeft: '0.75rem',
 });
 
 const scoreValueStyle = css({
-  fontSize: '1.5rem',
+  fontSize: '1.2rem',
   fontWeight: 'bold',
   color: '#4CAF50',
-  minWidth: '120px',
+  minWidth: '80px',
   textAlign: 'right',
 });
 
