@@ -32,6 +32,25 @@ export interface RehabEntry {
   proteinShake: boolean;
 }
 
+export interface Vitamin {
+  name: string;
+  dosage: string;
+  frequency: string;
+}
+
+export interface ProteinShakeIngredient {
+  name: string;
+  amount: string;
+}
+
+export interface RehabSettings {
+  vitamins: Vitamin[];
+  proteinShake: {
+    ingredients: ProteinShakeIngredient[];
+    servingSize: string;
+  };
+}
+
 // ============================================================================
 // Admin/Settings Types
 // ============================================================================

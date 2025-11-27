@@ -25,6 +25,7 @@ interface WeeklyCalendarProps {
     onDateSelect: (date: string) => void;
     onPreviousWeek: () => void;
     onNextWeek: () => void;
+    onSettingsClick?: () => void;
 }
 
 function getWeekDates(date: Date): Date[] {
@@ -76,6 +77,7 @@ export default function WeeklyCalendar({
     onDateSelect,
     onPreviousWeek,
     onNextWeek,
+    onSettingsClick,
 }: WeeklyCalendarProps) {
     const weekDates = getWeekDates(currentDate);
     const today = formatDate(new Date());
@@ -162,12 +164,38 @@ export default function WeeklyCalendar({
                 >
                     ‹
                 </button>
-                <div className={cx('week-range', css({
-                    color: '#ededed',
-                    fontSize: '18px',
-                    fontWeight: '600',
-                }))}>
-                    {formatMonthYear(weekDates[0], weekDates[6])}
+                <div className={css({ display: 'flex', alignItems: 'center', gap: '12px' })}>
+                    <div className={cx('week-range', css({
+                        color: '#ededed',
+                        fontSize: '18px',
+                        fontWeight: '600',
+                    }))}>
+                        {formatMonthYear(weekDates[0], weekDates[6])}
+                    </div>
+                    {onSettingsClick && (
+                        <button
+                            onClick={onSettingsClick}
+                            className={css({
+                                padding: '6px 12px',
+                                backgroundColor: 'transparent',
+                                border: '1px solid #333',
+                                borderRadius: '6px',
+                                color: '#999',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                _hover: {
+                                    borderColor: '#2563eb',
+                                    backgroundColor: '#1a1a1a',
+                                    color: '#ededed',
+                                }
+                            })}
+                            aria-label="Settings"
+                            title="Settings"
+                        >
+                            ⚙️
+                        </button>
+                    )}
                 </div>
                 <button
                     onClick={onNextWeek}

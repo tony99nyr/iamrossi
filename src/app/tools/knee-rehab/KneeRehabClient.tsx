@@ -7,7 +7,8 @@ import DayView from '@/components/rehab/DayView';
 import ExerciseEntryForm from '@/components/rehab/ExerciseEntryForm';
 import ExerciseEditModal from '@/components/rehab/ExerciseEditModal';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
-import type { Exercise, RehabEntry, ExerciseEntry } from '@/types';
+import SettingsModal from '@/components/rehab/SettingsModal';
+import type { Exercise, RehabEntry, ExerciseEntry, RehabSettings } from '@/types';
 
 interface SelectedExercise extends Exercise, Omit<ExerciseEntry, 'id'> {}
 
@@ -29,6 +30,8 @@ export default function KneeRehabClient({
     const [showEntryForm, setShowEntryForm] = useState(false);
     const [formExercises, setFormExercises] = useState<SelectedExercise[]>([]);
     const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
+    const [settings, setSettings] = useState<RehabSettings>({ vitamins: [], proteinShake: { ingredients: [], servingSize: '' } });
     
     // PIN authentication state
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -49,7 +52,48 @@ export default function KneeRehabClient({
         checkAuth();
     }, []);
 
+    // Fetch settings on mount
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const response = await fetch('/api/rehab/settings');
+                if (response.ok) {
+                    const data = await response.json();
+                    setSettings(data);
+                }
+            } catch (error) {
+                console.error('Failed to fetch settings:', error);
+            }
+        };
+        fetchSettings();
+    }, []);
+
     const selectedEntry = entries.find(e => e.date === selectedDate);
+
+    const handleSaveSettings = (newSettings: RehabSettings) => {
+        requireAuth(async () => {
+            try {
+                const response = await fetch('/api/rehab/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newSettings),
+                });
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
+                }
+
+                if (response.ok) {
+                    const savedSettings = await response.json();
+                    setSettings(savedSettings);
+                }
+            } catch (error) {
+                console.error('Failed to save settings:', error);
+            }
+        });
+    };
 
     const handlePreviousWeek = () => {
         const newDate = new Date(currentWeekStart);
@@ -434,6 +478,7 @@ export default function KneeRehabClient({
                         onDateSelect={handleDateSelect}
                         onPreviousWeek={handlePreviousWeek}
                         onNextWeek={handleNextWeek}
+                        onSettingsClick={() => setShowSettingsModal(true)}
                     />
                 </div>
 
@@ -485,6 +530,15 @@ export default function KneeRehabClient({
                 <PinEntryModal
                     onSuccess={handlePinSuccess}
                     onCancel={handlePinCancel}
+                />
+            )}
+
+            {/* Settings Modal */}
+            {showSettingsModal && (
+                <SettingsModal
+                    settings={settings}
+                    onSave={handleSaveSettings}
+                    onClose={() => setShowSettingsModal(false)}
                 />
             )}
         </div>
