@@ -31,7 +31,7 @@ export default function SmartAutocomplete({
     const inputRef = useRef<HTMLInputElement>(null);
 
     const filteredExercises = searchExercises(query, exercises);
-    const showCreateOption = query.trim().length > 0 && filteredExercises.length === 0;
+    const showCreateOption = query.trim().length > 0; // Always show if user has typed
 
     // useEffect(() => {
     //     setSelectedIndex(0);
