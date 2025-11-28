@@ -6,7 +6,14 @@ import { useRef, type TouchEvent } from 'react';
 interface RehabEntry {
     id: string;
     date: string;
-    exercises: { id: string; weight?: string }[];
+    exercises: { 
+        id: string; 
+        timeElapsed?: string;
+        weight?: string;
+        reps?: number;
+        sets?: number;
+        bfr?: boolean;
+    }[];
     isRestDay: boolean;
     vitaminsTaken: boolean;
     proteinShake: boolean;
@@ -359,21 +366,35 @@ export default function WeeklyCalendar({
                                                 >
                                                     {exercise.title}
                                                 </span>
-                                                {exercise.weight && (
-                                                    <span className={css({ 
-                                                        color: '#60a5fa',
-                                                        fontSize: '0.85em',
-                                                        fontWeight: '600',
-                                                        display: 'inline-block',
-                                                        backgroundColor: 'rgba(37, 99, 235, 0.15)',
-                                                        padding: '1px 6px',
-                                                        borderRadius: '4px',
-                                                        whiteSpace: 'nowrap',
-                                                        verticalAlign: 'middle',
-                                                    })}>
-                                                        {exercise.weight}
-                                                    </span>
-                                                )}
+                                                {(() => {
+                                                    const parts: string[] = [];
+                                                    if (exercise.timeElapsed) parts.push(exercise.timeElapsed);
+                                                    if (exercise.weight) parts.push(exercise.weight);
+                                                    if (exercise.reps && exercise.sets) {
+                                                        parts.push(`${exercise.reps}x${exercise.sets}`);
+                                                    } else if (exercise.reps) {
+                                                        parts.push(`${exercise.reps}x`);
+                                                    }
+                                                    const displayText = parts.join(' ');
+                                                    const isBFR = exercise.bfr === true;
+                                                    
+                                                    return displayText ? (
+                                                        <span className={css({ 
+                                                            color: isBFR ? '#ef4444' : '#60a5fa',
+                                                            fontSize: '0.85em',
+                                                            fontWeight: '600',
+                                                            display: 'inline-block',
+                                                            backgroundColor: isBFR ? 'rgba(239, 68, 68, 0.15)' : 'rgba(37, 99, 235, 0.15)',
+                                                            padding: '1px 6px',
+                                                            borderRadius: '4px',
+                                                            whiteSpace: 'nowrap',
+                                                            verticalAlign: 'middle',
+                                                        })}>
+                                                            {isBFR && 'BFR '}
+                                                            {displayText}
+                                                        </span>
+                                                    ) : null;
+                                                })()}
                                             </div>
                                         </div>
                                     ))}
