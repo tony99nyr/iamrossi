@@ -71,7 +71,7 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
                     
                     // Always show time if present
                     if (exercise.timeElapsed) {
-                        parts.push(exercise.timeElapsed);
+                        parts.push(`${exercise.timeElapsed} minutes`);
                     }
                     
                     // Always show weight if present

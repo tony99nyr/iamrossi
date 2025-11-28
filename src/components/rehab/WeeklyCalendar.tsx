@@ -368,7 +368,7 @@ export default function WeeklyCalendar({
                                                 </span>
                                                 {(() => {
                                                     const parts: string[] = [];
-                                                    if (exercise.timeElapsed) parts.push(exercise.timeElapsed);
+                                                    if (exercise.timeElapsed) parts.push(`${exercise.timeElapsed} minutes`);
                                                     if (exercise.weight) parts.push(`${exercise.weight} lbs`);
                                                     if (exercise.reps && exercise.sets) {
                                                         parts.push(`${exercise.reps}x${exercise.sets}`);
