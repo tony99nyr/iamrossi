@@ -2,6 +2,7 @@
 
 import { css, cx } from '@styled-system/css';
 import ExerciseCard from './ExerciseCard';
+import type { ExerciseEntry } from '@/types';
 
 interface Exercise {
     id: string;
@@ -13,7 +14,7 @@ interface Exercise {
 interface RehabEntry {
     id: string;
     date: string;
-    exercises: { id: string; weight?: string }[];
+    exercises: ExerciseEntry[];
     isRestDay: boolean;
     vitaminsTaken: boolean;
     proteinShake: boolean;
@@ -27,7 +28,7 @@ interface DayViewProps {
     onToggleRestDay: () => void;
     onToggleVitamins: () => void;
     onToggleProtein: () => void;
-    onEditExercise: (exercise: Exercise) => void;
+    onEditExercise: (exercise: Exercise & Partial<ExerciseEntry>) => void;
     onBack?: () => void;
 }
 
@@ -54,8 +55,14 @@ export default function DayView({
 }: DayViewProps) {
     const dayExercises = entry?.exercises.map(entryEx => {
         const fullExercise = exercises.find(ex => ex.id === entryEx.id);
-        return fullExercise ? { ...fullExercise, weight: entryEx.weight } : null;
-    }).filter(Boolean) as Exercise[] || [];
+        if (!fullExercise) return null;
+        
+        // Merge exercise definition with entry data
+        return {
+            ...fullExercise,
+            ...entryEx, // Include all entry fields: timeElapsed, weight, reps, sets, painLevel, difficultyLevel
+        };
+    }).filter(Boolean) as (Exercise & Partial<ExerciseEntry>)[] || [];
 
     return (
         <div className={cx('day-view', css({

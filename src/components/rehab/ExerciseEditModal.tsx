@@ -2,40 +2,45 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { css, cx } from '@styled-system/css';
+import type { ExerciseEntry } from '@/types';
 
 interface Exercise {
     id: string;
     title: string;
     description: string;
     createdAt: string;
-    weight?: string;
 }
 
+interface ExerciseWithData extends Exercise, Partial<Omit<ExerciseEntry, 'id'>> {}
+
 interface ExerciseEditModalProps {
-    exercise: Exercise;
-    onSave: (id: string, title: string, description: string, weight?: string) => Promise<void>;
+    exercise: ExerciseWithData;
+    onSave: (id: string, title: string, description: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => Promise<void>;
     onCancel: () => void;
 }
 
 export default function ExerciseEditModal({ exercise, onSave, onCancel }: ExerciseEditModalProps) {
     const [title, setTitle] = useState(exercise.title);
     const [description, setDescription] = useState(exercise.description);
+    const [timeElapsed, setTimeElapsed] = useState(exercise.timeElapsed || '');
     const [weight, setWeight] = useState(exercise.weight || '');
+    const [reps, setReps] = useState(exercise.reps?.toString() || '');
+    const [sets, setSets] = useState(exercise.sets?.toString() || '');
+    const [painLevel, setPainLevel] = useState(exercise.painLevel ?? 0);
+    const [difficultyLevel, setDifficultyLevel] = useState(exercise.difficultyLevel ?? 1);
     const [isSaving, setIsSaving] = useState(false);
     const modalRef = useRef<HTMLDivElement>(null);
     const titleInputRef = useRef<HTMLInputElement>(null);
-    const weightInputRef = useRef<HTMLInputElement>(null);
-    const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
 
     // Auto-focus title input on mount
     useEffect(() => {
         titleInputRef.current?.focus();
     }, []);
 
-    const handleInputFocus = (element: HTMLInputElement | HTMLTextAreaElement) => {
+    const handleInputFocus = (element: HTMLElement) => {
         setTimeout(() => {
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 300); // Delay to allow keyboard to appear
+        }, 300);
     };
 
     const handleSave = async () => {
@@ -43,7 +48,15 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
 
         setIsSaving(true);
         try {
-            await onSave(exercise.id, title.trim(), description.trim(), weight.trim() || undefined);
+            const data: Partial<Omit<ExerciseEntry, 'id'>> = {};
+            if (timeElapsed) data.timeElapsed = timeElapsed;
+            if (weight) data.weight = weight;
+            if (reps) data.reps = parseInt(reps);
+            if (sets) data.sets = parseInt(sets);
+            if (painLevel !== undefined) data.painLevel = painLevel;
+            if (difficultyLevel !== undefined) data.difficultyLevel = difficultyLevel;
+
+            await onSave(exercise.id, title.trim(), description.trim(), data);
         } finally {
             setIsSaving(false);
         }
@@ -72,7 +85,7 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
             <div ref={modalRef} className={cx('edit-modal', css({
                 backgroundColor: '#1a1a1a',
                 width: '100%',
-                maxWidth: '400px',
+                maxWidth: '500px',
                 borderRadius: '12px',
                 padding: '24px',
                 boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
@@ -91,7 +104,7 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                     <label className={cx('label', css({
                         display: 'block',
                         color: '#999',
-                        fontSize: '17px',
+                        fontSize: '14px',
                         fontWeight: '500',
                         marginBottom: '8px',
                     }))}>
@@ -105,12 +118,12 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                         onFocus={(e) => handleInputFocus(e.target)}
                         className={cx('input', css({
                             width: '100%',
-                            padding: '14px 16px',
+                            padding: '12px 14px',
                             backgroundColor: '#0a0a0a',
                             border: '1px solid #333',
                             borderRadius: '6px',
                             color: '#ededed',
-                            fontSize: '18px',
+                            fontSize: '16px',
                             outline: 'none',
                             transition: 'border-color 0.2s ease',
                             _focus: {
@@ -120,37 +133,211 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                     />
                 </div>
 
-                <div className={cx('form-group', css({ marginBottom: '16px' }))}>
-                    <label className={cx('label', css({
-                        display: 'block',
-                        color: '#999',
-                        fontSize: '17px',
-                        fontWeight: '500',
-                        marginBottom: '8px',
-                    }))}>
-                        Weight / Reps
-                    </label>
+                {/* Exercise Data Fields */}
+                <div className={css({
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '12px',
+                    marginBottom: '16px',
+                })}>
+                    <div>
+                        <label className={css({
+                            display: 'block',
+                            color: '#999',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            marginBottom: '6px',
+                        })}>
+                            Time
+                        </label>
+                        <input
+                            type="text"
+                            value={timeElapsed}
+                            onChange={(e) => setTimeElapsed(e.target.value)}
+                            placeholder="e.g. 45 min"
+                            className={css({
+                                width: '100%',
+                                padding: '10px 12px',
+                                backgroundColor: '#0a0a0a',
+                                border: '1px solid #333',
+                                borderRadius: '4px',
+                                color: '#ededed',
+                                fontSize: '15px',
+                                outline: 'none',
+                                _focus: { borderColor: '#2563eb' }
+                            })}
+                        />
+                    </div>
+
+                    <div>
+                        <label className={css({
+                            display: 'block',
+                            color: '#999',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            marginBottom: '6px',
+                        })}>
+                            Weight
+                        </label>
+                        <input
+                            type="text"
+                            value={weight}
+                            onChange={(e) => setWeight(e.target.value)}
+                            placeholder="e.g. 135lb"
+                            className={css({
+                                width: '100%',
+                                padding: '10px 12px',
+                                backgroundColor: '#0a0a0a',
+                                border: '1px solid #333',
+                                borderRadius: '4px',
+                                color: '#ededed',
+                                fontSize: '15px',
+                                outline: 'none',
+                                _focus: { borderColor: '#2563eb' }
+                            })}
+                        />
+                    </div>
+
+                    <div>
+                        <label className={css({
+                            display: 'block',
+                            color: '#999',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            marginBottom: '6px',
+                        })}>
+                            Reps
+                        </label>
+                        <input
+                            type="number"
+                            value={reps}
+                            onChange={(e) => setReps(e.target.value)}
+                            className={css({
+                                width: '100%',
+                                padding: '10px 12px',
+                                backgroundColor: '#0a0a0a',
+                                border: '1px solid #333',
+                                borderRadius: '4px',
+                                color: '#ededed',
+                                fontSize: '15px',
+                                outline: 'none',
+                                _focus: { borderColor: '#2563eb' }
+                            })}
+                        />
+                    </div>
+
+                    <div>
+                        <label className={css({
+                            display: 'block',
+                            color: '#999',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            marginBottom: '6px',
+                        })}>
+                            Sets
+                        </label>
+                        <input
+                            type="number"
+                            value={sets}
+                            onChange={(e) => setSets(e.target.value)}
+                            className={css({
+                                width: '100%',
+                                padding: '10px 12px',
+                                backgroundColor: '#0a0a0a',
+                                border: '1px solid #333',
+                                borderRadius: '4px',
+                                color: '#ededed',
+                                fontSize: '15px',
+                                outline: 'none',
+                                _focus: { borderColor: '#2563eb' }
+                            })}
+                        />
+                    </div>
+                </div>
+
+                {/* Pain Level Slider */}
+                <div className={css({ marginBottom: '16px' })}>
+                    <div className={css({ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' })}>
+                        <label className={css({ color: '#999', fontSize: '13px', fontWeight: '500' })}>
+                            Pain Level
+                        </label>
+                        <span className={css({ color: '#ededed', fontSize: '13px', fontWeight: '600' })}>
+                            {painLevel}/10
+                        </span>
+                    </div>
                     <input
-                        ref={weightInputRef}
-                        type="text"
-                        value={weight}
-                        onChange={(e) => setWeight(e.target.value)}
-                        onFocus={(e) => handleInputFocus(e.target)}
-                        placeholder="e.g. 135lb 12x4"
-                        className={cx('input', css({
+                        type="range"
+                        min="0"
+                        max="10"
+                        value={painLevel}
+                        onChange={(e) => setPainLevel(parseInt(e.target.value))}
+                        className={css({
                             width: '100%',
-                            padding: '14px 16px',
-                            backgroundColor: '#0a0a0a',
-                            border: '1px solid #333',
-                            borderRadius: '6px',
-                            color: '#ededed',
-                            fontSize: '18px',
+                            height: '6px',
+                            borderRadius: '3px',
                             outline: 'none',
-                            transition: 'border-color 0.2s ease',
-                            _focus: {
-                                borderColor: '#2563eb',
+                            background: 'linear-gradient(to right, #10b981 0%, #f59e0b 50%, #ef4444 100%)',
+                            WebkitAppearance: 'none',
+                            '&::-webkit-slider-thumb': {
+                                appearance: 'none',
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#ededed',
+                                cursor: 'pointer',
+                            },
+                            '&::-moz-range-thumb': {
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#ededed',
+                                cursor: 'pointer',
+                                border: 'none',
                             }
-                        }))}
+                        })}
+                    />
+                </div>
+
+                {/* Difficulty Level Slider */}
+                <div className={css({ marginBottom: '16px' })}>
+                    <div className={css({ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' })}>
+                        <label className={css({ color: '#999', fontSize: '13px', fontWeight: '500' })}>
+                            Difficulty
+                        </label>
+                        <span className={css({ color: '#ededed', fontSize: '13px', fontWeight: '600' })}>
+                            {difficultyLevel}/10
+                        </span>
+                    </div>
+                    <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={difficultyLevel}
+                        onChange={(e) => setDifficultyLevel(parseInt(e.target.value))}
+                        className={css({
+                            width: '100%',
+                            height: '6px',
+                            borderRadius: '3px',
+                            outline: 'none',
+                            background: 'linear-gradient(to right, #10b981 0%, #3b82f6 50%, #8b5cf6 100%)',
+                            WebkitAppearance: 'none',
+                            '&::-webkit-slider-thumb': {
+                                appearance: 'none',
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#ededed',
+                                cursor: 'pointer',
+                            },
+                            '&::-moz-range-thumb': {
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                background: '#ededed',
+                                cursor: 'pointer',
+                                border: 'none',
+                            }
+                        })}
                     />
                 </div>
 
@@ -158,26 +345,25 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                     <label className={cx('label', css({
                         display: 'block',
                         color: '#999',
-                        fontSize: '17px',
+                        fontSize: '14px',
                         fontWeight: '500',
                         marginBottom: '8px',
                     }))}>
                         Description
                     </label>
                     <textarea
-                        ref={descriptionInputRef}
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         onFocus={(e) => handleInputFocus(e.target)}
                         rows={3}
                         className={cx('textarea', css({
                             width: '100%',
-                            padding: '14px 16px',
+                            padding: '12px 14px',
                             backgroundColor: '#0a0a0a',
                             border: '1px solid #333',
                             borderRadius: '6px',
                             color: '#ededed',
-                            fontSize: '18px',
+                            fontSize: '15px',
                             outline: 'none',
                             resize: 'none',
                             transition: 'border-color 0.2s ease',
@@ -202,7 +388,7 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                             border: '1px solid #333',
                             borderRadius: '6px',
                             color: '#999',
-                            fontSize: '18px',
+                            fontSize: '17px',
                             fontWeight: '500',
                             cursor: 'pointer',
                             transition: 'all 0.2s ease',
@@ -228,7 +414,7 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                             border: 'none',
                             borderRadius: '6px',
                             color: '#fff',
-                            fontSize: '18px',
+                            fontSize: '17px',
                             fontWeight: '500',
                             cursor: 'pointer',
                             transition: 'background-color 0.2s ease',

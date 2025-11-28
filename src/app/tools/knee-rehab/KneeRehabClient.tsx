@@ -29,7 +29,7 @@ export default function KneeRehabClient({
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [showEntryForm, setShowEntryForm] = useState(false);
     const [formExercises, setFormExercises] = useState<SelectedExercise[]>([]);
-    const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+    const [editingExercise, setEditingExercise] = useState<(Exercise & Partial<ExerciseEntry>) | null>(null);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [settings, setSettings] = useState<RehabSettings>({ vitamins: [], proteinShake: { ingredients: [], servingSize: '' } });
     
@@ -331,7 +331,7 @@ export default function KneeRehabClient({
         });
     };
 
-    const handleUpdateExercise = async (id: string, title: string, description: string, weight?: string) => {
+    const handleUpdateExercise = async (id: string, title: string, description: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => {
         return requireAuth(async () => {
             try {
                 // 1. Update exercise definition
@@ -353,10 +353,10 @@ export default function KneeRehabClient({
                         ex.id === id ? updatedExercise : ex
                     ));
                     
-                    // 2. Update entry weight if provided and we have a selected date
-                    if (weight !== undefined && selectedDate && selectedEntry) {
+                    // 2. Update entry data if provided and we have a selected date
+                    if (Object.keys(data).length > 0 && selectedDate && selectedEntry) {
                         const updatedExercises = selectedEntry.exercises.map(ex => 
-                            ex.id === id ? { ...ex, weight } : ex
+                            ex.id === id ? { id: ex.id, ...data } : ex
                         );
 
                         const entryResponse = await fetch('/api/rehab/entries', {
