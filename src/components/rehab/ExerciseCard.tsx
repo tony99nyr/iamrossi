@@ -69,35 +69,38 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
                     // Format exercise data for display
                     const parts: string[] = [];
                     
-                    if (exercise.bfr) parts.push('BFR');
-                    if (exercise.timeElapsed) parts.push(exercise.timeElapsed);
+                    // Always show time if present
+                    if (exercise.timeElapsed) {
+                        parts.push(exercise.timeElapsed);
+                    }
+                    
+                    // Always show weight if present
                     if (exercise.weight) {
-                        if (exercise.reps && exercise.sets) {
-                            parts.push(`${exercise.weight} ${exercise.reps}x${exercise.sets}`);
-                        } else if (exercise.reps) {
-                            parts.push(`${exercise.weight} ${exercise.reps}x`);
-                        } else {
-                            parts.push(exercise.weight);
-                        }
-                    } else if (exercise.reps && exercise.sets) {
+                        parts.push(exercise.weight);
+                    }
+                    
+                    // Always show reps/sets if present
+                    if (exercise.reps && exercise.sets) {
                         parts.push(`${exercise.reps}x${exercise.sets}`);
                     } else if (exercise.reps) {
                         parts.push(`${exercise.reps}x`);
                     }
                     
                     const displayText = parts.join(' ');
+                    const isBFR = exercise.bfr === true;
                     
                     return displayText ? (
                         <div className={cx('exercise-data', css({
-                            color: '#60a5fa',
+                            color: isBFR ? '#ef4444' : '#60a5fa',
                             fontSize: '16px',
                             fontWeight: '600',
                             marginTop: '4px',
                             display: 'inline-block',
-                            backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                            backgroundColor: isBFR ? 'rgba(239, 68, 68, 0.15)' : 'rgba(37, 99, 235, 0.15)',
                             padding: '3px 10px',
                             borderRadius: '4px',
                         }))}>
+                            {isBFR && 'BFR '}
                             {displayText}
                         </div>
                     ) : null;
