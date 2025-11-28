@@ -76,7 +76,7 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
                     
                     // Always show weight if present
                     if (exercise.weight) {
-                        parts.push(exercise.weight);
+                        parts.push(`${exercise.weight} lbs`);
                     }
                     
                     // Always show reps/sets if present

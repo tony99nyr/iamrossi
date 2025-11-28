@@ -369,7 +369,7 @@ export default function WeeklyCalendar({
                                                 {(() => {
                                                     const parts: string[] = [];
                                                     if (exercise.timeElapsed) parts.push(exercise.timeElapsed);
-                                                    if (exercise.weight) parts.push(exercise.weight);
+                                                    if (exercise.weight) parts.push(`${exercise.weight} lbs`);
                                                     if (exercise.reps && exercise.sets) {
                                                         parts.push(`${exercise.reps}x${exercise.sets}`);
                                                     } else if (exercise.reps) {
