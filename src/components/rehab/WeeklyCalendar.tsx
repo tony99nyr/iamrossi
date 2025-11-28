@@ -251,8 +251,23 @@ export default function WeeklyCalendar({
                     
                     const dayExercises = entry?.exercises.map(entryEx => {
                         const fullExercise = exercises.find(ex => ex.id === entryEx.id);
-                        return fullExercise ? { ...fullExercise, weight: entryEx.weight } : null;
-                    }).filter(Boolean) as { id: string; title: string; weight?: string }[] || [];
+                        return fullExercise ? { 
+                            ...fullExercise, 
+                            timeElapsed: entryEx.timeElapsed,
+                            weight: entryEx.weight,
+                            reps: entryEx.reps,
+                            sets: entryEx.sets,
+                            bfr: entryEx.bfr
+                        } : null;
+                    }).filter(Boolean) as { 
+                        id: string; 
+                        title: string; 
+                        timeElapsed?: string;
+                        weight?: string;
+                        reps?: number;
+                        sets?: number;
+                        bfr?: boolean;
+                    }[] || [];
 
                     return (
                         <button
