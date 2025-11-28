@@ -7,7 +7,11 @@ interface Exercise {
     title: string;
     description: string;
     createdAt?: string;
+    timeElapsed?: string;
     weight?: string;
+    reps?: number;
+    sets?: number;
+    bfr?: boolean;
 }
 
 interface ExerciseCardProps {
@@ -61,20 +65,43 @@ export default function ExerciseCard({ exercise, onRemove, onEdit, showRemove = 
                         {exercise.description}
                     </div>
                 )}
-                {exercise.weight && (
-                    <div className={cx('exercise-weight', css({
-                        color: '#60a5fa',
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        marginTop: '4px',
-                        display: 'inline-block',
-                        backgroundColor: 'rgba(37, 99, 235, 0.15)',
-                        padding: '3px 10px',
-                        borderRadius: '4px',
-                    }))}>
-                        {exercise.weight}
-                    </div>
-                )}
+                {(() => {
+                    // Format exercise data for display
+                    const parts: string[] = [];
+                    
+                    if (exercise.bfr) parts.push('BFR');
+                    if (exercise.timeElapsed) parts.push(exercise.timeElapsed);
+                    if (exercise.weight) {
+                        if (exercise.reps && exercise.sets) {
+                            parts.push(`${exercise.weight} ${exercise.reps}x${exercise.sets}`);
+                        } else if (exercise.reps) {
+                            parts.push(`${exercise.weight} ${exercise.reps}x`);
+                        } else {
+                            parts.push(exercise.weight);
+                        }
+                    } else if (exercise.reps && exercise.sets) {
+                        parts.push(`${exercise.reps}x${exercise.sets}`);
+                    } else if (exercise.reps) {
+                        parts.push(`${exercise.reps}x`);
+                    }
+                    
+                    const displayText = parts.join(' ');
+                    
+                    return displayText ? (
+                        <div className={cx('exercise-data', css({
+                            color: '#60a5fa',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            marginTop: '4px',
+                            display: 'inline-block',
+                            backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                            padding: '3px 10px',
+                            borderRadius: '4px',
+                        }))}>
+                            {displayText}
+                        </div>
+                    ) : null;
+                })()}
             </div>
             
             <div className={cx('actions', css({

@@ -105,7 +105,7 @@ function ReorderableExerciseItem({ exercise, onRemove, onUpdateExerciseData }: R
                         type="text"
                         value={exercise.timeElapsed || ''}
                         onChange={(e) => onUpdateExerciseData(exercise.id, { timeElapsed: e.target.value })}
-                        placeholder="e.g. 45 min"
+                        placeholder="Minutes"
                         className={cx('time-input', css({
                             backgroundColor: '#0a0a0a',
                             border: '1px solid #333',
@@ -130,7 +130,7 @@ function ReorderableExerciseItem({ exercise, onRemove, onUpdateExerciseData }: R
                         type="text"
                         value={exercise.weight || ''}
                         onChange={(e) => onUpdateExerciseData(exercise.id, { weight: e.target.value })}
-                        placeholder="e.g. 135lb"
+                        placeholder="Pounds"
                         className={cx('weight-input', css({
                             backgroundColor: '#0a0a0a',
                             border: '1px solid #333',
@@ -194,6 +194,32 @@ function ReorderableExerciseItem({ exercise, onRemove, onUpdateExerciseData }: R
                         }))}
                         onPointerDown={(e) => e.stopPropagation()}
                     />
+                </div>
+
+                {/* BFR Checkbox */}
+                <div className={css({ gridColumn: '1 / -1', marginTop: '4px' })}>
+                    <label className={css({
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        color: '#ededed',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                    })}>
+                        <input
+                            type="checkbox"
+                            checked={exercise.bfr || false}
+                            onChange={(e) => onUpdateExerciseData(exercise.id, { bfr: e.target.checked })}
+                            className={css({
+                                width: '18px',
+                                height: '18px',
+                                cursor: 'pointer',
+                            })}
+                            onPointerDown={(e) => e.stopPropagation()}
+                        />
+                        Blood Flow Restriction (BFR)
+                    </label>
                 </div>
 
                 {/* Pain Level */}

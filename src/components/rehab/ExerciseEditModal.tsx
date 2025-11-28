@@ -26,8 +26,9 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
     const [weight, setWeight] = useState(exercise.weight || '');
     const [reps, setReps] = useState(exercise.reps?.toString() || '');
     const [sets, setSets] = useState(exercise.sets?.toString() || '');
-    const [painLevel, setPainLevel] = useState(exercise.painLevel ?? 0);
-    const [difficultyLevel, setDifficultyLevel] = useState(exercise.difficultyLevel ?? 1);
+    const [painLevel, setPainLevel] = useState(exercise.painLevel ?? null);
+    const [difficultyLevel, setDifficultyLevel] = useState(exercise.difficultyLevel ?? null);
+    const [bfr, setBfr] = useState(exercise.bfr ?? false);
     const [isSaving, setIsSaving] = useState(false);
     const modalRef = useRef<HTMLDivElement>(null);
     const titleInputRef = useRef<HTMLInputElement>(null);
@@ -53,8 +54,9 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
             if (weight) data.weight = weight;
             if (reps) data.reps = parseInt(reps);
             if (sets) data.sets = parseInt(sets);
-            if (painLevel !== undefined) data.painLevel = painLevel;
-            if (difficultyLevel !== undefined) data.difficultyLevel = difficultyLevel;
+            if (painLevel !== null) data.painLevel = painLevel;
+            if (difficultyLevel !== null) data.difficultyLevel = difficultyLevel;
+            data.bfr = bfr;
 
             await onSave(exercise.id, title.trim(), description.trim(), data);
         } finally {
@@ -154,7 +156,7 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                             type="text"
                             value={timeElapsed}
                             onChange={(e) => setTimeElapsed(e.target.value)}
-                            placeholder="e.g. 45 min"
+                            placeholder="Minutes"
                             className={css({
                                 width: '100%',
                                 padding: '10px 12px',
@@ -183,7 +185,7 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                             type="text"
                             value={weight}
                             onChange={(e) => setWeight(e.target.value)}
-                            placeholder="e.g. 135lb"
+                            placeholder="Pounds"
                             className={css({
                                 width: '100%',
                                 padding: '10px 12px',
@@ -255,6 +257,31 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                     </div>
                 </div>
 
+                {/* BFR Checkbox */}
+                <div className={css({ marginBottom: '16px' })}>
+                    <label className={css({
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        color: '#ededed',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                    })}>
+                        <input
+                            type="checkbox"
+                            checked={bfr}
+                            onChange={(e) => setBfr(e.target.checked)}
+                            className={css({
+                                width: '18px',
+                                height: '18px',
+                                cursor: 'pointer',
+                            })}
+                        />
+                        Blood Flow Restriction (BFR)
+                    </label>
+                </div>
+
                 {/* Pain Level Slider */}
                 <div className={css({ marginBottom: '16px' })}>
                     <div className={css({ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' })}>
@@ -262,14 +289,14 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                             Pain Level
                         </label>
                         <span className={css({ color: '#ededed', fontSize: '13px', fontWeight: '600' })}>
-                            {painLevel}/10
+                            {painLevel ?? 0}/10
                         </span>
                     </div>
                     <input
                         type="range"
                         min="0"
                         max="10"
-                        value={painLevel}
+                        value={painLevel ?? 0}
                         onChange={(e) => setPainLevel(parseInt(e.target.value))}
                         className={css({
                             width: '100%',
@@ -305,14 +332,14 @@ export default function ExerciseEditModal({ exercise, onSave, onCancel }: Exerci
                             Difficulty
                         </label>
                         <span className={css({ color: '#ededed', fontSize: '13px', fontWeight: '600' })}>
-                            {difficultyLevel}/10
+                            {difficultyLevel ?? 1}/10
                         </span>
                     </div>
                     <input
                         type="range"
                         min="1"
                         max="10"
-                        value={difficultyLevel}
+                        value={difficultyLevel ?? 1}
                         onChange={(e) => setDifficultyLevel(parseInt(e.target.value))}
                         className={css({
                             width: '100%',
