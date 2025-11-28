@@ -5,19 +5,17 @@
     "exercises": [
       {
         "id": "ex-2",
-        "weight": "30"
+        "weight": "30lb"
       },
       {
         "id": "ex-3",
-        "weight": "30"
+        "weight": "30lb"
       },
       {
-        "id": "ex-1",
-        "weight": ""
+        "id": "ex-1"
       },
       {
-        "id": "ex-4",
-        "weight": ""
+        "id": "ex-4"
       }
     ],
     "isRestDay": false,
@@ -38,19 +36,18 @@
     "exercises": [
       {
         "id": "ex-1763942910064",
-        "weight": "135"
+        "weight": "135lb"
       },
       {
         "id": "ex-1763942962487",
-        "weight": "135"
+        "weight": "135lb"
       },
       {
         "id": "ex-1763943007829",
-        "weight": "25"
+        "weight": "25lb"
       },
       {
-        "id": "ex-1763943070219",
-        "weight": ""
+        "id": "ex-1763943070219"
       }
     ],
     "isRestDay": false,
@@ -63,11 +60,10 @@
     "exercises": [
       {
         "id": "ex-1763944286383",
-        "weight": "45 min"
+        "timeElapsed": "45 min"
       },
       {
-        "id": "ex-1763944340642",
-        "weight": ""
+        "id": "ex-1763944340642"
       }
     ],
     "isRestDay": false,
@@ -79,24 +75,21 @@
     "date": "2025-11-20",
     "exercises": [
       {
-        "id": "ex-1",
-        "weight": ""
+        "id": "ex-1"
       },
       {
         "id": "ex-2",
-        "weight": "30"
+        "weight": "30lb"
       },
       {
         "id": "ex-3",
-        "weight": "30"
+        "weight": "30lb"
       },
       {
-        "id": "ex-4",
-        "weight": ""
+        "id": "ex-4"
       },
       {
-        "id": "ex-1763943070219",
-        "weight": ""
+        "id": "ex-1763943070219"
       }
     ],
     "isRestDay": false,
@@ -108,24 +101,21 @@
     "date": "2025-11-22",
     "exercises": [
       {
-        "id": "ex-1",
-        "weight": ""
+        "id": "ex-1"
       },
       {
         "id": "ex-2",
-        "weight": "35"
+        "weight": "35lb"
       },
       {
         "id": "ex-3",
-        "weight": "35"
+        "weight": "35lb"
       },
       {
-        "id": "ex-4",
-        "weight": ""
+        "id": "ex-4"
       },
       {
-        "id": "ex-1763943070219",
-        "weight": ""
+        "id": "ex-1763943070219"
       }
     ],
     "isRestDay": false,
@@ -137,12 +127,10 @@
     "date": "2025-11-23",
     "exercises": [
       {
-        "id": "ex-1763944286383",
-        "weight": ""
+        "id": "ex-1763944286383"
       },
       {
-        "id": "ex-1763944340642",
-        "weight": ""
+        "id": "ex-1763944340642"
       }
     ],
     "isRestDay": false,
