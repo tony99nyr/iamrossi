@@ -1,34 +1,23 @@
 'use client';
 
 import { css, cx } from '@styled-system/css';
+import { useState } from 'react';
+import SmartAutocomplete from './SmartAutocomplete';
 import ExerciseCard from './ExerciseCard';
-import type { ExerciseEntry } from '@/types';
-
-interface Exercise {
-    id: string;
-    title: string;
-    description: string;
-    createdAt: string;
-}
-
-interface RehabEntry {
-    id: string;
-    date: string;
-    exercises: ExerciseEntry[];
-    isRestDay: boolean;
-    vitaminsTaken: boolean;
-    proteinShake: boolean;
-}
+import type { Exercise, ExerciseEntry, RehabEntry } from '@/types';
 
 interface DayViewProps {
     date: string;
     entry: RehabEntry | undefined;
     exercises: Exercise[];
-    onAddExercise: () => void;
+    entries: RehabEntry[]; // For showing averages in autocomplete
+    onAddExercise: (exercise: Exercise) => void;
+    onUpdateExercise: (exerciseId: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => void;
+    onRemoveExercise: (exerciseId: string) => void;
     onToggleRestDay: () => void;
     onToggleVitamins: () => void;
     onToggleProtein: () => void;
-    onEditExercise: (exercise: Exercise & Partial<ExerciseEntry>) => void;
+    onCreateExercise: (title: string, description: string) => Promise<Exercise>;
     onBack?: () => void;
 }
 
@@ -46,13 +35,18 @@ export default function DayView({
     date,
     entry,
     exercises,
+    entries,
     onAddExercise,
+    onUpdateExercise,
+    onRemoveExercise,
     onToggleRestDay,
     onToggleVitamins,
     onToggleProtein,
-    onEditExercise,
+    onCreateExercise,
     onBack,
 }: DayViewProps) {
+    const [exerciseToDelete, setExerciseToDelete] = useState<{id: string, title: string} | null>(null);
+
     const dayExercises = entry?.exercises.map(entryEx => {
         const fullExercise = exercises.find(ex => ex.id === entryEx.id);
         if (!fullExercise) return null;
@@ -60,7 +54,7 @@ export default function DayView({
         // Merge exercise definition with entry data
         return {
             ...fullExercise,
-            ...entryEx, // Include all entry fields: timeElapsed, weight, reps, sets, painLevel, difficultyLevel
+            ...entryEx,
         };
     }).filter(Boolean) as (Exercise & Partial<ExerciseEntry>)[] || [];
 
@@ -213,56 +207,128 @@ export default function DayView({
             <div className={cx('exercises-section', css({
                 marginBottom: '24px',
             }))}>
-                <div className={cx('section-header', css({
-                    display: 'flex',
-                    justifyContent: 'flex-start',
-                    alignItems: 'center',
-                    marginBottom: '16px',
-                }))}>
-
-                    <button
-                        onClick={onAddExercise}
-                        className={cx('add-button', css({
-                            padding: '8px 16px',
-                            backgroundColor: '#2563eb',
-                            border: 'none',
-                            borderRadius: '8px',
-                            color: '#000',
-                            fontSize: '20px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            tapHighlightColor: 'transparent',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 0 10px rgba(37, 99, 235, 0.3)',
-                            _hover: {
-                                boxShadow: '0 0 15px rgba(37, 99, 235, 0.5)',
-
-                            }
-                        }))}
-                        title="Add Exercise"
-                    >
-                        💪
-                    </button>
+                {/* Inline Search/Add Exercise */}
+                <div className={css({ marginBottom: '16px' })}>
+                    <SmartAutocomplete
+                        exercises={exercises}
+                        entries={entries}
+                        onSelect={onAddExercise}
+                        onCreateNew={onCreateExercise}
+                        placeholder="Search or add exercise..."
+                    />
                 </div>
 
-                {dayExercises.length > 0 ? (
+                {/* Exercise List with Inline Editing */}
+                {dayExercises.length > 0 && (
                     <div className={cx('exercises-list', css({
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '8px',
+                        gap: '12px',
                     }))}>
                         {dayExercises.map((exercise) => (
                             <ExerciseCard 
                                 key={exercise.id} 
                                 exercise={exercise}
-                                onEdit={() => onEditExercise(exercise)}
+                                editable={true}
+                                showRemove={true}
+                                onUpdate={(data) => onUpdateExercise(exercise.id, data)}
+                                onRemove={() => setExerciseToDelete({ id: exercise.id, title: exercise.title })}
                             />
                         ))}
                     </div>
-                ) : null}
+                )}
             </div>
+
+            {/* Delete Confirmation Modal */}
+            {exerciseToDelete && (
+                <div className={css({
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                    padding: '16px',
+                })}>
+                    <div className={css({
+                        backgroundColor: '#1a1a1a',
+                        border: '1px solid #333',
+                        borderRadius: '12px',
+                        padding: '24px',
+                        maxWidth: '400px',
+                        width: '100%',
+                        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5)',
+                    })}>
+                        <h3 className={css({
+                            color: '#ededed',
+                            fontSize: '20px',
+                            fontWeight: '600',
+                            marginBottom: '12px',
+                        })}>
+                            Remove Exercise?
+                        </h3>
+                        <p className={css({
+                            color: '#999',
+                            fontSize: '16px',
+                            marginBottom: '24px',
+                            lineHeight: '1.5',
+                        })}>
+                            Are you sure you want to remove <span className={css({ color: '#ededed', fontWeight: '500' })}>{exerciseToDelete.title}</span>? This action cannot be undone.
+                        </p>
+                        <div className={css({
+                            display: 'flex',
+                            gap: '12px',
+                            justifyContent: 'flex-end',
+                        })}>
+                            <button
+                                onClick={() => setExerciseToDelete(null)}
+                                className={css({
+                                    padding: '8px 16px',
+                                    backgroundColor: 'transparent',
+                                    border: '1px solid #333',
+                                    borderRadius: '8px',
+                                    color: '#ededed',
+                                    fontSize: '16px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    _hover: {
+                                        backgroundColor: '#333',
+                                    }
+                                })}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    onRemoveExercise(exerciseToDelete.id);
+                                    setExerciseToDelete(null);
+                                }}
+                                className={css({
+                                    padding: '8px 16px',
+                                    backgroundColor: '#ef4444',
+                                    border: '1px solid #ef4444',
+                                    borderRadius: '8px',
+                                    color: '#fff',
+                                    fontSize: '16px',
+                                    fontWeight: '500',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    _hover: {
+                                        backgroundColor: '#dc2626',
+                                        borderColor: '#dc2626',
+                                    }
+                                })}
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -61,7 +61,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     try {
-        const { date, isRestDay, vitaminsTaken, proteinShake } = await request.json();
+        const { date, isRestDay, vitaminsTaken, proteinShake, exercises } = await request.json();
         
         if (!date) {
             return NextResponse.json({ error: 'Date is required' }, { status: 400 });
@@ -75,6 +75,9 @@ export async function PATCH(request: NextRequest) {
             if (isRestDay !== undefined) entries[existingIndex].isRestDay = isRestDay;
             if (vitaminsTaken !== undefined) entries[existingIndex].vitaminsTaken = vitaminsTaken;
             if (proteinShake !== undefined) entries[existingIndex].proteinShake = proteinShake;
+            if (exercises !== undefined) entries[existingIndex].exercises = exercises;
+
+
         } else {
             // Create new entry with flags
             entries.push({

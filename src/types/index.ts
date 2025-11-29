@@ -37,11 +37,17 @@ export interface Vitamin {
   name: string;
   dosage: string;
   frequency: string;
+  notes?: string;
 }
 
 export interface ProteinShakeIngredient {
   name: string;
   amount: string;
+  calories?: number;
+  protein?: number; // grams
+  carbs?: number;   // grams
+  fat?: number;     // grams
+  notes?: string;   // key ingredients like "Creatine 5g"
 }
 
 export interface RehabSettings {

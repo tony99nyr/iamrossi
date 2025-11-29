@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import type { GameObject, GamePhase, SlashTrail, Particle, SlashPoint } from '@/types/game';
 import { GAME_CONFIG } from '@/lib/game/constants';
 import {
@@ -32,7 +31,6 @@ type LeaderboardApiResponse = {
 };
 
 export default function FruitNinjaGame() {
-  const router = useRouter();
 
   // Canvas ref
   const canvasRef = useRef<GameCanvasHandle>(null);
@@ -53,7 +51,6 @@ export default function FruitNinjaGame() {
   const [livesShaking, setLivesShaking] = useState(false);
   const [difficulty, setDifficulty] = useState<DifficultyConfig>(calculateDifficulty(0));
   const [personalBest, setPersonalBest] = useState(0);
-  const [isNewPersonalBest, setIsNewPersonalBest] = useState(false);
 
   // Refs for performance-critical data (no re-renders)
   const gameStateRef = useRef({
@@ -192,9 +189,6 @@ export default function FruitNinjaGame() {
                   if (scoreRef.current > personalBest) {
                     setPersonalBest(scoreRef.current);
                     localStorage.setItem('fruitNinja_personalBest', scoreRef.current.toString());
-                    setIsNewPersonalBest(true);
-                  } else {
-                    setIsNewPersonalBest(false);
                   }
                   
                   // Fetch predicted rank
@@ -343,6 +337,7 @@ export default function FruitNinjaGame() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dimensions.width, dimensions.height, gamePhase, personalBest, playerName]);
 
   // Handle object sliced
@@ -707,76 +702,7 @@ const lifeIconStyle = css({
   },
 });
 
-const finalScoreStyle = css({
-  position: 'fixed',
-  top: '2rem',
-  left: '2rem',
-  fontSize: '2.5rem',
-  fontWeight: 'bold',
-  color: '#FFD700', // Gold color for final score
-  textShadow: '3px 3px 6px rgba(0, 0, 0, 0.9)',
-  zIndex: 50,
-});
 
-const rankPreviewStyle = css({
-  fontSize: '1.5rem',
-  color: '#FFA500',
-  marginTop: '0.5rem',
-});
-
-const nameEntryStyle = css({
-  position: 'fixed',
-  top: '2rem',
-  right: '2rem',
-  display: 'flex',
-  gap: '1rem',
-  alignItems: 'center',
-  zIndex: 50,
-});
-
-const nameInputStyle = css({
-  fontSize: '1.2rem',
-  padding: '0.75rem 1rem',
-  backgroundColor: 'rgba(255, 255, 255, 0.9)',
-  color: '#333',
-  border: '2px solid #FFD700',
-  borderRadius: '8px',
-  fontWeight: '500',
-  outline: 'none',
-  width: '200px',
-  '&::placeholder': {
-    color: '#666',
-  },
-  '&:focus': {
-    backgroundColor: '#fff',
-    borderColor: '#FFA500',
-  },
-});
-
-const submitButtonStyle = css({
-  fontSize: '1.2rem',
-  padding: '0.75rem 1.5rem',
-  backgroundColor: '#FFD700',
-  color: '#333',
-  border: 'none',
-  borderRadius: '8px',
-  cursor: 'pointer',
-  fontWeight: 'bold',
-  boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)',
-  transition: 'all 0.2s',
-  '&:hover': {
-    backgroundColor: '#FFA500',
-    transform: 'scale(1.05)',
-  },
-  '&:active': {
-    transform: 'scale(0.95)',
-  },
-  '&:disabled': {
-    backgroundColor: '#999',
-    cursor: 'not-allowed',
-    transform: 'none',
-  },
-});
 
 // Post-Game Overlay Styles
 const postGameOverlayStyle = css({
@@ -944,27 +870,4 @@ const startButtonStyle = css({
   },
 });
 
-const closeLeaderboardButtonStyle = css({
-  position: 'fixed',
-  bottom: '2rem',
-  left: '50%',
-  transform: 'translateX(-50%)',
-  fontSize: '1.2rem',
-  padding: '0.75rem 2rem',
-  backgroundColor: '#FF3B30',
-  color: '#fff',
-  border: 'none',
-  borderRadius: '8px',
-  cursor: 'pointer',
-  fontWeight: 'bold',
-  boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)',
-  zIndex: 250,
-  transition: 'all 0.2s',
-  '&:hover': {
-    backgroundColor: '#FF6B60',
-    transform: 'translateX(-50%) scale(1.05)',
-  },
-  '&:active': {
-    transform: 'translateX(-50%) scale(0.95)',
-  },
-});
+

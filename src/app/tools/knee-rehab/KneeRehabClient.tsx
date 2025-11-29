@@ -1,23 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { css, cx } from '@styled-system/css';
 import WeeklyCalendar from '@/components/rehab/WeeklyCalendar';
 import DayView from '@/components/rehab/DayView';
-import ExerciseEntryForm from '@/components/rehab/ExerciseEntryForm';
-import ExerciseEditModal from '@/components/rehab/ExerciseEditModal';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
 import SettingsModal from '@/components/rehab/SettingsModal';
 import type { Exercise, RehabEntry, ExerciseEntry, RehabSettings } from '@/types';
 
-interface SelectedExercise extends Exercise, Omit<ExerciseEntry, 'id'> {}
+
+
+import { ROSSI_SHAKE, ROSSI_VITAMINS } from '@/data/rehab-defaults';
 
 interface KneeRehabClientProps {
     initialExercises: Exercise[];
     initialEntries: RehabEntry[];
 }
-
-
 
 export default function KneeRehabClient({ 
     initialExercises, 
@@ -27,16 +25,17 @@ export default function KneeRehabClient({
     const [entries, setEntries] = useState<RehabEntry[]>(initialEntries);
     const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
-    const [showEntryForm, setShowEntryForm] = useState(false);
-    const [formExercises, setFormExercises] = useState<SelectedExercise[]>([]);
-    const [editingExercise, setEditingExercise] = useState<(Exercise & Partial<ExerciseEntry>) | null>(null);
+
+    const [settings, setSettings] = useState<RehabSettings>({ vitamins: ROSSI_VITAMINS, proteinShake: ROSSI_SHAKE });
     const [showSettingsModal, setShowSettingsModal] = useState(false);
-    const [settings, setSettings] = useState<RehabSettings>({ vitamins: [], proteinShake: { ingredients: [], servingSize: '' } });
     
     // PIN authentication state
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [showPinModal, setShowPinModal] = useState(false);
     const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
+
+    // Debounce timer for auto-save
+    const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     // Check for existing auth cookie on mount
     useEffect(() => {
@@ -59,6 +58,16 @@ export default function KneeRehabClient({
                 const response = await fetch('/api/rehab/settings');
                 if (response.ok) {
                     const data = await response.json();
+                    // If fetched data has no ingredients, keep the default ROSSI_SHAKE
+                    if (!data.proteinShake || !data.proteinShake.ingredients || data.proteinShake.ingredients.length === 0) {
+                        data.proteinShake = ROSSI_SHAKE;
+                    }
+                    
+                    // If fetched data has no vitamins, keep the default ROSSI_VITAMINS
+                    if (!data.vitamins || data.vitamins.length === 0) {
+                        data.vitamins = ROSSI_VITAMINS;
+                    }
+
                     setSettings(data);
                 }
             } catch (error) {
@@ -108,11 +117,16 @@ export default function KneeRehabClient({
     };
 
     const handleDateSelect = (date: string) => {
-        if (date === selectedDate) {
-            setSelectedDate(null);
-        } else {
-            setSelectedDate(date);
-        }
+        // Require auth when selecting a day (simplified auth flow)
+        requireAuth(async () => {
+            if (date === selectedDate) {
+                setSelectedDate(null);
+            } else {
+                setSelectedDate(date);
+                // Scroll to top to show the day view
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
     };
 
     const handleBackToCalendar = () => {
@@ -120,14 +134,14 @@ export default function KneeRehabClient({
     };
 
     // Authentication wrapper for protected actions
-    const requireAuth = async (action: () => Promise<void>) => {
-        if (isAuthenticated) {
-            await action();
-        } else {
+    const requireAuth = useCallback(async (action: () => Promise<void>) => {
+        if (!isAuthenticated) {
             setPendingAction(() => action);
             setShowPinModal(true);
+            return;
         }
-    };
+        await action();
+    }, [isAuthenticated]);
 
     const handlePinSuccess = () => {
         // setAuthToken(token); // Unused
@@ -146,7 +160,7 @@ export default function KneeRehabClient({
         setPendingAction(null);
     };
 
-    const handleToggleRestDay = () => {
+    const handleToggleRestDay = useCallback(() => {
         requireAuth(async () => {
             const newIsRestDay = !selectedEntry?.isRestDay;
             
@@ -182,9 +196,9 @@ export default function KneeRehabClient({
                 console.error('Failed to toggle rest day:', error);
             }
         });
-    };
+    }, [selectedDate, selectedEntry, requireAuth]);
 
-    const handleToggleVitamins = () => {
+    const handleToggleVitamins = useCallback(() => {
         requireAuth(async () => {
             const newVitamins = !selectedEntry?.vitaminsTaken;
             
@@ -220,9 +234,9 @@ export default function KneeRehabClient({
                 console.error('Failed to toggle vitamins:', error);
             }
         });
-    };
+    }, [selectedDate, selectedEntry, requireAuth]);
 
-    const handleToggleProtein = () => {
+    const handleToggleProtein = useCallback(() => {
         requireAuth(async () => {
             const newProtein = !selectedEntry?.proteinShake;
             
@@ -258,46 +272,192 @@ export default function KneeRehabClient({
                 console.error('Failed to toggle protein:', error);
             }
         });
-    };
+    }, [selectedDate, selectedEntry, requireAuth]);
 
-    const handleAddExerciseClick = () => {
-        const currentExercises = selectedEntry?.exercises.map(entryEx => {
-            const fullExercise = exercises.find(ex => ex.id === entryEx.id);
-            if (!fullExercise) return null;
-            return {
-                ...fullExercise,
-                timeElapsed: entryEx.timeElapsed,
-                weight: entryEx.weight,
-                reps: entryEx.reps,
-                sets: entryEx.sets,
-                painLevel: entryEx.painLevel,
-                difficultyLevel: entryEx.difficultyLevel,
-            };
-        }).filter(Boolean) as SelectedExercise[] || [];
-        
-        setFormExercises(currentExercises);
-        setShowEntryForm(true);
-    };
-
-    const handleFormAddExercise = (exercise: Exercise) => {
-        if (!formExercises.find(e => e.id === exercise.id)) {
-            setFormExercises(prev => [...prev, { ...exercise }]);
+    // Inline exercise handlers
+    const handleAddExercise = useCallback((exercise: Exercise) => {
+        console.log('KneeRehabClient: handleAddExercise called', exercise);
+        if (!selectedDate) {
+            console.log('KneeRehabClient: No selectedDate');
+            return;
         }
-    };
+        
+        requireAuth(async () => {
+            console.log('KneeRehabClient: Executing auth action');
+            try {
+                const currentEntry = entries.find(e => e.date === selectedDate);
+                const newExerciseEntry = {
+                    id: exercise.id,
+                    painLevel: null,
+                    difficultyLevel: null,
+                };
 
-    const handleFormRemoveExercise = (id: string) => {
-        setFormExercises(prev => prev.filter(e => e.id !== id));
-    };
+                const updatedExercises = [
+                    ...(currentEntry?.exercises || []),
+                    newExerciseEntry
+                ];
 
-    const handleFormUpdateExerciseData = (id: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => {
-        setFormExercises(prev => prev.map(e => 
-            e.id === id ? { ...e, ...data } : e
-        ));
-    };
+                // Optimistic update
+                const optimisticEntry: RehabEntry = currentEntry 
+                    ? { ...currentEntry, exercises: updatedExercises }
+                    : {
+                        id: 'temp-' + Date.now(),
+                        date: selectedDate,
+                        exercises: updatedExercises,
+                        isRestDay: false,
+                        vitaminsTaken: false,
+                        proteinShake: false,
+                    };
 
-    const handleFormReorder = (newOrder: SelectedExercise[]) => {
-        setFormExercises(newOrder);
-    };
+                setEntries(prev => {
+                    const index = prev.findIndex(e => e.date === selectedDate);
+                    if (index >= 0) {
+                        const newEntries = [...prev];
+                        newEntries[index] = optimisticEntry;
+                        return newEntries;
+                    }
+                    return [...prev, optimisticEntry];
+                });
+
+                const response = await fetch('/api/rehab/entries', {
+                    method: currentEntry ? 'PATCH' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: selectedDate,
+                        exercises: updatedExercises,
+                        isRestDay: currentEntry?.isRestDay || false,
+                        vitaminsTaken: currentEntry?.vitaminsTaken || false,
+                        proteinShake: currentEntry?.proteinShake || false,
+                    }),
+                });
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    // Revert optimistic update if needed, but for now we just return
+                    return;
+                }
+
+                if (response.ok) {
+                    const updatedEntry = await response.json();
+                    setEntries(prev => {
+                        const index = prev.findIndex(e => e.date === selectedDate);
+                        if (index >= 0) {
+                            const newEntries = [...prev];
+                            newEntries[index] = updatedEntry;
+                            return newEntries;
+                        }
+                        return [...prev, updatedEntry];
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to add exercise:', error);
+            }
+        });
+    }, [selectedDate, entries, requireAuth]);
+
+    const handleUpdateExercise = useCallback((exerciseId: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => {
+        if (!selectedDate) return;
+
+        // Clear existing timer
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+        }
+
+        // Update local state immediately for responsive UI
+        setEntries(prev => {
+            const entryIndex = prev.findIndex(e => e.date === selectedDate);
+            if (entryIndex < 0) return prev;
+
+            const newEntries = [...prev];
+            const entry = { ...newEntries[entryIndex] };
+            const exerciseIndex = entry.exercises.findIndex(e => e.id === exerciseId);
+            
+            if (exerciseIndex >= 0) {
+                entry.exercises = [...entry.exercises];
+                entry.exercises[exerciseIndex] = {
+                    ...entry.exercises[exerciseIndex],
+                    ...data,
+                };
+                newEntries[entryIndex] = entry;
+            }
+
+            return newEntries;
+        });
+
+        // Debounce the API call
+        saveTimerRef.current = setTimeout(() => {
+            const currentEntry = entries.find(e => e.date === selectedDate);
+            if (!currentEntry) return;
+
+            const updatedExercises = currentEntry.exercises.map(e =>
+                e.id === exerciseId ? { ...e, ...data } : e
+            );
+
+            fetch('/api/rehab/entries', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: selectedDate,
+                    exercises: updatedExercises,
+                }),
+            }).then(response => {
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
+                }
+                if (!response.ok) {
+                    console.error('Failed to update exercise');
+                }
+            }).catch(error => {
+                console.error('Failed to update exercise:', error);
+            });
+        }, 300); // 300ms debounce
+    }, [selectedDate, entries]);
+
+    const handleRemoveExercise = useCallback((exerciseId: string) => {
+        if (!selectedDate) return;
+
+        requireAuth(async () => {
+            try {
+                const currentEntry = entries.find(e => e.date === selectedDate);
+                if (!currentEntry) return;
+
+                const updatedExercises = currentEntry.exercises.filter(e => e.id !== exerciseId);
+
+                const response = await fetch('/api/rehab/entries', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: selectedDate,
+                        exercises: updatedExercises,
+                    }),
+                });
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
+                }
+
+                if (response.ok) {
+                    const updatedEntry = await response.json();
+                    setEntries(prev => {
+                        const index = prev.findIndex(e => e.date === selectedDate);
+                        if (index >= 0) {
+                            const newEntries = [...prev];
+                            newEntries[index] = updatedEntry;
+                            return newEntries;
+                        }
+                        return prev;
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to remove exercise:', error);
+            }
+        });
+    }, [selectedDate, entries, requireAuth]);
 
     const handleCreateExercise = async (title: string, description: string): Promise<Exercise> => {
         return new Promise((resolve, reject) => {
@@ -331,10 +491,9 @@ export default function KneeRehabClient({
         });
     };
 
-    const handleUpdateExercise = async (id: string, title: string, description: string, data: Partial<Omit<ExerciseEntry, 'id'>>) => {
+    const handleUpdateExerciseDefinition = async (id: string, title: string, description: string) => {
         return requireAuth(async () => {
             try {
-                // 1. Update exercise definition
                 const response = await fetch('/api/rehab/exercises', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -352,68 +511,20 @@ export default function KneeRehabClient({
                     setExercises(prev => prev.map(ex => 
                         ex.id === id ? updatedExercise : ex
                     ));
-                    
-                    // 2. Update entry data if provided and we have a selected date
-                    if (Object.keys(data).length > 0 && selectedDate && selectedEntry) {
-                        const updatedExercises = selectedEntry.exercises.map(ex => 
-                            ex.id === id ? { id: ex.id, ...data } : ex
-                        );
-
-                        const entryResponse = await fetch('/api/rehab/entries', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                date: selectedDate,
-                                exercises: updatedExercises,
-                                isRestDay: selectedEntry.isRestDay,
-                                vitaminsTaken: selectedEntry.vitaminsTaken,
-                                proteinShake: selectedEntry.proteinShake,
-                            }),
-                        });
-
-                        if (entryResponse.ok) {
-                            const savedEntry = await entryResponse.json();
-                            setEntries(prev => {
-                                const index = prev.findIndex(e => e.date === selectedDate);
-                                if (index >= 0) {
-                                    const newEntries = [...prev];
-                                    newEntries[index] = savedEntry;
-                                    return newEntries;
-                                }
-                                return [...prev, savedEntry];
-                            });
-                        }
-                    }
-
-                    setEditingExercise(null);
                 }
             } catch (error) {
-                console.error('Failed to update exercise:', error);
+                console.error('Failed to update exercise definition:', error);
             }
         });
     };
 
-    const handleSaveEntry = () => {
-        requireAuth(async () => {
+    const handleDeleteExercise = async (id: string) => {
+        return requireAuth(async () => {
             try {
-                const response = await fetch('/api/rehab/entries', {
-                    method: 'POST',
+                const response = await fetch('/api/rehab/exercises', {
+                    method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        date: selectedDate,
-                        exercises: formExercises.map(e => ({
-                            id: e.id,
-                            timeElapsed: e.timeElapsed,
-                            weight: e.weight,
-                            reps: e.reps,
-                            sets: e.sets,
-                            painLevel: e.painLevel,
-                            difficultyLevel: e.difficultyLevel,
-                        })),
-                        isRestDay: selectedEntry?.isRestDay || false,
-                        vitaminsTaken: selectedEntry?.vitaminsTaken || false,
-                        proteinShake: selectedEntry?.proteinShake || false,
-                    }),
+                    body: JSON.stringify({ id }),
                 });
 
                 if (response.status === 401) {
@@ -423,28 +534,12 @@ export default function KneeRehabClient({
                 }
 
                 if (response.ok) {
-                    const savedEntry = await response.json();
-                    setEntries(prev => {
-                        const index = prev.findIndex(e => e.date === selectedDate);
-                        if (index >= 0) {
-                            const newEntries = [...prev];
-                            newEntries[index] = savedEntry;
-                            return newEntries;
-                        }
-                        return [...prev, savedEntry];
-                    });
-                    setShowEntryForm(false);
-                    setFormExercises([]);
+                    setExercises(prev => prev.filter(ex => ex.id !== id));
                 }
             } catch (error) {
-                console.error('Failed to save entry:', error);
+                console.error('Failed to delete exercise:', error);
             }
         });
-    };
-
-    const handleCancelEntry = () => {
-        setShowEntryForm(false);
-        setFormExercises([]);
     };
 
     return (
@@ -478,7 +573,7 @@ export default function KneeRehabClient({
                         onDateSelect={handleDateSelect}
                         onPreviousWeek={handlePreviousWeek}
                         onNextWeek={handleNextWeek}
-                        onSettingsClick={() => setShowSettingsModal(true)}
+                        onSettingsClick={() => requireAuth(async () => setShowSettingsModal(true))}
                     />
                 </div>
 
@@ -489,42 +584,21 @@ export default function KneeRehabClient({
                             date={selectedDate}
                             entry={selectedEntry}
                             exercises={exercises}
-                            onAddExercise={handleAddExerciseClick}
+                            entries={entries}
+                            onAddExercise={handleAddExercise}
+                            onUpdateExercise={handleUpdateExercise}
+                            onRemoveExercise={handleRemoveExercise}
                             onToggleRestDay={handleToggleRestDay}
                             onToggleVitamins={handleToggleVitamins}
                             onToggleProtein={handleToggleProtein}
-                            onEditExercise={setEditingExercise}
+                            onCreateExercise={handleCreateExercise}
                             onBack={handleBackToCalendar}
                         />
                     </div>
                 )}
             </div>
 
-            {/* Entry Form Modal */}
-            {showEntryForm && selectedDate && (
-                <ExerciseEntryForm
-                    date={selectedDate}
-                    exercises={exercises}
-                    entries={entries}
-                    selectedExercises={formExercises}
-                    onAddExercise={handleFormAddExercise}
-                    onRemoveExercise={handleFormRemoveExercise}
-                    onUpdateExerciseData={handleFormUpdateExerciseData}
-                    onReorder={handleFormReorder}
-                    onCreateExercise={handleCreateExercise}
-                    onSave={handleSaveEntry}
-                    onCancel={handleCancelEntry}
-                />
-            )}
 
-            {/* Edit Exercise Modal */}
-            {editingExercise && (
-                <ExerciseEditModal
-                    exercise={editingExercise}
-                    onSave={handleUpdateExercise}
-                    onCancel={() => setEditingExercise(null)}
-                />
-            )}
 
             {/* PIN Entry Modal */}
             {showPinModal && (
@@ -538,7 +612,10 @@ export default function KneeRehabClient({
             {showSettingsModal && (
                 <SettingsModal
                     settings={settings}
+                    exercises={exercises}
                     onSave={handleSaveSettings}
+                    onUpdateExercise={handleUpdateExerciseDefinition}
+                    onDeleteExercise={handleDeleteExercise}
                     onClose={() => setShowSettingsModal(false)}
                 />
             )}

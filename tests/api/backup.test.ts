@@ -12,7 +12,7 @@ vi.mock('@/lib/kv', () => ({
 vi.mock('googleapis', () => ({
   google: {
     auth: {
-      GoogleAuth: vi.fn().mockImplementation(() => ({})),
+      GoogleAuth: vi.fn().mockImplementation(function() { return {}; }),
       OAuth2: vi.fn().mockImplementation(() => ({
         setCredentials: vi.fn(),
       })),

@@ -81,3 +81,35 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: 'Failed to update exercise' }, { status: 500 });
     }
 }
+
+export async function DELETE(request: NextRequest) {
+    // Verify authentication
+    const isAuthenticated = await verifyAuthToken(request);
+    if (!isAuthenticated) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    try {
+        const { id } = await request.json();
+        
+        if (!id) {
+            return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+        }
+
+        const exercises = await getExercises();
+        const exerciseIndex = exercises.findIndex(e => e.id === id);
+
+        if (exerciseIndex === -1) {
+            return NextResponse.json({ error: 'Exercise not found' }, { status: 404 });
+        }
+
+        // Remove the exercise
+        exercises.splice(exerciseIndex, 1);
+        await setExercises(exercises);
+
+        return NextResponse.json({ success: true, id });
+    } catch (error) {
+        console.error('Error deleting exercise:', error);
+        return NextResponse.json({ error: 'Failed to delete exercise' }, { status: 500 });
+    }
+}

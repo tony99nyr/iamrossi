@@ -22,6 +22,8 @@ const redis = createClient({
   url: process.env.REDIS_URL
 });
 
+import { ROSSI_SHAKE, ROSSI_VITAMINS } from '@/data/rehab-defaults';
+
 async function getSettings(): Promise<RehabSettings> {
   try {
     if (!redis.isOpen) {
@@ -30,16 +32,26 @@ async function getSettings(): Promise<RehabSettings> {
     const data = await redis.get('rehab:settings');
     if (!data) {
       return {
-        vitamins: [],
-        proteinShake: { ingredients: [], servingSize: '' },
+        vitamins: ROSSI_VITAMINS,
+        proteinShake: ROSSI_SHAKE,
       };
     }
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    
+    // Merge defaults if data is missing
+    if (!parsed.vitamins || parsed.vitamins.length === 0) {
+      parsed.vitamins = ROSSI_VITAMINS;
+    }
+    if (!parsed.proteinShake || !parsed.proteinShake.ingredients || parsed.proteinShake.ingredients.length === 0) {
+      parsed.proteinShake = ROSSI_SHAKE;
+    }
+    
+    return parsed;
   } catch (error) {
     console.error('Error fetching settings:', error);
     return {
-      vitamins: [],
-      proteinShake: { ingredients: [], servingSize: '' },
+      vitamins: ROSSI_VITAMINS,
+      proteinShake: ROSSI_SHAKE,
     };
   }
 }
@@ -48,6 +60,14 @@ export default async function AIContextPage() {
   const exercises = await getExercises();
   const entries = await getEntries();
   const settings = await getSettings();
+
+  // Calculate shake totals
+  const shakeTotals = settings.proteinShake.ingredients.reduce((acc, curr) => ({
+    calories: acc.calories + (curr.calories || 0),
+    protein: acc.protein + (curr.protein || 0),
+    carbs: acc.carbs + (curr.carbs || 0),
+    fat: acc.fat + (curr.fat || 0)
+  }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
   // Generate comprehensive markdown documentation with verbose field descriptions
   const markdown = `# Knee Rehab Tracker - AI Context Documentation
@@ -190,7 +210,7 @@ I track daily vitamin supplementation to support recovery and overall health. Th
 
 **Current Vitamin Regimen:**
 ${settings.vitamins.length > 0 
-  ? settings.vitamins.map(v => `- **${v.name}**: ${v.dosage} (${v.frequency})`).join('\n')
+  ? settings.vitamins.map(v => `- **${v.name}**: ${v.dosage} (${v.frequency})${v.notes ? ` - *${v.notes}*` : ''}`).join('\n')
   : '- *No vitamins currently configured*'
 }
 
@@ -212,9 +232,19 @@ I track protein shake consumption because protein is essential for muscle recove
 
 **Current Protein Shake Recipe:**
 - **Serving Size:** ${settings.proteinShake.servingSize || '*Not configured*'}
+- **Total Nutrition:** ${Math.round(shakeTotals.calories)} cals | ${Math.round(shakeTotals.protein)}g protein | ${Math.round(shakeTotals.carbs)}g carbs | ${Math.round(shakeTotals.fat)}g fat
 - **Ingredients:**
 ${settings.proteinShake.ingredients.length > 0
-  ? settings.proteinShake.ingredients.map(i => `  - ${i.name}: ${i.amount}`).join('\n')
+  ? settings.proteinShake.ingredients.map(i => {
+      const macros = [];
+      if (i.calories) macros.push(`${i.calories} cals`);
+      if (i.protein) macros.push(`${i.protein}g prot`);
+      if (i.carbs) macros.push(`${i.carbs}g carb`);
+      if (i.fat) macros.push(`${i.fat}g fat`);
+      const macroStr = macros.length > 0 ? ` (${macros.join(', ')})` : '';
+      const noteStr = i.notes ? ` - *${i.notes}*` : '';
+      return `  - **${i.name}**: ${i.amount}${macroStr}${noteStr}`;
+    }).join('\n')
   : '  - *No ingredients configured*'
 }
 
@@ -232,7 +262,7 @@ ${exercises.map(ex => {
   
   const painLevels = exerciseLogs
     .map(log => log.painLevel)
-    .filter(p => p !== undefined && p !== null) as number[];
+    .filter(p => p !== undefined && p !== null && p > 0) as number[];
   
   const difficultyLevels = exerciseLogs
     .map(log => log.difficultyLevel)

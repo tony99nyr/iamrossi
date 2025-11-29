@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllData } from '@/lib/kv';
-import { google } from 'googleapis';
 
 /**
  * Backup Redis data to Google Drive

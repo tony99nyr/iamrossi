@@ -1,4 +1,4 @@
-import { GAME_CONFIG, SPAWN_WEIGHTS } from './constants';
+
 
 export interface DifficultyConfig {
   tier: number;

@@ -13,7 +13,7 @@ vi.mock('@/lib/mhr-service', () => ({
       rating: '85.5',
     });
   }),
-  scrapeTeamDetails: vi.fn((teamId: string, year: string) => {
+  scrapeTeamDetails: vi.fn(() => {
     // Return mock team details for our team
     return Promise.resolve({
       record: '15-8-3',

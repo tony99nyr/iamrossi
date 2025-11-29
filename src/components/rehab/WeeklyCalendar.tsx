@@ -13,6 +13,8 @@ interface RehabEntry {
         reps?: number;
         sets?: number;
         bfr?: boolean;
+        painLevel?: number | null;
+        difficultyLevel?: number | null;
     }[];
     isRestDay: boolean;
     vitaminsTaken: boolean;
@@ -257,7 +259,9 @@ export default function WeeklyCalendar({
                             weight: entryEx.weight,
                             reps: entryEx.reps,
                             sets: entryEx.sets,
-                            bfr: entryEx.bfr
+                            bfr: entryEx.bfr,
+                            painLevel: entryEx.painLevel,
+                            difficultyLevel: entryEx.difficultyLevel
                         } : null;
                     }).filter(Boolean) as { 
                         id: string; 
@@ -267,6 +271,8 @@ export default function WeeklyCalendar({
                         reps?: number;
                         sets?: number;
                         bfr?: boolean;
+                        painLevel?: number | null;
+                        difficultyLevel?: number | null;
                     }[] || [];
 
                     return (
@@ -347,8 +353,8 @@ export default function WeeklyCalendar({
                                 </div>
                             )}
 
-                            {/* Exercise List */}
-                            {!entry?.isRestDay && dayExercises.length > 0 && (
+                            {/* Exercise List - Now shows on rest days too */}
+                            {dayExercises.length > 0 && (
                                 <div className={cx('exercise-list', css({
                                     flex: 1,
                                     marginBottom: '8px',
@@ -392,23 +398,65 @@ export default function WeeklyCalendar({
                                                     }
                                                     const displayText = parts.join(' ');
                                                     const isBFR = exercise.bfr === true;
+                                                    const hasPain = exercise.painLevel !== null && exercise.painLevel !== undefined && exercise.painLevel > 0;
+                                                    const hasDifficulty = exercise.difficultyLevel !== null && exercise.difficultyLevel !== undefined;
                                                     
-                                                    return displayText ? (
-                                                        <span className={css({ 
-                                                            color: isBFR ? '#ef4444' : '#60a5fa',
-                                                            fontSize: '0.85em',
-                                                            fontWeight: '600',
-                                                            display: 'inline-block',
-                                                            backgroundColor: isBFR ? 'rgba(239, 68, 68, 0.15)' : 'rgba(37, 99, 235, 0.15)',
-                                                            padding: '1px 6px',
-                                                            borderRadius: '4px',
-                                                            whiteSpace: 'nowrap',
-                                                            verticalAlign: 'middle',
-                                                        })}>
-                                                            {isBFR && 'BFR '}
-                                                            {displayText}
-                                                        </span>
-                                                    ) : null;
+                                                    return (
+                                                        <div className={css({ display: 'inline-flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' })}>
+                                                            {displayText && (
+                                                                <span className={css({ 
+                                                                    color: isBFR ? '#ef4444' : '#60a5fa',
+                                                                    fontSize: '0.85em',
+                                                                    fontWeight: '600',
+                                                                    display: 'inline-block',
+                                                                    backgroundColor: isBFR ? 'rgba(239, 68, 68, 0.15)' : 'rgba(37, 99, 235, 0.15)',
+                                                                    padding: '1px 6px',
+                                                                    borderRadius: '4px',
+                                                                    whiteSpace: 'nowrap',
+                                                                    verticalAlign: 'middle',
+                                                                })}>
+                                                                    {isBFR && 'BFR '}
+                                                                    {displayText}
+                                                                </span>
+                                                            )}
+                                                            
+                                                            {hasPain && (
+                                                                <span className={css({
+                                                                    color: exercise.painLevel! <= 3 ? '#10b981' : exercise.painLevel! <= 6 ? '#f59e0b' : '#ef4444',
+                                                                    fontSize: '0.85em',
+                                                                    fontWeight: '600',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '2px',
+                                                                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                                                    padding: '1px 6px',
+                                                                    borderRadius: '4px',
+                                                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                                                    whiteSpace: 'nowrap',
+                                                                })}>
+                                                                    P:{exercise.painLevel}
+                                                                </span>
+                                                            )}
+
+                                                            {hasDifficulty && (
+                                                                <span className={css({
+                                                                    color: '#a78bfa',
+                                                                    fontSize: '0.85em',
+                                                                    fontWeight: '600',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '2px',
+                                                                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                                                    padding: '1px 6px',
+                                                                    borderRadius: '4px',
+                                                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                                                    whiteSpace: 'nowrap',
+                                                                })}>
+                                                                    D:{exercise.difficultyLevel}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
                                                 })()}
                                             </div>
                                         </div>
