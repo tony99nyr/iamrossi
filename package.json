@@ -49,6 +49,7 @@
     "@vitest/coverage-v8": "^2.1.8",
     "@vitest/ui": "^2.1.8",
     "babel-plugin-react-compiler": "1.0.0",
+    "baseline-browser-mapping": "^2.8.32",
     "cheerio": "^1.1.2",
     "dotenv": "^17.2.3",
     "eslint": "^9",

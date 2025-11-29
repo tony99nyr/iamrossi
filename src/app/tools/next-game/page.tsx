@@ -1,8 +1,7 @@
 import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
-import youtubeVideos from '@/data/youtube-videos.json';
-import { getSchedule, getMHRSchedule, getSettings } from '@/lib/kv';
+import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos } from '@/lib/kv';
 import { Game } from '@/types';
 
 // Force dynamic rendering since we're reading from KV
@@ -65,6 +64,7 @@ export const metadata: Metadata = {
 export default async function NextGamePage() {
     const schedule = await getSchedule();
     const mhrSchedule = await getMHRSchedule();
+    const youtubeVideos = await getYouTubeVideos();
     
     // Read settings from KV
     const settingsData = await getSettings();

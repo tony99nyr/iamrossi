@@ -61,6 +61,8 @@ const KV_KEYS = {
   MHR_SCHEDULE: 'admin:mhr-schedule',
   GAME_LEADERBOARD: 'game:leaderboard',
   ANALYTICS_WEB_VITALS: 'analytics:web-vitals',
+  YOUTUBE_VIDEOS: 'youtube:videos',
+  TEAM_MAP: 'mhr:team-map',
 } as const;
 
 // Exercise operations
@@ -220,10 +222,10 @@ export async function logWebVitalSample(sample: WebVitalSample): Promise<void> {
 /**
  * Get ALL data from Redis for backup
  */
-export async function getAllData(): Promise<Record<string, any>> {
+export async function getAllData(): Promise<Record<string, unknown>> {
   await ensureConnected();
   const keys = await redis.keys('*');
-  const backup: Record<string, any> = {};
+  const backup: Record<string, unknown> = {};
 
   for (const key of keys) {
     const type = await redis.type(key);
@@ -255,4 +257,42 @@ export async function getAllData(): Promise<Record<string, any>> {
     }
   }
   return backup;
+}
+
+// YouTube video operations
+export interface YouTubeVideo {
+  title: string;
+  url: string;
+}
+
+export async function getYouTubeVideos(): Promise<YouTubeVideo[]> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.YOUTUBE_VIDEOS);
+  return data ? JSON.parse(data) : [];
+}
+
+export async function setYouTubeVideos(videos: YouTubeVideo[]): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.YOUTUBE_VIDEOS, JSON.stringify(videos));
+}
+
+// Team map operations (for MHR team data caching)
+export interface MHRTeamData {
+  name: string;
+  logo?: string;
+  record?: string;
+  rating?: string;
+  mhrId?: string;
+  url?: string;
+}
+
+export async function getTeamMap(): Promise<Record<string, MHRTeamData>> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.TEAM_MAP);
+  return data ? JSON.parse(data) : {};
+}
+
+export async function setTeamMap(map: Record<string, MHRTeamData>): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.TEAM_MAP, JSON.stringify(map));
 }

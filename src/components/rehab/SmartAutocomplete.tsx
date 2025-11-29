@@ -3,7 +3,7 @@
 import { useState, useRef, KeyboardEvent } from 'react';
 import { css, cx } from '@styled-system/css';
 import { searchExercises } from '@/utils/exerciseSearch';
-import type { Exercise, ExerciseEntry, RehabEntry } from '@/types';
+import type { Exercise, RehabEntry } from '@/types';
 
 interface SmartAutocompleteProps {
     exercises: Exercise[];

@@ -1,30 +1,6 @@
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import { debugLog } from '@/lib/logger';
-
-const TEAM_MAP_FILE = path.join(process.cwd(), 'src/data/team-map.json');
-
-interface MHRTeamData {
-    name: string;
-    logo?: string;
-    record?: string;
-    rating?: string;
-    mhrId?: string;
-    url?: string;
-}
-
-// Helper to read/write team map
-function getTeamMap(): Record<string, MHRTeamData> {
-    if (fs.existsSync(TEAM_MAP_FILE)) {
-        return JSON.parse(fs.readFileSync(TEAM_MAP_FILE, 'utf-8'));
-    }
-    return {};
-}
-
-function saveTeamMap(map: Record<string, MHRTeamData>) {
-    fs.writeFileSync(TEAM_MAP_FILE, JSON.stringify(map, null, 2));
-}
+import { getTeamMap, setTeamMap, type MHRTeamData } from '@/lib/kv';
 
 // Scrape team details (record, rating) from team info page
 export async function scrapeTeamDetails(teamId: string, year: string): Promise<{ record: string; rating: string; logo: string }> {
@@ -266,7 +242,7 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
     const resolvedName = aliases[opponentName] || opponentName;
     
     debugLog(`[MHR] Getting data for opponent: ${opponentName}${resolvedName !== opponentName ? ` (resolved to: ${resolvedName})` : ''}, ageGroup: ${ageGroup}, year: ${year}`);
-    const map = getTeamMap();
+    const map = await getTeamMap();
     
     // 1. Check Cache (check both original and resolved names)
     if (map[resolvedName]) {
@@ -276,7 +252,7 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
              map[resolvedName].record = scrapedDetails.record || map[resolvedName].record;
              map[resolvedName].rating = scrapedDetails.rating || map[resolvedName].rating;
              map[resolvedName].logo = scrapedDetails.logo || map[resolvedName].logo;
-             saveTeamMap(map);
+             await setTeamMap(map);
         }
         return map[resolvedName];
     }
@@ -308,7 +284,7 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
             if (scrapedDetails.logo) data.logo = scrapedDetails.logo;
         }
         map[resolvedName] = data;
-        saveTeamMap(map);
+        await setTeamMap(map);
         return data;
     }
 
@@ -337,7 +313,7 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
         
         // Update cache
         map[resolvedName] = searchResult;
-        saveTeamMap(map);
+        await setTeamMap(map);
         return searchResult;
     }
 

@@ -149,6 +149,7 @@ describe('/api/backup', () => {
 
       vi.mocked(google.drive).mockReturnValue({
         files: { create: mockCreate },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       const request = new NextRequest('http://localhost:3000/api/backup', {
@@ -168,6 +169,7 @@ describe('/api/backup', () => {
 
       vi.mocked(google.drive).mockReturnValue({
         files: { create: mockCreate },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       const request = new NextRequest('http://localhost:3000/api/backup', {
@@ -191,6 +193,7 @@ describe('/api/backup', () => {
 
       vi.mocked(google.drive).mockReturnValue({
         files: { create: mockCreate },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       const request = new NextRequest('http://localhost:3000/api/backup', {

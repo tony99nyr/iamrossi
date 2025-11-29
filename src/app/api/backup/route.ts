@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function uploadToGoogleDrive(backupData: any) {
+async function uploadToGoogleDrive(backupData: Record<string, unknown>) {
   let auth;
   
   // Check for OAuth credentials (preferred for personal accounts)
