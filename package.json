@@ -33,7 +33,9 @@
     "node-ical": "^0.22.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "react-markdown": "^10.1.0",
     "redis": "^5.10.0",
+    "remark-gfm": "^4.0.1",
     "sharp": "^0.34.5",
     "three": "^0.181.2"
   },

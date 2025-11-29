@@ -5,13 +5,14 @@ import { css, cx } from '@styled-system/css';
 import { Reorder, useDragControls } from 'framer-motion';
 import SmartAutocomplete from './SmartAutocomplete';
 import ExerciseCard from './ExerciseCard';
-import type { Exercise, ExerciseEntry } from '@/types';
+import type { Exercise, ExerciseEntry, RehabEntry } from '@/types';
 
 interface SelectedExercise extends Exercise, Omit<ExerciseEntry, 'id'> {}
 
 interface ExerciseEntryFormProps {
     date: string;
     exercises: Exercise[];
+    entries: RehabEntry[]; // Add historical entries for showing averages
     selectedExercises: SelectedExercise[];
     onAddExercise: (exercise: Exercise) => void;
     onRemoveExercise: (id: string) => void;
@@ -309,6 +310,7 @@ function ReorderableExerciseItem({ exercise, onRemove, onUpdateExerciseData }: R
 export default function ExerciseEntryForm({
     date,
     exercises,
+    entries,
     selectedExercises,
     onAddExercise,
     onRemoveExercise,
@@ -479,6 +481,7 @@ export default function ExerciseEntryForm({
                     </label>
                     <SmartAutocomplete
                         exercises={exercises}
+                        entries={entries}
                         onSelect={onAddExercise}
                         onCreateNew={handleCreateNew}
                         placeholder="Type to search or create new..."

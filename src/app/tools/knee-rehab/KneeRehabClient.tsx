@@ -505,6 +505,7 @@ export default function KneeRehabClient({
                 <ExerciseEntryForm
                     date={selectedDate}
                     exercises={exercises}
+                    entries={entries}
                     selectedExercises={formExercises}
                     onAddExercise={handleFormAddExercise}
                     onRemoveExercise={handleFormRemoveExercise}

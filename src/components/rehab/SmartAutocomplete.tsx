@@ -3,23 +3,44 @@
 import { useState, useRef, KeyboardEvent } from 'react';
 import { css, cx } from '@styled-system/css';
 import { searchExercises } from '@/utils/exerciseSearch';
-
-interface Exercise {
-    id: string;
-    title: string;
-    description: string;
-    createdAt: string;
-}
+import type { Exercise, ExerciseEntry, RehabEntry } from '@/types';
 
 interface SmartAutocompleteProps {
     exercises: Exercise[];
+    entries?: RehabEntry[]; // Optional historical data for showing averages
     onSelect: (exercise: Exercise) => void;
     onCreateNew: (title: string, description: string) => void;
     placeholder?: string;
 }
 
+// Helper function to calculate average pain and difficulty for an exercise
+function calculateExerciseAverages(exerciseId: string, entries: RehabEntry[]) {
+    const exerciseLogs = entries.flatMap(entry => 
+        entry.exercises.filter(e => e.id === exerciseId)
+    );
+    
+    const painLevels = exerciseLogs
+        .map(log => log.painLevel)
+        .filter(p => p !== undefined && p !== null) as number[];
+    
+    const difficultyLevels = exerciseLogs
+        .map(log => log.difficultyLevel)
+        .filter(d => d !== undefined && d !== null) as number[];
+    
+    const avgPain = painLevels.length > 0 
+        ? (painLevels.reduce((sum, p) => sum + p, 0) / painLevels.length)
+        : null;
+    
+    const avgDifficulty = difficultyLevels.length > 0
+        ? (difficultyLevels.reduce((sum, d) => sum + d, 0) / difficultyLevels.length)
+        : null;
+    
+    return { avgPain, avgDifficulty, count: exerciseLogs.length };
+}
+
 export default function SmartAutocomplete({ 
     exercises, 
+    entries = [],
     onSelect, 
     onCreateNew,
     placeholder = "Search exercises..."
@@ -132,42 +153,65 @@ export default function SmartAutocomplete({
                     zIndex: 10,
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
                 }))}>
-                    {filteredExercises.map((exercise, index) => (
-                        <div
-                            key={exercise.id}
-                            onClick={() => handleSelect(exercise)}
-                            className={cx('autocomplete-item', css({
-                                padding: '12px 16px',
-                                cursor: 'pointer',
-                                borderBottom: '1px solid #2a2a2a',
-                                backgroundColor: index === selectedIndex ? '#2a2a2a' : 'transparent',
-                                transition: 'background-color 0.15s ease',
-                                _last: {
-                                    borderBottom: 'none',
-                                },
-                                _hover: {
-                                    backgroundColor: '#2a2a2a',
-                                }
-                            }))}
-                        >
-                            <div className={cx('item-title', css({
-                                color: '#ededed',
-                                fontSize: '17px',
-                                fontWeight: '500',
-                                marginBottom: '2px',
-                            }))}>
-                                {exercise.title}
-                            </div>
-                            {exercise.description && (
-                                <div className={cx('item-description', css({
-                                    color: '#999',
-                                    fontSize: '15px',
+                    {filteredExercises.map((exercise, index) => {
+                        const stats = calculateExerciseAverages(exercise.id, entries);
+                        
+                        return (
+                            <div
+                                key={exercise.id}
+                                onClick={() => handleSelect(exercise)}
+                                className={cx('autocomplete-item', css({
+                                    padding: '12px 16px',
+                                    cursor: 'pointer',
+                                    borderBottom: '1px solid #2a2a2a',
+                                    backgroundColor: index === selectedIndex ? '#2a2a2a' : 'transparent',
+                                    transition: 'background-color 0.15s ease',
+                                    _last: {
+                                        borderBottom: 'none',
+                                    },
+                                    _hover: {
+                                        backgroundColor: '#2a2a2a',
+                                    }
+                                }))}
+                            >
+                                <div className={cx('item-title', css({
+                                    color: '#ededed',
+                                    fontSize: '17px',
+                                    fontWeight: '500',
+                                    marginBottom: '2px',
                                 }))}>
-                                    {exercise.description}
+                                    {exercise.title}
                                 </div>
-                            )}
-                        </div>
-                    ))}
+                                {exercise.description && (
+                                    <div className={cx('item-description', css({
+                                        color: '#999',
+                                        fontSize: '15px',
+                                    }))}>
+                                        {exercise.description}
+                                    </div>
+                                )}
+                                {(stats.avgPain !== null || stats.avgDifficulty !== null) && (
+                                    <div className={cx('item-stats', css({
+                                        display: 'flex',
+                                        gap: '12px',
+                                        marginTop: '6px',
+                                        fontSize: '14px',
+                                    }))}>
+                                        {stats.avgPain !== null && (
+                                            <span className={css({ color: '#f59e0b' })}>
+                                                😣 {stats.avgPain.toFixed(1)}/10
+                                            </span>
+                                        )}
+                                        {stats.avgDifficulty !== null && (
+                                            <span className={css({ color: '#8b5cf6' })}>
+                                                💪 {stats.avgDifficulty.toFixed(1)}/10
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
 
                     {showCreateOption && !showCreateForm && (
                         <div
