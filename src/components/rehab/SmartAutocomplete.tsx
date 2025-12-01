@@ -30,10 +30,6 @@ export default function SmartAutocomplete({
     const filteredExercises = searchExercises(query, exercises);
     const showCreateOption = query.trim().length > 0; // Always show if user has typed
 
-    // useEffect(() => {
-    //     setSelectedIndex(0);
-    // }, [query]);
-
     const handleInputFocus = () => {
         setTimeout(() => {
             inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });

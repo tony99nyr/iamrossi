@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const { date, exercises, isRestDay, vitaminsTaken, proteinShake } = await request.json();
+        const { date, exercises, isRestDay, vitaminsTaken, proteinShake, notes } = await request.json();
 
         if (!date) {
             return NextResponse.json({ error: 'Date is required' }, { status: 400 });
@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
             isRestDay: isRestDay || false,
             vitaminsTaken: vitaminsTaken || false,
             proteinShake: proteinShake || false,
+            notes: notes || '',
         };
 
         if (existingEntryIndex !== -1) {
@@ -61,7 +62,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     try {
-        const { date, isRestDay, vitaminsTaken, proteinShake, exercises } = await request.json();
+        const { date, isRestDay, vitaminsTaken, proteinShake, exercises, notes } = await request.json();
         
         if (!date) {
             return NextResponse.json({ error: 'Date is required' }, { status: 400 });
@@ -76,7 +77,7 @@ export async function PATCH(request: NextRequest) {
             if (vitaminsTaken !== undefined) entries[existingIndex].vitaminsTaken = vitaminsTaken;
             if (proteinShake !== undefined) entries[existingIndex].proteinShake = proteinShake;
             if (exercises !== undefined) entries[existingIndex].exercises = exercises;
-
+            if (notes !== undefined) entries[existingIndex].notes = notes;
 
         } else {
             // Create new entry with flags
@@ -87,6 +88,7 @@ export async function PATCH(request: NextRequest) {
                 isRestDay: isRestDay || false,
                 vitaminsTaken: vitaminsTaken || false,
                 proteinShake: proteinShake || false,
+                notes: notes || '',
             });
         }
 

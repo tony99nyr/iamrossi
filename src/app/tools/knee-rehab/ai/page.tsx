@@ -186,6 +186,15 @@ A daily entry represents everything I did on a specific date. This is the top-le
   - *Intent:* Tracks protein intake, which is essential for muscle recovery and growth. Consistency here supports strength gains.
   - *Example:* \`true\` (I had my protein shake)
 
+- **\`notes\`** (string, optional): General notes about the day
+  - *Intent:* **Free-form text field for tracking thoughts, concerns, pain observations, and general feelings about the day.** This is where I record lingering pain from previous days, worries about recovery, or any observations that don't fit into structured fields.
+  - *Examples:* "Knee felt stiff in the morning but loosened up after warmup", "Had lingering pain from yesterday's workout", "Feeling stronger today, no discomfort during stairs"
+  - *Use Cases:*
+    - Tracking pain that isn't tied to a specific exercise
+    - Recording concerns or worries about recovery progress
+    - Noting environmental factors (weather, sleep quality, stress)
+    - Documenting how the knee feels throughout the day
+
 **Total Days Logged:** ${entries.length}
 
 ---
@@ -319,7 +328,7 @@ ${entries
     
     if (entry.isRestDay) {
       return `#### ${date} - REST DAY 😴
-${entry.vitaminsTaken ? '- ✅ Vitamins taken 💊\n' : ''}${entry.proteinShake ? '- ✅ Protein shake consumed 🥤\n' : ''}`;
+${entry.vitaminsTaken ? '- ✅ Vitamins taken 💊\n' : ''}${entry.proteinShake ? '- ✅ Protein shake consumed 🥤\n' : ''}${entry.notes ? `\n**Notes:** ${entry.notes}\n` : ''}`;
     }
     
     const exerciseDetails = entry.exercises.map(ex => {
@@ -337,7 +346,7 @@ ${entry.vitaminsTaken ? '- ✅ Vitamins taken 💊\n' : ''}${entry.proteinShake 
     
     return `#### ${date}
 ${exerciseDetails}
-${entry.vitaminsTaken ? '- ✅ Vitamins taken 💊\n' : ''}${entry.proteinShake ? '- ✅ Protein shake consumed 🥤\n' : ''}`;
+${entry.vitaminsTaken ? '- ✅ Vitamins taken 💊\n' : ''}${entry.proteinShake ? '- ✅ Protein shake consumed 🥤\n' : ''}${entry.notes ? `\n**Notes:** ${entry.notes}\n` : ''}`;
   }).join('\n\n')}
 
 ---

@@ -31,6 +31,7 @@ export interface RehabEntry {
   isRestDay: boolean;
   vitaminsTaken: boolean;
   proteinShake: boolean;
+  notes?: string;
 }
 
 export interface Vitamin {

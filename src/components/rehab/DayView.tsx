@@ -17,12 +17,17 @@ interface DayViewProps {
     onToggleRestDay: () => void;
     onToggleVitamins: () => void;
     onToggleProtein: () => void;
+    onUpdateNotes: (notes: string) => void;
     onCreateExercise: (title: string, description: string) => Promise<Exercise>;
     onBack?: () => void;
 }
 
 function formatDateHeader(dateStr: string): string {
-    const date = new Date(dateStr + 'T00:00:00');
+    // Parse as local time to match East Coast timezone
+    // dateStr is in format "YYYY-MM-DD"
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    
     return date.toLocaleDateString('en-US', { 
         weekday: 'long', 
         month: 'short', 
@@ -42,6 +47,7 @@ export default function DayView({
     onToggleRestDay,
     onToggleVitamins,
     onToggleProtein,
+    onUpdateNotes,
     onCreateExercise,
     onBack,
 }: DayViewProps) {
@@ -201,6 +207,51 @@ export default function DayView({
                 >
                     🥤
                 </button>
+            </div>
+
+            {/* General Notes Section */}
+            <div className={cx('notes-section', css({
+                marginBottom: '24px',
+            }))}>
+                <label 
+                    htmlFor="daily-notes"
+                    className={cx('notes-label', css({
+                        display: 'block',
+                        color: '#ededed',
+                        fontSize: '16px',
+                        fontWeight: '500',
+                        marginBottom: '8px',
+                    }))}
+                >
+                    General Notes
+                </label>
+                <textarea
+                    id="daily-notes"
+                    value={entry?.notes || ''}
+                    onChange={(e) => onUpdateNotes(e.target.value)}
+                    placeholder="Add any thoughts, concerns, pain notes, or observations about your day..."
+                    className={cx('notes-textarea', css({
+                        width: '100%',
+                        minHeight: '100px',
+                        padding: '12px',
+                        backgroundColor: '#1a1a1a',
+                        border: '1px solid #333',
+                        borderRadius: '8px',
+                        color: '#ededed',
+                        fontSize: '16px',
+                        lineHeight: '1.5',
+                        fontFamily: 'inherit',
+                        resize: 'vertical',
+                        transition: 'border-color 0.2s ease',
+                        _focus: {
+                            outline: 'none',
+                            borderColor: '#7877c6',
+                        },
+                        _placeholder: {
+                            color: '#666',
+                        }
+                    }))}
+                />
             </div>
 
             {/* Exercises Section */}

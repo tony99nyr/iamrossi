@@ -274,6 +274,72 @@ export default function KneeRehabClient({
         });
     }, [selectedDate, selectedEntry, requireAuth]);
 
+    const handleUpdateNotes = useCallback((notes: string) => {
+        if (!selectedDate) return;
+
+        // Update local state immediately for responsive UI
+        setEntries(prev => {
+            const index = prev.findIndex(e => e.date === selectedDate);
+            if (index >= 0) {
+                const newEntries = [...prev];
+                newEntries[index] = { ...newEntries[index], notes };
+                return newEntries;
+            }
+            // Create new entry if it doesn't exist
+            return [...prev, {
+                id: 'temp-' + Date.now(),
+                date: selectedDate,
+                exercises: [],
+                isRestDay: false,
+                vitaminsTaken: false,
+                proteinShake: false,
+                notes,
+            }];
+        });
+
+        // Clear existing timer
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+        }
+
+        // Debounce the API call
+        saveTimerRef.current = setTimeout(() => {
+            requireAuth(async () => {
+                try {
+                    const response = await fetch('/api/rehab/entries', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            date: selectedDate,
+                            notes,
+                        }),
+                    });
+
+                    if (response.status === 401) {
+                        setIsAuthenticated(false);
+                        setShowPinModal(true);
+                        return;
+                    }
+
+                    if (response.ok) {
+                        const updatedEntry = await response.json();
+                        setEntries(prev => {
+                            const index = prev.findIndex(e => e.date === selectedDate);
+                            if (index >= 0) {
+                                const newEntries = [...prev];
+                                newEntries[index] = updatedEntry;
+                                return newEntries;
+                            }
+                            return [...prev, updatedEntry];
+                        });
+                    }
+                } catch (error) {
+                    console.error('Failed to update notes:', error);
+                }
+            });
+        }, 300); // 300ms debounce
+    }, [selectedDate, requireAuth]);
+
     // Inline exercise handlers
     const handleAddExercise = useCallback((exercise: Exercise) => {
         console.log('KneeRehabClient: handleAddExercise called', exercise);
@@ -307,6 +373,7 @@ export default function KneeRehabClient({
                         isRestDay: false,
                         vitaminsTaken: false,
                         proteinShake: false,
+                        notes: '',
                     };
 
                 setEntries(prev => {
@@ -328,6 +395,7 @@ export default function KneeRehabClient({
                         isRestDay: currentEntry?.isRestDay || false,
                         vitaminsTaken: currentEntry?.vitaminsTaken || false,
                         proteinShake: currentEntry?.proteinShake || false,
+                        notes: currentEntry?.notes || '',
                     }),
                 });
 
@@ -591,6 +659,7 @@ export default function KneeRehabClient({
                             onToggleRestDay={handleToggleRestDay}
                             onToggleVitamins={handleToggleVitamins}
                             onToggleProtein={handleToggleProtein}
+                            onUpdateNotes={handleUpdateNotes}
                             onCreateExercise={handleCreateExercise}
                             onBack={handleBackToCalendar}
                         />
