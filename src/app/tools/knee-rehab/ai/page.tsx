@@ -18,6 +18,10 @@ export const metadata: Metadata = {
   },
 };
 
+// Force dynamic rendering to always show fresh data
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const redis = createClient({
   url: process.env.REDIS_URL
 });
@@ -153,6 +157,8 @@ When I log an exercise for a specific date, it becomes an Exercise Entry with ad
 - **\`bfr\`** (boolean, optional): Whether Blood Flow Restriction (BFR) training was used
   - *Intent:* BFR training involves using bands to restrict blood flow during exercise, allowing strength gains with lighter weights. I track this separately because BFR exercises require different recovery considerations.
   - *Example:* \`true\` (I used BFR bands during this exercise)
+
+**Important Note on Range of Motion:** Unless explicitly stated otherwise in the exercise title or description, **all exercises are performed with full range of motion (ROM)**. If an exercise is performed with partial ROM or limited ROM due to injury constraints, this will be clearly noted in the exercise's title or description field.
 
 **Note:** All optional fields allow me to track different types of exercises flexibly. Cardio might only have \`timeElapsed\`, while strength training might have \`weight\`, \`reps\`, and \`sets\`.
 
@@ -337,8 +343,8 @@ ${entry.vitaminsTaken ? '- ✅ Vitamins taken 💊\n' : ''}${entry.proteinShake 
       if (ex.timeElapsed) details.push(`⏱️ ${ex.timeElapsed}`);
       if (ex.weight) details.push(`🏋️ ${ex.weight}`);
       if (ex.reps && ex.sets) details.push(`📊 ${ex.sets} sets × ${ex.reps} reps`);
-      if (ex.painLevel !== undefined) details.push(`😣 Pain: ${ex.painLevel}/10`);
-      if (ex.difficultyLevel !== undefined) details.push(`💪 Difficulty: ${ex.difficultyLevel}/10`);
+      if (ex.painLevel !== undefined && ex.painLevel !== null) details.push(`😣 Pain: ${ex.painLevel}/10`);
+      if (ex.difficultyLevel !== undefined && ex.difficultyLevel !== null) details.push(`💪 Difficulty: ${ex.difficultyLevel}/10`);
       if (ex.bfr) details.push(`🩹 BFR`);
       
       return `- **${exercise?.title || ex.id}**${details.length > 0 ? `\n  - ${details.join(' • ')}` : ''}`;

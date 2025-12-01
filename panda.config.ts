@@ -4,6 +4,9 @@ export default defineConfig({
   // Enable preflight (CSS reset)
   preflight: true,
 
+  // Reduce log noise from ts-evaluator warnings
+  logLevel: 'warn',
+
   // Where to look for your css declarations
   include: ['./src/**/*.{js,jsx,ts,tsx}'],
 
