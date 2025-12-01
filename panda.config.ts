@@ -160,6 +160,7 @@ export default defineConfig({
   // Conditions (responsive breakpoints)
   conditions: {
     extend: {
+      xlg: '@media (min-width: 1400px)',
       md: '@media (min-width: 768px)',
       sm: '@media (max-width: 768px)',
       xs: '@media (max-width: 480px)',

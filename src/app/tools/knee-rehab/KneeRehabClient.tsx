@@ -25,6 +25,7 @@ export default function KneeRehabClient({
     const [entries, setEntries] = useState<RehabEntry[]>(initialEntries);
     const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false);
 
     const [settings, setSettings] = useState<RehabSettings>({ vitamins: ROSSI_VITAMINS, proteinShake: ROSSI_SHAKE });
     const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -123,6 +124,8 @@ export default function KneeRehabClient({
                 setSelectedDate(null);
             } else {
                 setSelectedDate(date);
+                // Reset unsaved notes flag when switching dates
+                setHasUnsavedNotes(false);
                 // Scroll to top to show the day view
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }
@@ -131,6 +134,8 @@ export default function KneeRehabClient({
 
     const handleBackToCalendar = () => {
         setSelectedDate(null);
+        // Reset unsaved notes flag when going back to calendar
+        setHasUnsavedNotes(false);
     };
 
     // Authentication wrapper for protected actions
@@ -297,48 +302,52 @@ export default function KneeRehabClient({
             }];
         });
 
-        // Clear existing timer
-        if (saveTimerRef.current) {
-            clearTimeout(saveTimerRef.current);
-        }
+        // Mark as having unsaved changes
+        setHasUnsavedNotes(true);
+    }, [selectedDate]);
 
-        // Debounce the API call
-        saveTimerRef.current = setTimeout(() => {
-            requireAuth(async () => {
-                try {
-                    const response = await fetch('/api/rehab/entries', {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            date: selectedDate,
-                            notes,
-                        }),
-                    });
+    const handleSaveNotes = useCallback(() => {
+        if (!selectedDate) return;
 
-                    if (response.status === 401) {
-                        setIsAuthenticated(false);
-                        setShowPinModal(true);
-                        return;
-                    }
+        const currentEntry = entries.find(e => e.date === selectedDate);
+        const notes = currentEntry?.notes || '';
 
-                    if (response.ok) {
-                        const updatedEntry = await response.json();
-                        setEntries(prev => {
-                            const index = prev.findIndex(e => e.date === selectedDate);
-                            if (index >= 0) {
-                                const newEntries = [...prev];
-                                newEntries[index] = updatedEntry;
-                                return newEntries;
-                            }
-                            return [...prev, updatedEntry];
-                        });
-                    }
-                } catch (error) {
-                    console.error('Failed to update notes:', error);
+        requireAuth(async () => {
+            try {
+                const response = await fetch('/api/rehab/entries', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: selectedDate,
+                        notes,
+                    }),
+                });
+
+                if (response.status === 401) {
+                    setIsAuthenticated(false);
+                    setShowPinModal(true);
+                    return;
                 }
-            });
-        }, 300); // 300ms debounce
-    }, [selectedDate, requireAuth]);
+
+                if (response.ok) {
+                    const updatedEntry = await response.json();
+                    setEntries(prev => {
+                        const index = prev.findIndex(e => e.date === selectedDate);
+                        if (index >= 0) {
+                            const newEntries = [...prev];
+                            newEntries[index] = updatedEntry;
+                            return newEntries;
+                        }
+                        return [...prev, updatedEntry];
+                    });
+                    // Clear unsaved flag after successful save
+                    setHasUnsavedNotes(false);
+                }
+            } catch (error) {
+                console.error('Failed to save notes:', error);
+            }
+        });
+    }, [selectedDate, entries, requireAuth]);
 
     // Inline exercise handlers
     const handleAddExercise = useCallback((exercise: Exercise) => {
@@ -620,7 +629,7 @@ export default function KneeRehabClient({
             }
         }))}>
             <div className={cx('container', css({
-                maxWidth: '1440px',
+                maxWidth: '1800px',
                 margin: '0 auto',
             }))}>
 
@@ -647,7 +656,14 @@ export default function KneeRehabClient({
 
                 {/* Day View */}
                 {selectedDate && (
-                    <div className={cx('day-section', css({}))}>
+                    <div className={cx('day-section', css({
+                        paddingLeft: '8px',
+                        paddingRight: '8px',
+                        md: {
+                            paddingLeft: '0',
+                            paddingRight: '0',
+                        }
+                    }))}>
                         <DayView
                             date={selectedDate}
                             entry={selectedEntry}
@@ -660,6 +676,8 @@ export default function KneeRehabClient({
                             onToggleVitamins={handleToggleVitamins}
                             onToggleProtein={handleToggleProtein}
                             onUpdateNotes={handleUpdateNotes}
+                            onSaveNotes={handleSaveNotes}
+                            hasUnsavedNotes={hasUnsavedNotes}
                             onCreateExercise={handleCreateExercise}
                             onBack={handleBackToCalendar}
                         />

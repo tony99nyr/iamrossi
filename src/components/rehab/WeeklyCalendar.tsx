@@ -237,15 +237,12 @@ export default function WeeklyCalendar({
                 display: 'grid',
                 gridTemplateColumns: '1fr',
                 gap: '8px',
-                sm: {
+                md: {
                     gridTemplateColumns: 'repeat(2, 1fr)',
                     gap: '10px',
                 },
-                md: {
+                _xlg: {
                     gridTemplateColumns: 'repeat(7, 1fr)',
-                    gap: '12px',
-                },
-                lg: {
                     gap: '16px',
                 }
             }))}>

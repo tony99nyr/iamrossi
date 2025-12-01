@@ -18,6 +18,8 @@ interface DayViewProps {
     onToggleVitamins: () => void;
     onToggleProtein: () => void;
     onUpdateNotes: (notes: string) => void;
+    onSaveNotes: () => void;
+    hasUnsavedNotes: boolean;
     onCreateExercise: (title: string, description: string) => Promise<Exercise>;
     onBack?: () => void;
 }
@@ -48,6 +50,8 @@ export default function DayView({
     onToggleVitamins,
     onToggleProtein,
     onUpdateNotes,
+    onSaveNotes,
+    hasUnsavedNotes,
     onCreateExercise,
     onBack,
 }: DayViewProps) {
@@ -245,13 +249,39 @@ export default function DayView({
                         transition: 'border-color 0.2s ease',
                         _focus: {
                             outline: 'none',
-                            borderColor: '#7877c6',
+                            borderColor: '#2563eb',
                         },
                         _placeholder: {
                             color: '#666',
                         }
                     }))}
                 />
+                {hasUnsavedNotes && (
+                    <button
+                        onClick={onSaveNotes}
+                        className={cx('save-notes-button', css({
+                            marginTop: '12px',
+                            padding: '8px 16px',
+                            backgroundColor: '#2563eb',
+                            border: '1px solid #2563eb',
+                            borderRadius: '8px',
+                            color: '#fff',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            _hover: {
+                                backgroundColor: '#3b82f6',
+                                borderColor: '#3b82f6',
+                            }
+                        }))}
+                    >
+                        💾 Save Notes
+                    </button>
+                )}
             </div>
 
             {/* Exercises Section */}
