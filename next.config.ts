@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  serverExternalPackages: ['@sparticuz/chromium'],
 };
 
 export default withBundleAnalyzer(nextConfig);
