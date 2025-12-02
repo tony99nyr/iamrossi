@@ -293,6 +293,26 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
     }
   };
 
+  const handleResume = async () => {
+    setSaving(true);
+    try {
+      const updatedSession = { ...currentSession };
+      delete updatedSession.endTime;
+
+      await fetch('/api/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSession),
+      });
+      
+      setCurrentSession(updatedSession);
+    } catch (e) {
+      alert('Failed to resume session');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (isGameOver) {
     return (
       <div className={trackerContainerStyle}>
@@ -356,23 +376,42 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
           </div>
         </div>
 
-        <button 
-          onClick={onExit}
-          className={css({
-            width: '100%',
-            padding: '1rem',
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            color: 'white',
-            borderRadius: '12px',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            marginTop: '1rem',
-            '&:hover': { background: 'rgba(255, 255, 255, 0.15)' }
-          })}
-        >
-          Back to Dashboard
-        </button>
+        <div className={css({ display: 'flex', gap: '0.75rem', marginTop: '1rem' })}>
+          <button 
+            onClick={onExit}
+            className={css({
+              flex: 1,
+              padding: '1rem',
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              fontSize: '1rem',
+              '&:hover': { background: 'rgba(255, 255, 255, 0.15)' }
+            })}
+          >
+            Back to Dashboard
+          </button>
+          <button 
+            onClick={handleResume}
+            disabled={saving}
+            className={css({
+              flex: 1,
+              padding: '1rem',
+              background: 'rgba(120, 119, 198, 0.2)',
+              border: '1px solid rgba(120, 119, 198, 0.3)',
+              color: '#a5a4ff',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              fontSize: '1rem',
+              fontWeight: '600',
+              '&:hover': { background: 'rgba(120, 119, 198, 0.3)' }
+            })}
+          >
+            {saving ? 'Resuming...' : 'Edit Stats'}
+          </button>
+        </div>
       </div>
     );
   }
