@@ -71,6 +71,12 @@ export interface Settings {
   aliases?: Record<string, string>;
 }
 
+export interface Player {
+  id: string;
+  jerseyNumber: string;
+  name: string;
+}
+
 // ============================================================================
 // Schedule/Game Types
 // ============================================================================

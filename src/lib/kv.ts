@@ -1,5 +1,5 @@
 import { createClient } from 'redis';
-import type { Exercise, RehabEntry, Settings, Game, WebVitalSample } from '@/types';
+import type { Exercise, RehabEntry, Settings, Game, WebVitalSample, Player } from '@/types';
 
 // Create Redis client
 // Use TEST_REDIS_URL in test environments to avoid wiping production data
@@ -50,7 +50,7 @@ redis.on('end', () => {
 });
 
 // Re-export types for backward compatibility
-export type { Exercise, RehabEntry, Settings, Game };
+export type { Exercise, RehabEntry, Settings, Game, Player };
 
 // KV Keys
 const KV_KEYS = {
@@ -59,6 +59,7 @@ const KV_KEYS = {
   SETTINGS: 'admin:settings',
   SCHEDULE: 'admin:schedule',
   MHR_SCHEDULE: 'admin:mhr-schedule',
+  ROSTER: 'admin:roster',
   GAME_LEADERBOARD: 'game:leaderboard',
   ANALYTICS_WEB_VITALS: 'analytics:web-vitals',
   YOUTUBE_VIDEOS: 'youtube:videos',
@@ -295,4 +296,16 @@ export async function getTeamMap(): Promise<Record<string, MHRTeamData>> {
 export async function setTeamMap(map: Record<string, MHRTeamData>): Promise<void> {
   await ensureConnected();
   await redis.set(KV_KEYS.TEAM_MAP, JSON.stringify(map));
+}
+
+// Roster operations
+export async function getRoster(): Promise<Player[]> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.ROSTER);
+  return data ? JSON.parse(data) : [];
+}
+
+export async function setRoster(roster: Player[]): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.ROSTER, JSON.stringify(roster));
 }

@@ -220,12 +220,18 @@ export default function AdminPage() {
     const [settingsMessage, setSettingsMessage] = useState('');
     const [isBackingUp, setIsBackingUp] = useState(false);
     const [backupMessage, setBackupMessage] = useState('');
+    const [roster, setRoster] = useState<Array<{id: string; jerseyNumber: string; name: string}>>([]);
+    const [rosterMessage, setRosterMessage] = useState('');
+    const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+    const [newPlayerJersey, setNewPlayerJersey] = useState('');
+    const [newPlayerName, setNewPlayerName] = useState('');
 
     useEffect(() => {
         const auth = sessionStorage.getItem('admin_auth');
         if (auth === 'true') {
             setIsAuthenticated(true);
             fetchSettings();
+            fetchRoster();
         }
     }, []);
 
@@ -244,6 +250,18 @@ export default function AdminPage() {
         }
     };
 
+    const fetchRoster = async () => {
+        try {
+            const res = await fetch('/api/admin/roster');
+            if (res.ok) {
+                const data = await res.json();
+                setRoster(data);
+            }
+        } catch (_error) {
+            console.error('Failed to fetch roster', _error);
+        }
+    };
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -258,6 +276,7 @@ export default function AdminPage() {
                 sessionStorage.setItem('admin_auth', 'true');
                 sessionStorage.setItem('admin_secret', secret);
                 fetchSettings();
+                fetchRoster();
             } else {
                 alert('Invalid token');
             }
@@ -354,6 +373,58 @@ export default function AdminPage() {
             console.error('Backup error:', error);
         } finally {
             setIsBackingUp(false);
+        }
+    };
+
+    const handleAddPlayer = () => {
+        if (!newPlayerJersey.trim() || !newPlayerName.trim()) {
+            setRosterMessage('Please enter both jersey number and name');
+            return;
+        }
+
+        const newPlayer = {
+            id: Date.now().toString(),
+            jerseyNumber: newPlayerJersey.trim(),
+            name: newPlayerName.trim(),
+        };
+
+        setRoster([...roster, newPlayer]);
+        setNewPlayerJersey('');
+        setNewPlayerName('');
+        setRosterMessage('');
+    };
+
+    const handleDeletePlayer = (id: string) => {
+        setRoster(roster.filter(p => p.id !== id));
+        setRosterMessage('');
+    };
+
+    const handleEditPlayer = (id: string, field: 'jerseyNumber' | 'name', value: string) => {
+        setRoster(roster.map(p => p.id === id ? { ...p, [field]: value } : p));
+    };
+
+    const handleSaveRoster = async () => {
+        setRosterMessage('Saving...');
+        try {
+            const adminSecret = sessionStorage.getItem('admin_secret');
+            const res = await fetch('/api/admin/roster', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${adminSecret}`,
+                },
+                body: JSON.stringify({ roster }),
+            });
+
+            if (res.ok) {
+                setRosterMessage('Roster saved successfully!');
+                setEditingPlayerId(null);
+            } else {
+                const data = await res.json();
+                setRosterMessage(data.error || 'Failed to save roster.');
+            }
+        } catch {
+            setRosterMessage('Error saving roster.');
         }
     };
 
@@ -493,6 +564,187 @@ export default function AdminPage() {
                         {backupMessage && (
                             <div className={messageStyle}>
                                 {backupMessage}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className={cardStyle}>
+                    <h2>Team Roster</h2>
+                    <p className={css({ color: 'rgba(255, 255, 255, 0.6)', marginBottom: '1.5rem', lineHeight: '1.5' })}>
+                        Manage your team roster with jersey numbers and player names.
+                    </p>
+                    
+                    <div className={css({ display: 'flex', flexDirection: 'column', gap: '1.5rem' })}>
+                        {/* Add New Player Form */}
+                        <div className={css({ 
+                            background: 'rgba(255, 255, 255, 0.03)', 
+                            padding: '1.5rem', 
+                            borderRadius: '12px',
+                            border: '1px solid rgba(255, 255, 255, 0.08)'
+                        })}>
+                            <h3 className={css({ fontSize: '1.1rem', marginBottom: '1rem', color: '#ffffff' })}>Add New Player</h3>
+                            <div className={css({ display: 'flex', gap: '1rem', flexWrap: 'wrap' })}>
+                                <input
+                                    type="text"
+                                    value={newPlayerJersey}
+                                    onChange={(e) => setNewPlayerJersey(e.target.value)}
+                                    placeholder="Jersey #"
+                                    className={cx(inputStyle, css({ flex: '0 0 120px' }))}
+                                />
+                                <input
+                                    type="text"
+                                    value={newPlayerName}
+                                    onChange={(e) => setNewPlayerName(e.target.value)}
+                                    placeholder="Player Name"
+                                    className={cx(inputStyle, css({ flex: '1 1 200px' }))}
+                                />
+                                <button 
+                                    onClick={handleAddPlayer}
+                                    className={cx(buttonStyle, css({ flex: '0 0 auto' }))}
+                                >
+                                    Add Player
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Player List */}
+                        {roster.length > 0 ? (
+                            <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.75rem' })}>
+                                {roster
+                                    .sort((a, b) => {
+                                        const numA = parseInt(a.jerseyNumber) || 999;
+                                        const numB = parseInt(b.jerseyNumber) || 999;
+                                        return numA - numB;
+                                    })
+                                    .map((player) => (
+                                    <div 
+                                        key={player.id}
+                                        className={css({
+                                            display: 'flex',
+                                            gap: '1rem',
+                                            alignItems: 'center',
+                                            padding: '1rem',
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            borderRadius: '10px',
+                                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                                            transition: 'all 0.2s',
+                                            '&:hover': {
+                                                background: 'rgba(255, 255, 255, 0.08)',
+                                                borderColor: 'rgba(255, 255, 255, 0.15)',
+                                            }
+                                        })}
+                                    >
+                                        {editingPlayerId === player.id ? (
+                                            <>
+                                                <input
+                                                    type="text"
+                                                    value={player.jerseyNumber}
+                                                    onChange={(e) => handleEditPlayer(player.id, 'jerseyNumber', e.target.value)}
+                                                    className={cx(inputStyle, css({ flex: '0 0 100px', padding: '0.5rem 0.75rem' }))}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={player.name}
+                                                    onChange={(e) => handleEditPlayer(player.id, 'name', e.target.value)}
+                                                    className={cx(inputStyle, css({ flex: '1', padding: '0.5rem 0.75rem' }))}
+                                                />
+                                                <button
+                                                    onClick={() => setEditingPlayerId(null)}
+                                                    className={css({
+                                                        padding: '0.5rem 1rem',
+                                                        background: 'rgba(120, 119, 198, 0.2)',
+                                                        border: '1px solid rgba(120, 119, 198, 0.3)',
+                                                        color: '#ffffff',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.85rem',
+                                                        transition: 'all 0.2s',
+                                                        '&:hover': {
+                                                            background: 'rgba(120, 119, 198, 0.3)',
+                                                        }
+                                                    })}
+                                                >
+                                                    Done
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className={css({ 
+                                                    flex: '0 0 60px',
+                                                    fontSize: '1.2rem',
+                                                    fontWeight: '700',
+                                                    color: 'rgba(120, 119, 198, 0.9)',
+                                                    textAlign: 'center'
+                                                })}>
+                                                    #{player.jerseyNumber}
+                                                </div>
+                                                <div className={css({ flex: '1', fontSize: '1rem', color: '#ffffff' })}>
+                                                    {player.name}
+                                                </div>
+                                                <button
+                                                    onClick={() => setEditingPlayerId(player.id)}
+                                                    className={css({
+                                                        padding: '0.5rem 1rem',
+                                                        background: 'rgba(255, 255, 255, 0.1)',
+                                                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                                                        color: '#ffffff',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.85rem',
+                                                        transition: 'all 0.2s',
+                                                        '&:hover': {
+                                                            background: 'rgba(255, 255, 255, 0.15)',
+                                                        }
+                                                    })}
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeletePlayer(player.id)}
+                                                    className={css({
+                                                        padding: '0.5rem 1rem',
+                                                        background: 'rgba(255, 100, 100, 0.2)',
+                                                        border: '1px solid rgba(255, 100, 100, 0.3)',
+                                                        color: '#ffffff',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.85rem',
+                                                        transition: 'all 0.2s',
+                                                        '&:hover': {
+                                                            background: 'rgba(255, 100, 100, 0.3)',
+                                                        }
+                                                    })}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className={css({ 
+                                textAlign: 'center', 
+                                color: 'rgba(255, 255, 255, 0.5)', 
+                                padding: '2rem',
+                                fontStyle: 'italic'
+                            })}>
+                                No players added yet. Add your first player above.
+                            </div>
+                        )}
+
+                        {/* Save Button */}
+                        <button 
+                            onClick={handleSaveRoster}
+                            className={buttonStyle}
+                        >
+                            Save Roster
+                        </button>
+
+                        {rosterMessage && (
+                            <div className={messageStyle}>
+                                {rosterMessage}
                             </div>
                         )}
                     </div>
