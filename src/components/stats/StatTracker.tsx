@@ -157,7 +157,7 @@ const modalOverlayStyle = css({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  zIndex: 100,
+  zIndex: 10001, // Ensure above animations
   padding: '1rem',
 });
 
@@ -1145,7 +1145,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 color: '#ddd',
                                 borderRadius: '8px',
-                                fontSize: '0.9rem',
+                                fontSize: '1rem', // Prevent iOS zoom
                                 '& option': { background: '#1a1a1a' }
                             })}
                         >
@@ -1192,7 +1192,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
                             border: '1px solid rgba(255,255,255,0.1)',
                             color: '#ddd',
                             borderRadius: '8px',
-                            fontSize: '0.9rem',
+                            fontSize: '1rem', // Prevent iOS zoom
                             '& option': { background: '#1a1a1a' }
                         })}
                     >
