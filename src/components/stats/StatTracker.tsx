@@ -298,7 +298,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
 
   useEffect(() => {
     if (sadEmoji) {
-      const timer = setTimeout(() => setSadEmoji(null), 3000);
+      const timer = setTimeout(() => setSadEmoji(null), 1500);
       return () => clearTimeout(timer);
     }
   }, [sadEmoji]);
@@ -1076,7 +1076,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
           fontSize: '8rem',
           zIndex: 9999,
           pointerEvents: 'none',
-          animation: 'sad-emoji-fade 3s forwards'
+          animation: 'sad-emoji-fade 1.5s forwards'
         })}>
           {sadEmoji}
         </div>
