@@ -147,6 +147,7 @@ export interface MHRGameDetails {
   gameId: string;
   date: string;
   time: string;
+
   homeTeam: string;
   awayTeam: string;
   venue: string;
@@ -180,7 +181,7 @@ export interface WebVitalSample {
 }
 export interface GameEvent {
   id: string;
-  type: 'goal' | 'note' | 'system';
+  type: 'goal' | 'note' | 'system' | 'shot' | 'faceoff' | 'chance';
   team?: 'us' | 'them';
   playerId?: string; // For 'us' goals
   playerName?: string; // For 'us' goals
@@ -208,6 +209,8 @@ export interface StatSession {
   date: string; // ISO string
   opponent: string;
   recorderName: string;
+
+  currentPeriod?: string; // "1", "2", "3", "OT"
   ourTeamName?: string; // Optional for backward compatibility
   usStats: TeamStats;
   themStats: TeamStats;

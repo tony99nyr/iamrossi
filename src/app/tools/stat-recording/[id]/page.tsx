@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { css } from '@styled-system/css';
-import { StatSession } from '@/types';
+import { StatSession, Player } from '@/types';
 import StatTracker from '@/components/stats/StatTracker';
 
 const containerStyle = css({
@@ -21,8 +21,16 @@ export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
   const [session, setSession] = useState<StatSession | null>(null);
+  const [roster, setRoster] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch('/api/admin/roster')
+      .then(res => res.json())
+      .then(data => setRoster(data))
+      .catch(err => console.error('Failed to load roster', err));
+  }, []);
 
   useEffect(() => {
     if (params?.id) {
@@ -83,6 +91,7 @@ export default function SessionPage() {
     <div className={containerStyle}>
       <StatTracker 
         session={session} 
+        initialRoster={roster}
         onFinish={handleFinish}
         onExit={() => router.push('/tools/stat-recording')}
       />

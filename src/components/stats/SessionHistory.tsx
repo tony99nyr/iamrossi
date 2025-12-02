@@ -175,8 +175,44 @@ export default function SessionHistory() {
           <div className={matchupStyle}>
             {session.ourTeamName || 'Our Team'} vs {session.opponent}
           </div>
-          <div className={scoreStyle}>
-            {session.usStats.goals} - {session.themStats.goals}
+          
+          <div className={css({ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' })}>
+            <div className={css({
+                fontSize: '1.25rem',
+                fontWeight: '800',
+                color: session.usStats.goals > session.themStats.goals ? '#4caf50' : 
+                       session.usStats.goals < session.themStats.goals ? '#ff6b6b' : '#ccc',
+                background: session.usStats.goals > session.themStats.goals ? 'rgba(76, 175, 80, 0.15)' : 
+                            session.usStats.goals < session.themStats.goals ? 'rgba(244, 67, 54, 0.15)' : 'rgba(255, 255, 255, 0.1)',
+                padding: '0.5rem 1rem',
+                borderRadius: '8px',
+                border: `1px solid ${session.usStats.goals > session.themStats.goals ? 'rgba(76, 175, 80, 0.3)' : 
+                                     session.usStats.goals < session.themStats.goals ? 'rgba(244, 67, 54, 0.3)' : 'rgba(255, 255, 255, 0.2)'}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontVariantNumeric: 'tabular-nums'
+            })}>
+                <span>
+                    {session.usStats.goals > session.themStats.goals ? 'W' : 
+                     session.usStats.goals < session.themStats.goals ? 'L' : 'T'}
+                </span>
+                <span>
+                    {session.usStats.goals}-{session.themStats.goals}
+                </span>
+            </div>
+          </div>
+
+          <div className={css({ fontSize: '0.9rem', color: '#aaa', marginBottom: '0.5rem', display: 'flex', gap: '1rem' })}>
+            <div>
+                <span className={css({ color: '#888', marginRight: '0.25rem' })}>Shots:</span>
+                <span className={css({ color: '#fff', fontWeight: 'bold' })}>{session.usStats.shots}</span>
+                <span className={css({ fontSize: '0.75rem', color: '#666', marginLeft: '0.25rem' })}>(Us)</span>
+            </div>
+            <div>
+                <span className={css({ color: '#fff', fontWeight: 'bold' })}>{session.themStats.shots}</span>
+                <span className={css({ fontSize: '0.75rem', color: '#666', marginLeft: '0.25rem' })}>(Them)</span>
+            </div>
           </div>
           <div className={recorderStyle}>
             Recorded by {session.recorderName}

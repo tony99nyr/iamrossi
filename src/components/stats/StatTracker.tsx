@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 interface StatTrackerProps {
   session: StatSession;
+  initialRoster: Player[];
   onFinish: () => void;
   onExit: () => void;
 }
@@ -169,9 +170,11 @@ const modalContentStyle = css({
   boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
 });
 
-export default function StatTracker({ session, onFinish, onExit }: StatTrackerProps) {
+const SAD_EMOJIS = ['😢', '😭', '😞', '😠', '😡', '🤬', '👎', '💔', '😿', '🌧️'];
+
+const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerProps) => {
   const [currentSession, setCurrentSession] = useState<StatSession>(session);
-  const [roster, setRoster] = useState<Player[]>([]);
+  const [roster, setRoster] = useState<Player[]>(initialRoster);
   const [showGoalModal, setShowGoalModal] = useState<'us' | 'them' | null>(null);
   const [goalPlayerId, setGoalPlayerId] = useState<string>('');
   const [assist1Id, setAssist1Id] = useState<string>('');
@@ -179,16 +182,65 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
   const [showAssist1, setShowAssist1] = useState(false);
   const [showAssist2, setShowAssist2] = useState(false);
   const [noteText, setNoteText] = useState('');
+  const [currentPeriod, setCurrentPeriod] = useState<string>(session.currentPeriod || '1');
+  const [sadEmoji, setSadEmoji] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const isGameOver = !!currentSession.endTime;
 
+  const handleEventClick = (event: GameEvent) => {
+    if (event.type === 'system' || event.type === 'note') return;
+
+    if (!window.confirm(`Delete this ${event.type} event and undo the stat change?`)) {
+      return;
+    }
+
+    setCurrentSession(prev => {
+      const newEvents = prev.events.filter(e => e.id !== event.id);
+      const usStats = { ...prev.usStats };
+      const themStats = { ...prev.themStats };
+
+      if (event.type === 'goal') {
+        if (event.team === 'us') {
+          usStats.goals = Math.max(0, usStats.goals - 1);
+        } else if (event.team === 'them') {
+          themStats.goals = Math.max(0, themStats.goals - 1);
+        }
+      } else if (event.type === 'shot') {
+        if (event.team === 'us') usStats.shots = Math.max(0, usStats.shots - 1);
+        else if (event.team === 'them') themStats.shots = Math.max(0, themStats.shots - 1);
+      } else if (event.type === 'chance') {
+        if (event.team === 'us') usStats.chances = Math.max(0, usStats.chances - 1);
+        else if (event.team === 'them') themStats.chances = Math.max(0, themStats.chances - 1);
+      } else if (event.type === 'faceoff') {
+        if (event.note?.includes('Win')) {
+          if (event.team === 'us') usStats.faceoffWins = Math.max(0, usStats.faceoffWins - 1);
+          else themStats.faceoffWins = Math.max(0, themStats.faceoffWins - 1);
+        } else if (event.note?.includes('Loss')) {
+          if (event.team === 'us') usStats.faceoffLosses = Math.max(0, usStats.faceoffLosses - 1);
+          else themStats.faceoffLosses = Math.max(0, themStats.faceoffLosses - 1);
+        } else if (event.note?.includes('Tie')) {
+          if (event.team === 'us') usStats.faceoffTies = Math.max(0, usStats.faceoffTies - 1);
+          else themStats.faceoffTies = Math.max(0, themStats.faceoffTies - 1);
+        }
+      }
+
+      return {
+        ...prev,
+        usStats,
+        themStats,
+        events: newEvents
+      };
+    });
+  };
+
   // Load roster on mount
   useEffect(() => {
-    fetch('/api/admin/roster')
-      .then(res => res.json())
-      .then(data => setRoster(data))
-      .catch(err => console.error('Failed to load roster', err));
+    // Roster is now passed as a prop, no need to fetch here
+    // fetch('/api/admin/roster')
+    //   .then(res => res.json())
+    //   .then(data => setRoster(data))
+    //   .catch(err => console.error('Failed to load roster', err));
   }, []);
 
   // Auto-save on changes
@@ -226,6 +278,13 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
     }
   }, []);
 
+  useEffect(() => {
+    if (sadEmoji) {
+      const timer = setTimeout(() => setSadEmoji(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [sadEmoji]);
+
   const updateStat = (team: 'us' | 'them', stat: keyof TeamStats, delta: number) => {
     setCurrentSession(prev => {
       const teamStats = team === 'us' ? prev.usStats : prev.themStats;
@@ -233,12 +292,49 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
       
       if (newValue === teamStats[stat]) return prev;
 
+      // Log the stat change if it's an increment
+      let newEvents = prev.events;
+      if (delta > 0) {
+          let eventType: GameEvent['type'] | undefined;
+          let note = '';
+
+          if (stat === 'shots') {
+              eventType = 'shot';
+              note = `Shot (${team === 'us' ? 'Us' : 'Them'})`;
+          } else if (stat === 'chances') {
+              eventType = 'chance';
+              note = `Chance (${team === 'us' ? 'Us' : 'Them'})`;
+          } else if (stat === 'faceoffWins') {
+              eventType = 'faceoff';
+              note = 'Faceoff Win';
+          } else if (stat === 'faceoffLosses') {
+              eventType = 'faceoff';
+              note = 'Faceoff Loss';
+          } else if (stat === 'faceoffTies') {
+              eventType = 'faceoff';
+              note = 'Faceoff Tie';
+          }
+
+          if (eventType) {
+              const statEvent: GameEvent = {
+                  id: uuidv4(),
+                  type: eventType,
+                  note,
+                  timestamp: Date.now(),
+                  team,
+                  period: currentPeriod
+              };
+              newEvents = [statEvent, ...prev.events];
+          }
+      }
+
       return {
         ...prev,
         [team === 'us' ? 'usStats' : 'themStats']: {
           ...teamStats,
           [stat]: newValue
-        }
+        },
+        events: newEvents
       };
     });
   };
@@ -272,18 +368,59 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
       assist2Name: team === 'us' ? assist2?.name : undefined,
       timestamp: Date.now(),
       gameTime: new Date().toLocaleTimeString(),
+      period: currentPeriod
+    };
+
+    setCurrentSession(prev => {
+        // Auto-increment shots for the scoring team
+        const updatedTeamStats = {
+            ...(team === 'us' ? prev.usStats : prev.themStats),
+            goals: (team === 'us' ? prev.usStats.goals : prev.themStats.goals) + 1,
+            shots: (team === 'us' ? prev.usStats.shots : prev.themStats.shots) + 1
+        };
+
+        // Create a shot event as well
+        const shotEvent: GameEvent = {
+            id: uuidv4(),
+            type: 'shot',
+            note: `Shot (${team === 'us' ? 'Us' : 'Them'}) - Goal`,
+            timestamp: Date.now(),
+            team,
+            period: currentPeriod
+        };
+
+        return {
+            ...prev,
+            [team === 'us' ? 'usStats' : 'themStats']: updatedTeamStats,
+            events: [newEvent, shotEvent, ...prev.events]
+        };
+    });
+
+    if (team === 'them') {
+        const randomEmoji = SAD_EMOJIS[Math.floor(Math.random() * SAD_EMOJIS.length)];
+        setSadEmoji(randomEmoji);
+    }
+
+    setShowGoalModal(null);
+  };
+
+  const handlePeriodChange = (newPeriod: string) => {
+    if (newPeriod === currentPeriod) return;
+
+    const periodEvent: GameEvent = {
+        id: uuidv4(),
+        type: 'system',
+        note: `Period Change: ${currentPeriod} -> ${newPeriod}`,
+        timestamp: Date.now(),
+        period: newPeriod
     };
 
     setCurrentSession(prev => ({
-      ...prev,
-      [team === 'us' ? 'usStats' : 'themStats']: {
-        ...(team === 'us' ? prev.usStats : prev.themStats),
-        goals: (team === 'us' ? prev.usStats.goals : prev.themStats.goals) + 1
-      },
-      events: [newEvent, ...prev.events]
+        ...prev,
+        currentPeriod: newPeriod,
+        events: [periodEvent, ...prev.events]
     }));
-
-    setShowGoalModal(null);
+    setCurrentPeriod(newPeriod);
   };
 
   const addNote = () => {
@@ -365,6 +502,30 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
   };
 
   if (isGameOver) {
+    const periods = ['1', '2', '3', 'OT'];
+    const periodStats = periods.map(period => {
+        const periodEvents = currentSession.events.filter(e => e.period === period);
+        return {
+            period,
+            usGoals: periodEvents.filter(e => e.type === 'goal' && e.team === 'us').length,
+            themGoals: periodEvents.filter(e => e.type === 'goal' && e.team === 'them').length,
+            usShots: periodEvents.filter(e => e.type === 'shot' && e.team === 'us').length,
+            themShots: periodEvents.filter(e => e.type === 'shot' && e.team === 'them').length,
+            usChances: periodEvents.filter(e => e.type === 'chance' && e.team === 'us').length,
+            themChances: periodEvents.filter(e => e.type === 'chance' && e.team === 'them').length,
+            faceoffWins: periodEvents.filter(e => e.type === 'faceoff' && e.note?.includes('Win')).length,
+            faceoffLosses: periodEvents.filter(e => e.type === 'faceoff' && e.note?.includes('Loss')).length,
+        };
+    }).filter(stat => {
+        if (stat.period !== 'OT') return true;
+        return (
+            stat.usGoals > 0 || stat.themGoals > 0 ||
+            stat.usShots > 0 || stat.themShots > 0 ||
+            stat.usChances > 0 || stat.themChances > 0 ||
+            stat.faceoffWins > 0 || stat.faceoffLosses > 0
+        );
+    });
+
     return (
       <div className={trackerContainerStyle}>
         <div className={css({ textAlign: 'center', marginBottom: '1rem' })}>
@@ -398,6 +559,49 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             <StatRowReadOnly label="Shots" value={currentSession.themStats.shots} color="#7877c6" />
             <StatRowReadOnly label="Chances" value={currentSession.themStats.chances} color="#7877c6" />
           </div>
+        </div>
+
+        {/* Period Breakdown */}
+        <div className={css({ 
+            background: 'rgba(25, 25, 30, 0.6)', 
+            backdropFilter: 'blur(10px)',
+            padding: '1rem', 
+            borderRadius: '16px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            marginTop: '0.5rem',
+            overflowX: 'auto'
+        })}>
+            <h3 className={css({ color: '#ccc', marginBottom: '0.5rem', fontSize: '1rem', textAlign: 'center' })}>Period Breakdown</h3>
+            <table className={css({ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', color: '#ddd' })}>
+                <thead>
+                    <tr>
+                        <th className={css({ padding: '0.5rem', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>Period</th>
+                        <th className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>G (Us/Them)</th>
+                        <th className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>S (Us/Them)</th>
+                        <th className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>C (Us/Them)</th>
+                        <th className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>FO (W/L)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {periodStats.map(stat => (
+                        <tr key={stat.period}>
+                            <td className={css({ padding: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>{stat.period}</td>
+                            <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
+                                <span style={{ color: '#991b1b' }}>{stat.usGoals}</span> / <span style={{ color: '#7877c6' }}>{stat.themGoals}</span>
+                            </td>
+                            <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
+                                <span style={{ color: '#991b1b' }}>{stat.usShots}</span> / <span style={{ color: '#7877c6' }}>{stat.themShots}</span>
+                            </td>
+                            <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
+                                <span style={{ color: '#991b1b' }}>{stat.usChances}</span> / <span style={{ color: '#7877c6' }}>{stat.themChances}</span>
+                            </td>
+                            <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
+                                <span style={{ color: '#4caf50' }}>{stat.faceoffWins}</span> / <span style={{ color: '#ff6b6b' }}>{stat.faceoffLosses}</span>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
         </div>
 
         {/* Full Width Faceoff Summary */}
@@ -449,6 +653,18 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
                   <span className={css({ color: '#ffd700', fontStyle: 'italic' })}>
                     {event.note}
                   </span>
+                ) : event.type === 'shot' ? (
+                  <span className={css({ color: '#aaa' })}>
+                    {event.note}
+                  </span>
+                ) : event.type === 'faceoff' ? (
+                  <span className={css({ color: '#888', fontStyle: 'italic' })}>
+                    {event.note}
+                  </span>
+                ) : event.type === 'chance' ? (
+                  <span className={css({ color: '#fff', fontWeight: 'bold' })}>
+                    {event.note}
+                  </span>
                 ) : (
                   event.note
                 )}
@@ -493,12 +709,53 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             {saving ? 'Resuming...' : 'Edit Stats'}
           </button>
         </div>
+
+        <div className={css({ textAlign: 'center', fontSize: '0.75rem', color: '#666', marginTop: '1rem' })}>
+            Created by: {currentSession.recorderName}
+        </div>
       </div>
     );
   }
 
   return (
     <div className={trackerContainerStyle}>
+      {/* Period Slider */}
+      <div className={css({ 
+        background: 'rgba(25, 25, 30, 0.6)', 
+        backdropFilter: 'blur(10px)',
+        padding: '0.75rem', 
+        borderRadius: '16px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '0.5rem'
+      })}>
+        <div className={statLabelStyle}>PERIOD: {currentPeriod}</div>
+        <div className={css({ display: 'flex', gap: '0.5rem', width: '100%' })}>
+            {['1', '2', '3', 'OT'].map(p => (
+                <button
+                    key={p}
+                    onClick={() => handlePeriodChange(p)}
+                    className={css({
+                        flex: 1,
+                        padding: '0.5rem',
+                        borderRadius: '8px',
+                        border: '1px solid',
+                        borderColor: currentPeriod === p ? '#a5a4ff' : 'rgba(255,255,255,0.1)',
+                        background: currentPeriod === p ? 'rgba(120, 119, 198, 0.3)' : 'transparent',
+                        color: currentPeriod === p ? 'white' : '#888',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                    })}
+                >
+                    {p}
+                </button>
+            ))}
+        </div>
+      </div>
+
       <div className={mainGridStyle}>
         {/* Us Column */}
         <div className={teamColumnStyle}>
@@ -583,8 +840,8 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
               color: '#4caf50',
               border: '1px solid rgba(76, 175, 80, 0.3)',
               borderRadius: '12px',
-              padding: '1rem',
-              fontSize: '0.9rem',
+              padding: '0.25rem',
+              fontSize: '0.8rem',
               fontWeight: 'bold',
               cursor: 'pointer',
               display: 'flex',
@@ -596,7 +853,7 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             })}
           >
             <span>WIN</span>
-            <span className={css({ fontSize: '1.5rem' })}>{currentSession.usStats.faceoffWins}</span>
+            <span className={css({ fontSize: '1.25rem' })}>{currentSession.usStats.faceoffWins}</span>
           </button>
           <button 
             onClick={() => updateStat('us', 'faceoffLosses', 1)}
@@ -605,8 +862,8 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
               color: '#ff6b6b',
               border: '1px solid rgba(244, 67, 54, 0.3)',
               borderRadius: '12px',
-              padding: '1rem',
-              fontSize: '0.9rem',
+              padding: '0.25rem',
+              fontSize: '0.8rem',
               fontWeight: 'bold',
               cursor: 'pointer',
               display: 'flex',
@@ -618,7 +875,7 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             })}
           >
             <span>LOSS</span>
-            <span className={css({ fontSize: '1.5rem' })}>{currentSession.usStats.faceoffLosses}</span>
+            <span className={css({ fontSize: '1.25rem' })}>{currentSession.usStats.faceoffLosses}</span>
           </button>
           <button 
             onClick={() => updateStat('us', 'faceoffTies', 1)}
@@ -627,8 +884,8 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
               color: '#ccc',
               border: '1px solid rgba(255, 255, 255, 0.1)',
               borderRadius: '12px',
-              padding: '1rem',
-              fontSize: '0.9rem',
+              padding: '0.25rem',
+              fontSize: '0.8rem',
               fontWeight: 'bold',
               cursor: 'pointer',
               display: 'flex',
@@ -640,7 +897,7 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             })}
           >
             <span>TIE</span>
-            <span className={css({ fontSize: '1.5rem' })}>{currentSession.usStats.faceoffTies}</span>
+            <span className={css({ fontSize: '1.25rem' })}>{currentSession.usStats.faceoffTies}</span>
           </button>
         </div>
       </div>
@@ -687,7 +944,20 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
         
         <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '150px', overflowY: 'auto' })}>
           {currentSession.events.map(event => (
-            <div key={event.id} className={css({ fontSize: '0.85rem', color: '#ccc', padding: '0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' })}>
+            <div 
+              key={event.id} 
+              onClick={() => handleEventClick(event)}
+              className={css({ 
+                fontSize: '0.85rem', 
+                color: '#ccc', 
+                padding: '0.5rem', 
+                background: 'rgba(0,0,0,0.2)', 
+                borderRadius: '4px',
+                cursor: (event.type === 'system' || event.type === 'note') ? 'default' : 'pointer',
+                transition: 'background 0.2s',
+                '&:hover': (event.type === 'system' || event.type === 'note') ? {} : { background: 'rgba(255, 0, 0, 0.15)' }
+              })}
+            >
               <span className={css({ color: '#666', marginRight: '0.5rem', fontSize: '0.75rem' })}>
                 {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
@@ -702,6 +972,18 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
                 </span>
               ) : event.type === 'system' ? (
                 <span className={css({ color: '#ffd700', fontStyle: 'italic' })}>
+                  {event.note}
+                </span>
+              ) : event.type === 'shot' ? (
+                <span className={css({ color: '#aaa' })}>
+                  {event.note}
+                </span>
+              ) : event.type === 'faceoff' ? (
+                <span className={css({ color: '#888', fontStyle: 'italic' })}>
+                  {event.note}
+                </span>
+              ) : event.type === 'chance' ? (
+                <span className={css({ color: '#fff', fontWeight: 'bold' })}>
                   {event.note}
                 </span>
               ) : (
@@ -747,13 +1029,43 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
         </button>
       </div>
 
+      <div className={css({ textAlign: 'center', fontSize: '0.75rem', color: '#666', marginTop: '1rem' })}>
+        Created by: {currentSession.recorderName}
+      </div>
+
+      {/* Sad Emoji Overlay */}
+      {sadEmoji && (
+        <>
+            <style>{`
+                @keyframes fadeInOut {
+                    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+                    20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+                    80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+                }
+            `}</style>
+            <div className={css({
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            fontSize: '8rem',
+            zIndex: 2000,
+            pointerEvents: 'none',
+            animation: 'fadeInOut 3s ease-in-out forwards',
+            })}>
+            {sadEmoji}
+            </div>
+        </>
+      )}
+
       {/* Goal Modal (keep existing) */}
       {showGoalModal && (
         <div className={modalOverlayStyle}>
           {/* ... (keep modal content) */}
           <div className={modalContentStyle}>
             <h3 className={css({ fontSize: '1.25rem', marginBottom: '1rem', color: 'white' })}>
-              Record Goal
+              {showGoalModal === 'us' ? '10U Black Goal!' : 'Record Goal (Them)'}
             </h3>
             
             {showGoalModal === 'us' && (
@@ -947,3 +1259,5 @@ function StatRowReadOnly({ label, value, color }: { label: string; value: number
     </div>
   );
 }
+
+export default StatTracker;
