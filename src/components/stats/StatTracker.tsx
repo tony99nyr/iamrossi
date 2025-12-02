@@ -115,6 +115,18 @@ const miniButtonStyle = css({
   '&:active': { transform: 'scale(0.95)' },
 });
 
+const plusBtnStyle = css({
+  background: 'rgba(120, 119, 198, 0.2)',
+  color: '#a5a4ff',
+  '&:hover': { background: 'rgba(120, 119, 198, 0.3)' },
+});
+
+const minusBtnStyle = css({
+  background: 'rgba(255, 255, 255, 0.05)',
+  color: '#888',
+  '&:hover': { background: 'rgba(255, 255, 255, 0.1)' },
+});
+
 const goalButtonStyle = css({
   width: '100%',
   padding: '0.75rem',
@@ -132,10 +144,152 @@ const goalButtonStyle = css({
   '&:active': { transform: 'scale(0.98)' },
 });
 
-// ... (keep modal styles)
+const modalOverlayStyle = css({
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: 'rgba(0, 0, 0, 0.8)',
+  backdropFilter: 'blur(5px)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 100,
+  padding: '1rem',
+});
+
+const modalContentStyle = css({
+  background: '#1a1a1a',
+  width: '100%',
+  maxWidth: '500px',
+  borderRadius: '20px',
+  padding: '2rem',
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+});
 
 export default function StatTracker({ session, onFinish, onExit }: StatTrackerProps) {
-  // ... (keep state and logic)
+  const [currentSession, setCurrentSession] = useState<StatSession>(session);
+  const [roster, setRoster] = useState<Player[]>([]);
+  const [showGoalModal, setShowGoalModal] = useState<'us' | 'them' | null>(null);
+  const [goalPlayerId, setGoalPlayerId] = useState<string>('');
+  const [noteText, setNoteText] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Load roster on mount
+  useEffect(() => {
+    fetch('/api/admin/roster')
+      .then(res => res.json())
+      .then(data => setRoster(data))
+      .catch(err => console.error('Failed to load roster', err));
+  }, []);
+
+  // Auto-save on changes
+  useEffect(() => {
+    const saveSession = async () => {
+      try {
+        await fetch('/api/stats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentSession),
+        });
+      } catch (e) {
+        console.error('Auto-save failed', e);
+      }
+    };
+    
+    if (currentSession.events.length > 0 || currentSession.usStats.shots > 0) {
+        saveSession();
+    }
+  }, [currentSession]);
+
+  const updateStat = (team: 'us' | 'them', stat: keyof TeamStats, delta: number) => {
+    setCurrentSession(prev => {
+      const teamStats = team === 'us' ? prev.usStats : prev.themStats;
+      const newValue = Math.max(0, teamStats[stat] + delta);
+      
+      if (newValue === teamStats[stat]) return prev;
+
+      return {
+        ...prev,
+        [team === 'us' ? 'usStats' : 'themStats']: {
+          ...teamStats,
+          [stat]: newValue
+        }
+      };
+    });
+  };
+
+  const handleGoal = (team: 'us' | 'them') => {
+    setShowGoalModal(team);
+    setGoalPlayerId('');
+  };
+
+  const confirmGoal = () => {
+    if (!showGoalModal) return;
+
+    const team = showGoalModal;
+    const player = roster.find(p => p.id === goalPlayerId);
+    
+    const newEvent: GameEvent = {
+      id: uuidv4(),
+      type: 'goal',
+      team,
+      playerId: team === 'us' ? player?.id : undefined,
+      playerName: team === 'us' ? player?.name : undefined,
+      timestamp: Date.now(),
+      gameTime: new Date().toLocaleTimeString(),
+    };
+
+    setCurrentSession(prev => ({
+      ...prev,
+      [team === 'us' ? 'usStats' : 'themStats']: {
+        ...(team === 'us' ? prev.usStats : prev.themStats),
+        goals: (team === 'us' ? prev.usStats.goals : prev.themStats.goals) + 1
+      },
+      events: [newEvent, ...prev.events]
+    }));
+
+    setShowGoalModal(null);
+  };
+
+  const addNote = () => {
+    if (!noteText.trim()) return;
+
+    const newEvent: GameEvent = {
+      id: uuidv4(),
+      type: 'note',
+      note: noteText,
+      timestamp: Date.now(),
+    };
+
+    setCurrentSession(prev => ({
+      ...prev,
+      events: [newEvent, ...prev.events]
+    }));
+
+    setNoteText('');
+  };
+
+  const handleFinish = async () => {
+    setSaving(true);
+    try {
+      await fetch('/api/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            ...currentSession,
+            endTime: Date.now()
+        }),
+      });
+      onFinish();
+    } catch (e) {
+      alert('Failed to save session');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className={trackerContainerStyle}>

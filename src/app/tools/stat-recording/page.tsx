@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { css } from '@styled-system/css';
 import { Game, StatSession } from '@/types';
 import GameSetup from '@/components/stats/GameSetup';
-import StatTracker from '@/components/stats/StatTracker';
 import SessionHistory from '@/components/stats/SessionHistory';
 
 const containerStyle = css({
@@ -29,17 +29,22 @@ const headerStyle = css({
 });
 
 export default function StatRecordingPage() {
-  const [view, setView] = useState<'setup' | 'tracker' | 'history'>('setup');
-  const [currentSession, setCurrentSession] = useState<StatSession | null>(null);
+  const [view, setView] = useState<'setup' | 'history'>('setup');
+  const router = useRouter();
 
-  const handleStartSession = (session: StatSession) => {
-    setCurrentSession(session);
-    setView('tracker');
-  };
-
-  const handleFinishSession = () => {
-    setView('history');
-    setCurrentSession(null);
+  const handleStartSession = async (session: StatSession) => {
+    // Save initial session before redirecting
+    try {
+      await fetch('/api/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session),
+      });
+      router.push(`/tools/stat-recording/${session.id}`);
+    } catch (error) {
+      console.error('Failed to start session', error);
+      alert('Failed to start session. Please try again.');
+    }
   };
 
   return (
@@ -54,14 +59,6 @@ export default function StatRecordingPage() {
             <SessionHistory />
           </div>
         </>
-      )}
-
-      {view === 'tracker' && currentSession && (
-        <StatTracker 
-          session={currentSession} 
-          onFinish={handleFinishSession}
-          onExit={() => setView('setup')}
-        />
       )}
 
       {view === 'history' && (
