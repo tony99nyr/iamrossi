@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { css, cx } from '@styled-system/css';
 import { StatSession, TeamStats, GameEvent, Player } from '@/types';
+import GoalCelebration from './GoalCelebration';
 import { v4 as uuidv4 } from 'uuid';
 
 interface StatTrackerProps {
@@ -184,6 +185,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
   const [noteText, setNoteText] = useState('');
   const [currentPeriod, setCurrentPeriod] = useState<string>(session.currentPeriod || '1');
   const [sadEmoji, setSadEmoji] = useState<string | null>(null);
+  const [celebrating, setCelebrating] = useState(false);
   
   // Animation keyframes
   const animationStyles = `
@@ -415,6 +417,8 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
     if (team === 'them') {
         const randomEmoji = SAD_EMOJIS[Math.floor(Math.random() * SAD_EMOJIS.length)];
         setSadEmoji(randomEmoji);
+    } else if (team === 'us') {
+        setCelebrating(true);
     }
 
     setShowGoalModal(null);
@@ -1057,6 +1061,8 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
       <div className={css({ textAlign: 'center', fontSize: '0.75rem', color: '#666', marginTop: '1rem' })}>
         Created by: {currentSession.recorderName}
       </div>
+
+      <GoalCelebration active={celebrating} onComplete={() => setCelebrating(false)} />
 
       {/* Animation Styles */}
       <style>{animationStyles}</style>
