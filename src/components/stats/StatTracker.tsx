@@ -184,6 +184,22 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
   const [noteText, setNoteText] = useState('');
   const [currentPeriod, setCurrentPeriod] = useState<string>(session.currentPeriod || '1');
   const [sadEmoji, setSadEmoji] = useState<string | null>(null);
+  
+  // Animation keyframes
+  const animationStyles = `
+    @keyframes excited-bounce {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.5); }
+      100% { transform: scale(1); }
+    }
+    @keyframes sad-emoji-fade {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+      10% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+      20% { transform: translate(-50%, -50%) scale(1); }
+      80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+    }
+  `;
   const [saving, setSaving] = useState(false);
 
   const isGameOver = !!currentSession.endTime;
@@ -761,7 +777,11 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
         <div className={teamColumnStyle}>
           <div className={teamHeaderStyle}>
             <div className={teamNameStyle}>{currentSession.ourTeamName || 'Our Team'}</div>
-            <div className={scoreStyle} style={{ color: '#991b1b' }}>{currentSession.usStats.goals}</div>
+            <AnimatedValue 
+                value={currentSession.usStats.goals} 
+                className={scoreStyle} 
+                color="#991b1b"
+            />
           </div>
           
           <button 
@@ -778,6 +798,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
             onIncrement={() => updateStat('us', 'shots', 1)}
             onDecrement={() => updateStat('us', 'shots', -1)}
             color="#991b1b"
+            animate={true}
           />
 
           <StatRow 
@@ -786,6 +807,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
             onIncrement={() => updateStat('us', 'chances', 1)}
             onDecrement={() => updateStat('us', 'chances', -1)}
             color="#991b1b"
+            animate={true}
           />
 
           </div>
@@ -853,7 +875,10 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
             })}
           >
             <span>WIN</span>
-            <span className={css({ fontSize: '1.25rem' })}>{currentSession.usStats.faceoffWins}</span>
+            <AnimatedValue 
+                value={currentSession.usStats.faceoffWins} 
+                className={css({ fontSize: '1.25rem' })}
+            />
           </button>
           <button 
             onClick={() => updateStat('us', 'faceoffLosses', 1)}
@@ -1033,30 +1058,22 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
         Created by: {currentSession.recorderName}
       </div>
 
+      {/* Animation Styles */}
+      <style>{animationStyles}</style>
+
       {/* Sad Emoji Overlay */}
       {sadEmoji && (
-        <>
-            <style>{`
-                @keyframes fadeInOut {
-                    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-                    20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
-                    80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-                    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-                }
-            `}</style>
-            <div className={css({
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            fontSize: '8rem',
-            zIndex: 2000,
-            pointerEvents: 'none',
-            animation: 'fadeInOut 3s ease-in-out forwards',
-            })}>
-            {sadEmoji}
-            </div>
-        </>
+        <div className={css({
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          fontSize: '8rem',
+          zIndex: 9999,
+          pointerEvents: 'none',
+          animation: 'sad-emoji-fade 3s forwards'
+        })}>
+          {sadEmoji}
+        </div>
       )}
 
       {/* Goal Modal (keep existing) */}
@@ -1227,12 +1244,13 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
   );
 }
 
-function StatRow({ label, value, onIncrement, onDecrement, color }: { 
+function StatRow({ label, value, onIncrement, onDecrement, color, animate }: { 
   label: string; 
   value: number; 
   onIncrement: () => void; 
   onDecrement: () => void;
   color?: string;
+  animate?: boolean;
 }) {
   return (
     <div className={statRowStyle}>
@@ -1241,7 +1259,7 @@ function StatRow({ label, value, onIncrement, onDecrement, color }: {
         <button onClick={onDecrement} className={cx(miniButtonStyle, minusBtnStyle)}>
           −
         </button>
-        <div className={statValueStyle} style={{ color }}>{value}</div>
+        <AnimatedValue value={value} className={statValueStyle} color={color} animate={animate} />
         <button onClick={onIncrement} className={cx(miniButtonStyle, plusBtnStyle)}>
           +
         </button>
@@ -1256,6 +1274,33 @@ function StatRowReadOnly({ label, value, color }: { label: string; value: number
     <div className={statRowStyle}>
       <div className={statLabelStyle}>{label}</div>
       <div className={css({ fontSize: '1.5rem', fontWeight: '700', textAlign: 'center', color })}>{value}</div>
+    </div>
+  );
+}
+
+function AnimatedValue({ value, className, color, animate = true }: { value: number; className?: string; color?: string; animate?: boolean }) {
+  const [isAnimating, setIsAnimating] = useState(false);
+  const prevValue = useRef(value);
+
+  useEffect(() => {
+    if (animate && value > prevValue.current) {
+      setIsAnimating(true);
+      const timer = setTimeout(() => setIsAnimating(false), 400);
+      return () => clearTimeout(timer);
+    }
+    prevValue.current = value;
+  }, [value, animate]);
+
+  return (
+    <div 
+      className={className} 
+      style={{ 
+        color,
+        animation: isAnimating ? 'excited-bounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)' : 'none',
+        display: 'inline-block'
+      }}
+    >
+      {value}
     </div>
   );
 }
