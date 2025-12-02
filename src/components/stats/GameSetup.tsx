@@ -117,19 +117,15 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
 
   const fetchSettings = async () => {
       try {
-          // We can reuse the admin settings API if it's public or create a public one
-          // For now, let's try to get it from a public endpoint if we make one, 
-          // or just default to "Our Team" if we can't access admin settings without auth.
-          // Wait, admin settings are protected. 
-          // But we need the team name. 
-          // Let's assume for now we default to "Our Team" and maybe later expose a public settings endpoint.
-          // Actually, the user said "The 'Us' will always be the team mhrTeamId set in the admin console."
-          // So we should probably expose the team name publicly.
-          // For this MVP step, I'll just use "Our Team" as placeholder or try to fetch from a new public endpoint if I create one.
-          // Let's stick to "Our Team" for now to avoid scope creep, or maybe just hardcode if I knew it.
-          // I'll add a TODO to fetch it properly.
+          const res = await fetch('/api/admin/settings');
+          if (res.ok) {
+              const data = await res.json();
+              if (data.teamName) {
+                  setTeamName(data.teamName);
+              }
+          }
       } catch (e) {
-          // ignore
+          console.error('Failed to load settings', e);
       }
   };
 
@@ -181,6 +177,7 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
       isCustomGame: isCustom,
       location,
       startTime: Date.now(),
+      ourTeamName: teamName,
     };
 
     onStartSession(newSession);

@@ -331,3 +331,10 @@ export async function saveStatSession(session: StatSession): Promise<void> {
   
   await redis.set(KV_KEYS.STATS, JSON.stringify(sessions));
 }
+
+export async function deleteStatSession(id: string): Promise<void> {
+  await ensureConnected();
+  const sessions = await getStatSessions();
+  const filtered = sessions.filter(s => s.id !== id);
+  await redis.set(KV_KEYS.STATS, JSON.stringify(filtered));
+}

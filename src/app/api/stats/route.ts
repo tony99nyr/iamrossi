@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStatSessions, saveStatSession } from '@/lib/kv';
+import { getStatSessions, saveStatSession, deleteStatSession } from '@/lib/kv';
+import { verifyAuthToken } from '@/lib/auth';
 import { StatSession } from '@/types';
 
 export async function GET(request: NextRequest) {
@@ -37,5 +38,26 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error saving stat session:', error);
     return NextResponse.json({ error: 'Failed to save session' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  // Verify auth
+  const isAuth = await verifyAuthToken(request);
+  if (!isAuth) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const { id } = await request.json();
+    if (!id) {
+      return NextResponse.json({ error: 'ID required' }, { status: 400 });
+    }
+
+    await deleteStatSession(id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting session:', error);
+    return NextResponse.json({ error: 'Failed to delete session' }, { status: 500 });
   }
 }

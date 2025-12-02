@@ -12,9 +12,17 @@ interface HeroSectionProps {
     teamName: string;
     mhrTeamId: string;
     mhrYear: string;
+    subtitle?: string;
+    description?: string;
 }
 
-export default function HeroSection({ teamName, mhrTeamId, mhrYear }: HeroSectionProps) {
+export default function HeroSection({ 
+    teamName, 
+    mhrTeamId, 
+    mhrYear,
+    subtitle = "Game Schedule",
+    description = "Track upcoming games, view past results, and access detailed team statistics. Click any game to expand and see full details including team records, ratings, and game previews."
+}: HeroSectionProps) {
     return (
         <div className={cx('hero-section', heroSectionStyle)}>
             <div className={cx('logo-container', logoContainerStyle)}>
@@ -38,10 +46,9 @@ export default function HeroSection({ teamName, mhrTeamId, mhrYear }: HeroSectio
                     {teamName}
                 </h1>
             </a>
-            <p className={cx('subtitle', subtitleStyle)}>Game Schedule</p>
+            <p className={cx('subtitle', subtitleStyle)}>{subtitle}</p>
             <p className={cx('description', descriptionStyle)}>
-                Track upcoming games, view past results, and access detailed team statistics. 
-                Click any game to expand and see full details including team records, ratings, and game previews.
+                {description}
             </p>
         </div>
     );

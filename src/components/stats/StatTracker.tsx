@@ -177,6 +177,8 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
   const [noteText, setNoteText] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const isGameOver = !!currentSession.endTime;
+
   // Load roster on mount
   useEffect(() => {
     fetch('/api/admin/roster')
@@ -291,13 +293,97 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
     }
   };
 
+  if (isGameOver) {
+    return (
+      <div className={trackerContainerStyle}>
+        <div className={css({ textAlign: 'center', marginBottom: '1rem' })}>
+          <h2 className={css({ fontSize: '2rem', color: '#fff', fontWeight: '800', letterSpacing: '0.1em' })}>FINAL SCORE</h2>
+          <div className={css({ color: '#888', fontSize: '0.9rem' })}>
+            Ended {new Date(currentSession.endTime!).toLocaleString()}
+          </div>
+        </div>
+
+        <div className={mainGridStyle}>
+          {/* Us Column */}
+          <div className={teamColumnStyle}>
+            <div className={teamHeaderStyle}>
+              <div className={teamNameStyle}>{currentSession.ourTeamName || 'Our Team'}</div>
+              <div className={scoreStyle} style={{ color: '#a5a4ff' }}>{currentSession.usStats.goals}</div>
+            </div>
+            
+            <StatRowReadOnly label="Shots" value={currentSession.usStats.shots} color="#a5a4ff" />
+            <StatRowReadOnly label="Faceoffs" value={currentSession.usStats.faceoffs} color="#a5a4ff" />
+            <StatRowReadOnly label="Chances" value={currentSession.usStats.chances} color="#a5a4ff" />
+          </div>
+
+          {/* Them Column */}
+          <div className={teamColumnStyle}>
+            <div className={teamHeaderStyle}>
+              <div className={teamNameStyle}>{currentSession.opponent}</div>
+              <div className={scoreStyle} style={{ color: '#ff8a65' }}>{currentSession.themStats.goals}</div>
+            </div>
+            
+            <StatRowReadOnly label="Shots" value={currentSession.themStats.shots} color="#ff8a65" />
+            <StatRowReadOnly label="Faceoffs" value={currentSession.themStats.faceoffs} color="#ff8a65" />
+            <StatRowReadOnly label="Chances" value={currentSession.themStats.chances} color="#ff8a65" />
+          </div>
+        </div>
+
+        {/* Read-only Event Log */}
+        <div className={css({ 
+          background: 'rgba(25, 25, 30, 0.6)', 
+          padding: '1rem', 
+          borderRadius: '16px',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          marginTop: '1rem'
+        })}>
+          <h3 className={css({ color: '#ccc', marginBottom: '0.5rem', fontSize: '1rem' })}>Game Log</h3>
+          <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' })}>
+            {currentSession.events.map(event => (
+              <div key={event.id} className={css({ fontSize: '0.85rem', color: '#ccc', padding: '0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' })}>
+                <span className={css({ color: '#666', marginRight: '0.5rem', fontSize: '0.75rem' })}>
+                  {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                {event.type === 'goal' ? (
+                  <span className={css({ color: event.team === 'us' ? '#a5a4ff' : '#ff8a65', fontWeight: 'bold' })}>
+                    GOAL ({event.team === 'us' ? 'Us' : 'Them'}) {event.playerName ? `- ${event.playerName}` : ''}
+                  </span>
+                ) : (
+                  event.note
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button 
+          onClick={onExit}
+          className={css({
+            width: '100%',
+            padding: '1rem',
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            color: 'white',
+            borderRadius: '12px',
+            cursor: 'pointer',
+            fontSize: '1rem',
+            marginTop: '1rem',
+            '&:hover': { background: 'rgba(255, 255, 255, 0.15)' }
+          })}
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className={trackerContainerStyle}>
       <div className={mainGridStyle}>
         {/* Us Column */}
         <div className={teamColumnStyle}>
           <div className={teamHeaderStyle}>
-            <div className={teamNameStyle}>Our Team</div>
+            <div className={teamNameStyle}>{currentSession.ourTeamName || 'Our Team'}</div>
             <div className={scoreStyle} style={{ color: '#a5a4ff' }}>{currentSession.usStats.goals}</div>
           </div>
           
@@ -452,7 +538,7 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             fontSize: '1rem'
           })}
         >
-          {saving ? 'Saving...' : 'Finish Game'}
+          {saving ? 'Saving...' : 'GAME OVER'}
         </button>
       </div>
 
@@ -554,3 +640,12 @@ function StatRow({ label, value, onIncrement, onDecrement, color }: {
   );
 }
 
+
+function StatRowReadOnly({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div className={statRowStyle}>
+      <div className={statLabelStyle}>{label}</div>
+      <div className={css({ fontSize: '1.5rem', fontWeight: '700', textAlign: 'center', color })}>{value}</div>
+    </div>
+  );
+}

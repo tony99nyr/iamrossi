@@ -199,15 +199,17 @@ export interface TeamStats {
 
 export interface StatSession {
   id: string;
-  gameId?: string; // If linked to a scheduled game
-  date: string;
+  date: string; // ISO string
   opponent: string;
   recorderName: string;
+  ourTeamName?: string; // Optional for backward compatibility
   usStats: TeamStats;
   themStats: TeamStats;
   events: GameEvent[];
   isCustomGame: boolean;
+  gameId?: string; // If linked to a scheduled game
   location?: string;
   startTime: number;
   endTime?: number;
 }
+

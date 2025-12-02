@@ -6,6 +6,7 @@ import { css } from '@styled-system/css';
 import { Game, StatSession } from '@/types';
 import GameSetup from '@/components/stats/GameSetup';
 import SessionHistory from '@/components/stats/SessionHistory';
+import HeroSection from '../next-game/components/HeroSection';
 
 const containerStyle = css({
   minHeight: '100vh',
@@ -18,19 +19,31 @@ const containerStyle = css({
   gap: '2rem',
 });
 
-const headerStyle = css({
-  fontSize: '2.5rem',
-  fontWeight: '800',
-  background: 'linear-gradient(135deg, #ffffff 0%, #7877c6 50%, #ff8a65 100%)',
-  backgroundClip: 'text',
-  color: 'transparent',
-  textAlign: 'center',
-  marginBottom: '1rem',
-});
+
 
 export default function StatRecordingPage() {
   const [view, setView] = useState<'setup' | 'history'>('setup');
+  const [settings, setSettings] = useState({
+      teamName: 'Junior Canes 10U Black',
+      mhrTeamId: '19758',
+      mhrYear: '2025'
+  });
   const router = useRouter();
+
+  useEffect(() => {
+      fetch('/api/admin/settings')
+          .then(res => res.json())
+          .then(data => {
+              if (data) {
+                  setSettings({
+                      teamName: data.teamName || 'Junior Canes 10U Black',
+                      mhrTeamId: data.mhrTeamId || '19758',
+                      mhrYear: data.mhrYear || '2025'
+                  });
+              }
+          })
+          .catch(err => console.error('Failed to load settings', err));
+  }, []);
 
   const handleStartSession = async (session: StatSession) => {
     // Save initial session before redirecting
@@ -49,7 +62,13 @@ export default function StatRecordingPage() {
 
   return (
     <div className={containerStyle}>
-      <h1 className={headerStyle}>Game Stat Tracker</h1>
+      <HeroSection 
+          teamName={settings.teamName}
+          mhrTeamId={settings.mhrTeamId}
+          mhrYear={settings.mhrYear}
+          subtitle="Stat Tracker"
+          description="Record live game statistics, track player performance, and manage game sessions. Start a new session or view history below."
+      />
 
       {view === 'setup' && (
         <>

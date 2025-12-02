@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   try {
     browser = await chromium.launch({
       args: chromiumPkg.args,
-      executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'),
+      executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.tar'),
       headless: true,
     });
     const page = await browser.newPage();

@@ -15,8 +15,8 @@ importers:
         specifier: ^9.4.2
         version: 9.4.2(@types/react@19.2.6)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(three@0.181.2)
       '@sparticuz/chromium-min':
-        specifier: ^131.0.1
-        version: 131.0.1
+        specifier: ^141.0.0
+        version: 141.0.0
       '@types/three':
         specifier: ^0.181.0
         version: 0.181.0
@@ -1538,9 +1538,9 @@ packages:
     resolution: {integrity: sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ==}
     engines: {node: '>=18'}
 
-  '@sparticuz/chromium-min@131.0.1':
-    resolution: {integrity: sha512-kQqKflJtjcBb8aA1b6L4dhU/8UbCJHcjb3au8cjBhKAG7nzqh//92rHCB6ULkgV0CMEQmfp3LDBQ/W8Wg2k+Yg==}
-    engines: {node: '>= 16'}
+  '@sparticuz/chromium-min@141.0.0':
+    resolution: {integrity: sha512-1EAR1NBrY4sa0hysDUCxCSI+9xc88/LYB3YjWFqMMu3CF82ATp8FzOeu7icwGxI02NAPcwzb0Uf1kIzsfH7Eiw==}
+    engines: {node: '>=20.11.0'}
 
   '@speed-highlight/core@1.2.12':
     resolution: {integrity: sha512-uilwrK0Ygyri5dToHYdZSjcvpS2ZwX0w5aSt3GCEN9hrjxWCoeV4Z2DTXuxjwbntaLQIEEAlCeNQss5SoHvAEA==}
@@ -7415,7 +7415,7 @@ snapshots:
 
   '@sindresorhus/merge-streams@4.0.0': {}
 
-  '@sparticuz/chromium-min@131.0.1':
+  '@sparticuz/chromium-min@141.0.0':
     dependencies:
       follow-redirects: 1.15.11
       tar-fs: 3.1.1

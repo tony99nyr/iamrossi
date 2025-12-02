@@ -629,15 +629,15 @@ export default function AdminPage() {
                                         key={player.id}
                                         className={css({
                                             display: 'flex',
-                                            gap: '1rem',
+                                            gap: { base: '0.5rem', sm: '1rem' },
                                             alignItems: 'center',
-                                            padding: '1rem',
-                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            padding: { base: '0.75rem', sm: '1rem' },
+                                            background: 'rgba(25, 25, 30, 0.6)',
                                             borderRadius: '10px',
                                             border: '1px solid rgba(255, 255, 255, 0.1)',
                                             transition: 'all 0.2s',
                                             '&:hover': {
-                                                background: 'rgba(255, 255, 255, 0.08)',
+                                                background: 'rgba(25, 25, 30, 0.8)',
                                                 borderColor: 'rgba(255, 255, 255, 0.15)',
                                             }
                                         })}
@@ -678,8 +678,8 @@ export default function AdminPage() {
                                         ) : (
                                             <>
                                                 <div className={css({ 
-                                                    flex: '0 0 60px',
-                                                    fontSize: '1.2rem',
+                                                    flex: { base: '0 0 40px', sm: '0 0 60px' },
+                                                    fontSize: { base: '1rem', sm: '1.2rem' },
                                                     fontWeight: '700',
                                                     color: 'rgba(120, 119, 198, 0.9)',
                                                     textAlign: 'center'
@@ -689,42 +689,44 @@ export default function AdminPage() {
                                                 <div className={css({ flex: '1', fontSize: '1rem', color: '#ffffff' })}>
                                                     {player.name}
                                                 </div>
-                                                <button
-                                                    onClick={() => setEditingPlayerId(player.id)}
-                                                    className={css({
-                                                        padding: '0.5rem 1rem',
-                                                        background: 'rgba(255, 255, 255, 0.1)',
-                                                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                                                        color: '#ffffff',
-                                                        borderRadius: '8px',
-                                                        cursor: 'pointer',
-                                                        fontSize: '0.85rem',
-                                                        transition: 'all 0.2s',
-                                                        '&:hover': {
-                                                            background: 'rgba(255, 255, 255, 0.15)',
-                                                        }
-                                                    })}
-                                                >
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeletePlayer(player.id)}
-                                                    className={css({
-                                                        padding: '0.5rem 1rem',
-                                                        background: 'rgba(255, 100, 100, 0.2)',
-                                                        border: '1px solid rgba(255, 100, 100, 0.3)',
-                                                        color: '#ffffff',
-                                                        borderRadius: '8px',
-                                                        cursor: 'pointer',
-                                                        fontSize: '0.85rem',
-                                                        transition: 'all 0.2s',
-                                                        '&:hover': {
-                                                            background: 'rgba(255, 100, 100, 0.3)',
-                                                        }
-                                                    })}
-                                                >
-                                                    Delete
-                                                </button>
+                                                <div className={css({ display: 'flex', gap: '0.5rem' })}>
+                                                    <button
+                                                        onClick={() => setEditingPlayerId(player.id)}
+                                                        className={css({
+                                                            padding: { base: '0.5rem', sm: '0.5rem 1rem' },
+                                                            background: 'rgba(255, 255, 255, 0.1)',
+                                                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                                                            color: '#ffffff',
+                                                            borderRadius: '8px',
+                                                            cursor: 'pointer',
+                                                            fontSize: { base: '0.8rem', sm: '0.85rem' },
+                                                            transition: 'all 0.2s',
+                                                            '&:hover': {
+                                                                background: 'rgba(255, 255, 255, 0.15)',
+                                                            }
+                                                        })}
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeletePlayer(player.id)}
+                                                        className={css({
+                                                            padding: { base: '0.5rem', sm: '0.5rem 1rem' },
+                                                            background: 'rgba(255, 100, 100, 0.2)',
+                                                            border: '1px solid rgba(255, 100, 100, 0.3)',
+                                                            color: '#ffffff',
+                                                            borderRadius: '8px',
+                                                            cursor: 'pointer',
+                                                            fontSize: { base: '0.8rem', sm: '0.85rem' },
+                                                            transition: 'all 0.2s',
+                                                            '&:hover': {
+                                                                background: 'rgba(255, 100, 100, 0.3)',
+                                                            }
+                                                        })}
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
                                             </>
                                         )}
                                     </div>
