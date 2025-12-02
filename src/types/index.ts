@@ -178,3 +178,36 @@ export interface WebVitalSample {
   timestamp: number;
   connection?: ConnectionDetails;
 }
+export interface GameEvent {
+  id: string;
+  type: 'goal' | 'note';
+  team?: 'us' | 'them';
+  playerId?: string; // For 'us' goals
+  playerName?: string; // For 'us' goals
+  note?: string;
+  timestamp: number; // Unix timestamp
+  period?: string; // e.g., "1", "2", "3", "OT"
+  gameTime?: string; // e.g., "12:34"
+}
+
+export interface TeamStats {
+  shots: number;
+  faceoffs: number; // Faceoff wins
+  chances: number; // Scoring chances
+  goals: number;
+}
+
+export interface StatSession {
+  id: string;
+  gameId?: string; // If linked to a scheduled game
+  date: string;
+  opponent: string;
+  recorderName: string;
+  usStats: TeamStats;
+  themStats: TeamStats;
+  events: GameEvent[];
+  isCustomGame: boolean;
+  location?: string;
+  startTime: number;
+  endTime?: number;
+}

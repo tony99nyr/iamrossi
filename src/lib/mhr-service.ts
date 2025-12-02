@@ -1,5 +1,5 @@
-import { chromium } from 'playwright';
-import chromiumPkg from '@sparticuz/chromium';
+import { chromium } from 'playwright-core';
+import chromiumPkg from '@sparticuz/chromium-min';
 import { debugLog } from '@/lib/logger';
 import { getTeamMap, setTeamMap, type MHRTeamData } from '@/lib/kv';
 
@@ -9,7 +9,7 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
     
     const browser = await chromium.launch({
         args: chromiumPkg.args,
-        executablePath: await chromiumPkg.executablePath(),
+        executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'),
         headless: true,
     });
     try {
@@ -84,7 +84,7 @@ export async function fetchMHRSchedule(teamId: string, year: string): Promise<an
     
     const browser = await chromium.launch({
         args: chromiumPkg.args,
-        executablePath: await chromiumPkg.executablePath(),
+        executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'),
         headless: true,
     });
     try {

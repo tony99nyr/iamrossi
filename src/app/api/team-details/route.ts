@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-core';
+import chromiumPkg from '@sparticuz/chromium-min';
 
 // Force Node.js runtime (required for Playwright browser automation)
 export const runtime = 'nodejs';
@@ -17,8 +18,9 @@ export async function GET(request: NextRequest) {
   let browser;
   try {
     browser = await chromium.launch({
+      args: chromiumPkg.args,
+      executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'),
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
     const page = await browser.newPage();
 

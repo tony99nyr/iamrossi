@@ -1,5 +1,5 @@
 import { createClient } from 'redis';
-import type { Exercise, RehabEntry, Settings, Game, WebVitalSample, Player } from '@/types';
+import type { Exercise, RehabEntry, Settings, Game, WebVitalSample, Player, StatSession } from '@/types';
 
 // Create Redis client
 // Use TEST_REDIS_URL in test environments to avoid wiping production data
@@ -50,7 +50,7 @@ redis.on('end', () => {
 });
 
 // Re-export types for backward compatibility
-export type { Exercise, RehabEntry, Settings, Game, Player };
+export type { Exercise, RehabEntry, Settings, Game, Player, StatSession };
 
 // KV Keys
 const KV_KEYS = {
@@ -64,6 +64,7 @@ const KV_KEYS = {
   ANALYTICS_WEB_VITALS: 'analytics:web-vitals',
   YOUTUBE_VIDEOS: 'youtube:videos',
   TEAM_MAP: 'mhr:team-map',
+  STATS: 'game:stats',
 } as const;
 
 // Exercise operations
@@ -308,4 +309,25 @@ export async function getRoster(): Promise<Player[]> {
 export async function setRoster(roster: Player[]): Promise<void> {
   await ensureConnected();
   await redis.set(KV_KEYS.ROSTER, JSON.stringify(roster));
+}
+
+// Stat Session operations
+export async function getStatSessions(): Promise<StatSession[]> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.STATS);
+  return data ? JSON.parse(data) : [];
+}
+
+export async function saveStatSession(session: StatSession): Promise<void> {
+  await ensureConnected();
+  const sessions = await getStatSessions();
+  const index = sessions.findIndex(s => s.id === session.id);
+  
+  if (index >= 0) {
+    sessions[index] = session;
+  } else {
+    sessions.push(session);
+  }
+  
+  await redis.set(KV_KEYS.STATS, JSON.stringify(sessions));
 }

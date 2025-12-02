@@ -376,6 +376,31 @@ export default function AdminPage() {
         }
     };
 
+    const saveRosterToBackend = async (updatedRoster: Array<{id: string; jerseyNumber: string; name: string}>) => {
+        setRosterMessage('Saving...');
+        try {
+            const adminSecret = sessionStorage.getItem('admin_secret');
+            const res = await fetch('/api/admin/roster', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${adminSecret}`,
+                },
+                body: JSON.stringify({ roster: updatedRoster }),
+            });
+
+            if (res.ok) {
+                setRosterMessage('Saved');
+                setTimeout(() => setRosterMessage(''), 2000);
+            } else {
+                const data = await res.json();
+                setRosterMessage(data.error || 'Failed to save roster.');
+            }
+        } catch {
+            setRosterMessage('Error saving roster.');
+        }
+    };
+
     const handleAddPlayer = () => {
         if (!newPlayerJersey.trim() || !newPlayerName.trim()) {
             setRosterMessage('Please enter both jersey number and name');
@@ -388,44 +413,26 @@ export default function AdminPage() {
             name: newPlayerName.trim(),
         };
 
-        setRoster([...roster, newPlayer]);
+        const updatedRoster = [...roster, newPlayer];
+        setRoster(updatedRoster);
         setNewPlayerJersey('');
         setNewPlayerName('');
-        setRosterMessage('');
+        saveRosterToBackend(updatedRoster);
     };
 
     const handleDeletePlayer = (id: string) => {
-        setRoster(roster.filter(p => p.id !== id));
-        setRosterMessage('');
+        const updatedRoster = roster.filter(p => p.id !== id);
+        setRoster(updatedRoster);
+        saveRosterToBackend(updatedRoster);
     };
 
     const handleEditPlayer = (id: string, field: 'jerseyNumber' | 'name', value: string) => {
         setRoster(roster.map(p => p.id === id ? { ...p, [field]: value } : p));
     };
 
-    const handleSaveRoster = async () => {
-        setRosterMessage('Saving...');
-        try {
-            const adminSecret = sessionStorage.getItem('admin_secret');
-            const res = await fetch('/api/admin/roster', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${adminSecret}`,
-                },
-                body: JSON.stringify({ roster }),
-            });
-
-            if (res.ok) {
-                setRosterMessage('Roster saved successfully!');
-                setEditingPlayerId(null);
-            } else {
-                const data = await res.json();
-                setRosterMessage(data.error || 'Failed to save roster.');
-            }
-        } catch {
-            setRosterMessage('Error saving roster.');
-        }
+    const handleFinishEditing = () => {
+        setEditingPlayerId(null);
+        saveRosterToBackend(roster);
     };
 
     if (!isAuthenticated) {
@@ -650,7 +657,7 @@ export default function AdminPage() {
                                                     className={cx(inputStyle, css({ flex: '1', padding: '0.5rem 0.75rem' }))}
                                                 />
                                                 <button
-                                                    onClick={() => setEditingPlayerId(null)}
+                                                    onClick={handleFinishEditing}
                                                     className={css({
                                                         padding: '0.5rem 1rem',
                                                         background: 'rgba(120, 119, 198, 0.2)',
@@ -735,12 +742,7 @@ export default function AdminPage() {
                         )}
 
                         {/* Save Button */}
-                        <button 
-                            onClick={handleSaveRoster}
-                            className={buttonStyle}
-                        >
-                            Save Roster
-                        </button>
+
 
                         {rosterMessage && (
                             <div className={messageStyle}>
