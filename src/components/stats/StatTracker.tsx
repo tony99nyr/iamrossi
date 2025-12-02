@@ -175,7 +175,7 @@ const SAD_EMOJIS = ['😢', '😭', '😞', '😠', '😡', '🤬', '👎', '�
 
 const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerProps) => {
   const [currentSession, setCurrentSession] = useState<StatSession>(session);
-  const [roster, setRoster] = useState<Player[]>(initialRoster);
+  const [roster] = useState(initialRoster);
   const [showGoalModal, setShowGoalModal] = useState<'us' | 'them' | null>(null);
   const [goalPlayerId, setGoalPlayerId] = useState<string>('');
   const [assist1Id, setAssist1Id] = useState<string>('');
@@ -486,7 +486,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
           events: [endEvent, ...prev.events],
           endTime 
       }));
-    } catch (e) {
+    } catch {
       alert('Failed to save session');
     } finally {
       setSaving(false);
@@ -514,7 +514,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
       });
       
       setCurrentSession(updatedSession);
-    } catch (e) {
+    } catch {
       alert('Failed to resume session');
     } finally {
       setSaving(false);
@@ -1290,7 +1290,8 @@ function AnimatedValue({ value, className, color, animate = true }: { value: num
 
   useEffect(() => {
     if (animate && value > prevValue.current) {
-      setIsAnimating(true);
+      // Wrap in timeout to avoid synchronous setState in effect
+      setTimeout(() => setIsAnimating(true), 0);
       const timer = setTimeout(() => setIsAnimating(false), 400);
       return () => clearTimeout(timer);
     }

@@ -21,34 +21,28 @@ export default function GoalCelebration({ active, onComplete }: GoalCelebrationP
     const rainDropsRef = useRef<RainDrop[]>([]);
     const [showLightning, setShowLightning] = useState(false);
     const animationFrameRef = useRef<number | undefined>(undefined);
-    const [isVisible, setIsVisible] = useState(false);
 
     // Handle active state changes
     useEffect(() => {
         if (active) {
-            setIsVisible(true);
-            
             // Trigger lightning sequence
             const flash = () => {
                 setShowLightning(true);
                 setTimeout(() => setShowLightning(false), 150);
             };
 
-            // Multiple flashes for celebration
-            flash();
+            // Multiple flashes for celebration - wrapped in timeouts to avoid synchronous state updates
+            setTimeout(() => flash(), 0);
             setTimeout(flash, 300);
             setTimeout(flash, 1200);
             setTimeout(flash, 1400);
 
             // Auto-hide after 3 seconds
             const timer = setTimeout(() => {
-                setIsVisible(false);
                 if (onComplete) onComplete();
             }, 3000);
 
             return () => clearTimeout(timer);
-        } else {
-            setIsVisible(false);
         }
     }, [active, onComplete]);
 
@@ -72,7 +66,7 @@ export default function GoalCelebration({ active, onComplete }: GoalCelebrationP
 
     // Rain animation
     useEffect(() => {
-        if (!isVisible) return;
+        if (!active) return;
 
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -127,9 +121,9 @@ export default function GoalCelebration({ active, onComplete }: GoalCelebrationP
                 cancelAnimationFrame(animationFrameRef.current);
             }
         };
-    }, [isVisible]);
+    }, [active]);
 
-    if (!isVisible) return null;
+    if (!active) return null;
 
     return (
         <div className={css({
@@ -143,7 +137,7 @@ export default function GoalCelebration({ active, onComplete }: GoalCelebrationP
             pointerEvents: 'none',
             background: 'rgba(0, 0, 0, 0.3)', // Darken background slightly
             transition: 'opacity 0.5s ease-in-out',
-            opacity: isVisible ? 1 : 0,
+            opacity: 1,
         })}>
             {/* Lightning flash */}
             <div className={css({
