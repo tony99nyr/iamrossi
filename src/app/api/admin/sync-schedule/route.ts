@@ -9,6 +9,7 @@ import { debugLog } from '@/lib/logger';
 // Force Node.js runtime (required for Playwright browser automation in mhr-service)
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Allow up to 60 seconds for scraping
 
 export async function POST(request: NextRequest) {
   // Verify admin authentication

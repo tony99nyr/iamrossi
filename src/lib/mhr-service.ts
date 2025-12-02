@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import chromiumPkg from '@sparticuz/chromium';
 import { debugLog } from '@/lib/logger';
 import { getTeamMap, setTeamMap, type MHRTeamData } from '@/lib/kv';
 
@@ -6,7 +7,11 @@ import { getTeamMap, setTeamMap, type MHRTeamData } from '@/lib/kv';
 export async function scrapeTeamDetails(teamId: string, year: string): Promise<{ record: string; rating: string; logo: string }> {
     debugLog(`[MHR] Scraping team details for ID ${teamId}, year ${year}`);
     
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+        args: chromiumPkg.args,
+        executablePath: await chromiumPkg.executablePath(),
+        headless: true,
+    });
     try {
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -77,7 +82,11 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
 export async function fetchMHRSchedule(teamId: string, year: string): Promise<any[]> {
     debugLog(`Fetching MHR schedule for Team ID: ${teamId}, Year: ${year}`);
     
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+        args: chromiumPkg.args,
+        executablePath: await chromiumPkg.executablePath(),
+        headless: true,
+    });
     try {
         const context = await browser.newContext();
         const page = await context.newPage();
