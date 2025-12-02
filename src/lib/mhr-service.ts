@@ -9,7 +9,7 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
     
     const browser = await chromium.launch({
         args: chromiumPkg.args,
-        executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.tar'),
+        executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar'),
         headless: true,
     });
     try {
@@ -84,7 +84,7 @@ export async function fetchMHRSchedule(teamId: string, year: string): Promise<an
     
     const browser = await chromium.launch({
         args: chromiumPkg.args,
-        executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.tar'),
+        executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar'),
         headless: true,
     });
     try {

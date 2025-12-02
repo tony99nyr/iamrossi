@@ -180,7 +180,7 @@ export interface WebVitalSample {
 }
 export interface GameEvent {
   id: string;
-  type: 'goal' | 'note';
+  type: 'goal' | 'note' | 'system';
   team?: 'us' | 'them';
   playerId?: string; // For 'us' goals
   playerName?: string; // For 'us' goals
@@ -188,11 +188,17 @@ export interface GameEvent {
   timestamp: number; // Unix timestamp
   period?: string; // e.g., "1", "2", "3", "OT"
   gameTime?: string; // e.g., "12:34"
+  assist1Id?: string;
+  assist1Name?: string;
+  assist2Id?: string;
+  assist2Name?: string;
 }
 
 export interface TeamStats {
   shots: number;
-  faceoffs: number; // Faceoff wins
+  faceoffWins: number;
+  faceoffLosses: number;
+  faceoffTies: number;
   chances: number; // Scoring chances
   goals: number;
 }

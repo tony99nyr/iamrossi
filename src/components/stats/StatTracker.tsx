@@ -130,7 +130,7 @@ const minusBtnStyle = css({
 const goalButtonStyle = css({
   width: '100%',
   padding: '0.75rem',
-  background: 'linear-gradient(135deg, #ff8a65 0%, #e64a19 100%)',
+  // background set dynamically
   color: 'white',
   border: 'none',
   borderRadius: '12px',
@@ -174,6 +174,10 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
   const [roster, setRoster] = useState<Player[]>([]);
   const [showGoalModal, setShowGoalModal] = useState<'us' | 'them' | null>(null);
   const [goalPlayerId, setGoalPlayerId] = useState<string>('');
+  const [assist1Id, setAssist1Id] = useState<string>('');
+  const [assist2Id, setAssist2Id] = useState<string>('');
+  const [showAssist1, setShowAssist1] = useState(false);
+  const [showAssist2, setShowAssist2] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -206,10 +210,26 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
     }
   }, [currentSession]);
 
+  // Log session start
+  useEffect(() => {
+    if (currentSession.events.length === 0) {
+        const startEvent: GameEvent = {
+            id: uuidv4(),
+            type: 'system',
+            note: 'Session Started',
+            timestamp: Date.now(),
+        };
+        setCurrentSession(prev => ({
+            ...prev,
+            events: [startEvent, ...prev.events]
+        }));
+    }
+  }, []);
+
   const updateStat = (team: 'us' | 'them', stat: keyof TeamStats, delta: number) => {
     setCurrentSession(prev => {
       const teamStats = team === 'us' ? prev.usStats : prev.themStats;
-      const newValue = Math.max(0, teamStats[stat] + delta);
+      const newValue = Math.max(0, (teamStats[stat] || 0) + delta);
       
       if (newValue === teamStats[stat]) return prev;
 
@@ -226,6 +246,10 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
   const handleGoal = (team: 'us' | 'them') => {
     setShowGoalModal(team);
     setGoalPlayerId('');
+    setAssist1Id('');
+    setAssist2Id('');
+    setShowAssist1(false);
+    setShowAssist2(false);
   };
 
   const confirmGoal = () => {
@@ -233,6 +257,8 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
 
     const team = showGoalModal;
     const player = roster.find(p => p.id === goalPlayerId);
+    const assist1 = roster.find(p => p.id === assist1Id);
+    const assist2 = roster.find(p => p.id === assist2Id);
     
     const newEvent: GameEvent = {
       id: uuidv4(),
@@ -240,6 +266,10 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
       team,
       playerId: team === 'us' ? player?.id : undefined,
       playerName: team === 'us' ? player?.name : undefined,
+      assist1Id: team === 'us' ? assist1?.id : undefined,
+      assist1Name: team === 'us' ? assist1?.name : undefined,
+      assist2Id: team === 'us' ? assist2?.id : undefined,
+      assist2Name: team === 'us' ? assist2?.name : undefined,
       timestamp: Date.now(),
       gameTime: new Date().toLocaleTimeString(),
     };
@@ -277,15 +307,28 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
   const handleFinish = async () => {
     setSaving(true);
     try {
+      const endTime = Date.now();
+      const endEvent: GameEvent = {
+        id: uuidv4(),
+        type: 'system',
+        note: 'Session Finalized',
+        timestamp: endTime,
+      };
+
       await fetch('/api/stats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             ...currentSession,
-            endTime: Date.now()
+            events: [endEvent, ...currentSession.events],
+            endTime
         }),
       });
-      onFinish();
+      setCurrentSession(prev => ({ 
+          ...prev, 
+          events: [endEvent, ...prev.events],
+          endTime 
+      }));
     } catch (e) {
       alert('Failed to save session');
     } finally {
@@ -298,6 +341,14 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
     try {
       const updatedSession = { ...currentSession };
       delete updatedSession.endTime;
+      
+      const resumeEvent: GameEvent = {
+        id: uuidv4(),
+        type: 'system',
+        note: 'Session Resumed',
+        timestamp: Date.now(),
+      };
+      updatedSession.events = [resumeEvent, ...updatedSession.events];
 
       await fetch('/api/stats', {
         method: 'POST',
@@ -328,25 +379,51 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
           <div className={teamColumnStyle}>
             <div className={teamHeaderStyle}>
               <div className={teamNameStyle}>{currentSession.ourTeamName || 'Our Team'}</div>
-              <div className={scoreStyle} style={{ color: '#a5a4ff' }}>{currentSession.usStats.goals}</div>
+              <div className={scoreStyle} style={{ color: '#991b1b' }}>{currentSession.usStats.goals}</div>
             </div>
             
-            <StatRowReadOnly label="Shots" value={currentSession.usStats.shots} color="#a5a4ff" />
-            <StatRowReadOnly label="Faceoffs" value={currentSession.usStats.faceoffs} color="#a5a4ff" />
-            <StatRowReadOnly label="Chances" value={currentSession.usStats.chances} color="#a5a4ff" />
-          </div>
+            <StatRowReadOnly label="Shots" value={currentSession.usStats.shots} color="#991b1b" />
+            <StatRowReadOnly label="Chances" value={currentSession.usStats.chances} color="#991b1b" />
+            
+            </div>
+
 
           {/* Them Column */}
           <div className={teamColumnStyle}>
             <div className={teamHeaderStyle}>
               <div className={teamNameStyle}>{currentSession.opponent}</div>
-              <div className={scoreStyle} style={{ color: '#ff8a65' }}>{currentSession.themStats.goals}</div>
+              <div className={scoreStyle} style={{ color: '#7877c6' }}>{currentSession.themStats.goals}</div>
             </div>
             
-            <StatRowReadOnly label="Shots" value={currentSession.themStats.shots} color="#ff8a65" />
-            <StatRowReadOnly label="Faceoffs" value={currentSession.themStats.faceoffs} color="#ff8a65" />
-            <StatRowReadOnly label="Chances" value={currentSession.themStats.chances} color="#ff8a65" />
+            <StatRowReadOnly label="Shots" value={currentSession.themStats.shots} color="#7877c6" />
+            <StatRowReadOnly label="Chances" value={currentSession.themStats.chances} color="#7877c6" />
           </div>
+        </div>
+
+        {/* Full Width Faceoff Summary */}
+        <div className={css({ 
+            background: 'rgba(25, 25, 30, 0.6)', 
+            backdropFilter: 'blur(10px)',
+            padding: '1rem', 
+            borderRadius: '16px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            marginTop: '0.5rem'
+        })}>
+            <div className={statLabelStyle} style={{ marginBottom: '0.5rem' }}>Faceoffs (Us)</div>
+            <div className={css({ display: 'flex', justifyContent: 'space-around', alignItems: 'center' })}>
+                <div className={css({ textAlign: 'center' })}>
+                    <div className={css({ fontSize: '0.8rem', color: '#888', marginBottom: '0.25rem' })}>WINS</div>
+                    <div className={css({ fontSize: '1.5rem', fontWeight: 'bold', color: '#4caf50' })}>{currentSession.usStats.faceoffWins}</div>
+                </div>
+                <div className={css({ textAlign: 'center' })}>
+                    <div className={css({ fontSize: '0.8rem', color: '#888', marginBottom: '0.25rem' })}>LOSSES</div>
+                    <div className={css({ fontSize: '1.5rem', fontWeight: 'bold', color: '#ff6b6b' })}>{currentSession.usStats.faceoffLosses}</div>
+                </div>
+                <div className={css({ textAlign: 'center' })}>
+                    <div className={css({ fontSize: '0.8rem', color: '#888', marginBottom: '0.25rem' })}>TIES</div>
+                    <div className={css({ fontSize: '1.5rem', fontWeight: 'bold', color: '#ccc' })}>{currentSession.usStats.faceoffTies}</div>
+                </div>
+            </div>
         </div>
 
         {/* Read-only Event Log */}
@@ -365,8 +442,12 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
                   {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
                 {event.type === 'goal' ? (
-                  <span className={css({ color: event.team === 'us' ? '#a5a4ff' : '#ff8a65', fontWeight: 'bold' })}>
+                  <span className={css({ color: event.team === 'us' ? '#991b1b' : '#7877c6', fontWeight: 'bold' })}>
                     GOAL ({event.team === 'us' ? 'Us' : 'Them'}) {event.playerName ? `- ${event.playerName}` : ''}
+                  </span>
+                ) : event.type === 'system' ? (
+                  <span className={css({ color: '#ffd700', fontStyle: 'italic' })}>
+                    {event.note}
                   </span>
                 ) : (
                   event.note
@@ -423,10 +504,14 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
         <div className={teamColumnStyle}>
           <div className={teamHeaderStyle}>
             <div className={teamNameStyle}>{currentSession.ourTeamName || 'Our Team'}</div>
-            <div className={scoreStyle} style={{ color: '#a5a4ff' }}>{currentSession.usStats.goals}</div>
+            <div className={scoreStyle} style={{ color: '#991b1b' }}>{currentSession.usStats.goals}</div>
           </div>
           
-          <button onClick={() => handleGoal('us')} className={goalButtonStyle}>
+          <button 
+            onClick={() => handleGoal('us')} 
+            className={goalButtonStyle}
+            style={{ background: 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)', boxShadow: '0 4px 12px rgba(153, 27, 27, 0.3)' }}
+          >
             GOAL!
           </button>
 
@@ -435,32 +520,30 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             value={currentSession.usStats.shots} 
             onIncrement={() => updateStat('us', 'shots', 1)}
             onDecrement={() => updateStat('us', 'shots', -1)}
-            color="#a5a4ff"
+            color="#991b1b"
           />
-          <StatRow 
-            label="Faceoffs" 
-            value={currentSession.usStats.faceoffs} 
-            onIncrement={() => updateStat('us', 'faceoffs', 1)}
-            onDecrement={() => updateStat('us', 'faceoffs', -1)}
-            color="#a5a4ff"
-          />
+
           <StatRow 
             label="Chances" 
             value={currentSession.usStats.chances} 
             onIncrement={() => updateStat('us', 'chances', 1)}
             onDecrement={() => updateStat('us', 'chances', -1)}
-            color="#a5a4ff"
+            color="#991b1b"
           />
-        </div>
 
+          </div>
         {/* Them Column */}
         <div className={teamColumnStyle}>
           <div className={teamHeaderStyle}>
             <div className={teamNameStyle}>{currentSession.opponent}</div>
-            <div className={scoreStyle} style={{ color: '#ff8a65' }}>{currentSession.themStats.goals}</div>
+            <div className={scoreStyle} style={{ color: '#7877c6' }}>{currentSession.themStats.goals}</div>
           </div>
           
-          <button onClick={() => handleGoal('them')} className={goalButtonStyle}>
+          <button 
+            onClick={() => handleGoal('them')} 
+            className={goalButtonStyle}
+            style={{ background: 'linear-gradient(135deg, #7877c6 0%, #5e5da8 100%)', boxShadow: '0 4px 12px rgba(120, 119, 198, 0.3)' }}
+          >
             GOAL!
           </button>
 
@@ -469,22 +552,96 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             value={currentSession.themStats.shots} 
             onIncrement={() => updateStat('them', 'shots', 1)}
             onDecrement={() => updateStat('them', 'shots', -1)}
-            color="#ff8a65"
+            color="#7877c6"
           />
-          <StatRow 
-            label="Faceoffs" 
-            value={currentSession.themStats.faceoffs} 
-            onIncrement={() => updateStat('them', 'faceoffs', 1)}
-            onDecrement={() => updateStat('them', 'faceoffs', -1)}
-            color="#ff8a65"
-          />
+
           <StatRow 
             label="Chances" 
             value={currentSession.themStats.chances} 
             onIncrement={() => updateStat('them', 'chances', 1)}
             onDecrement={() => updateStat('them', 'chances', -1)}
-            color="#ff8a65"
+            color="#7877c6"
           />
+        </div>
+      </div>
+
+      {/* Full Width Faceoff Section */}
+      <div className={css({ 
+        background: 'rgba(25, 25, 30, 0.6)', 
+        backdropFilter: 'blur(10px)',
+        padding: '1rem', 
+        borderRadius: '16px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        marginTop: '0.5rem'
+      })}>
+        <div className={statLabelStyle} style={{ marginBottom: '0.75rem' }}>Faceoffs (Us)</div>
+        <div className={css({ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' })}>
+          <button 
+            onClick={() => updateStat('us', 'faceoffWins', 1)}
+            className={css({
+              background: 'rgba(76, 175, 80, 0.15)',
+              color: '#4caf50',
+              border: '1px solid rgba(76, 175, 80, 0.3)',
+              borderRadius: '12px',
+              padding: '1rem',
+              fontSize: '0.9rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.25rem',
+              transition: 'all 0.1s',
+              '&:active': { transform: 'scale(0.98)', background: 'rgba(76, 175, 80, 0.25)' }
+            })}
+          >
+            <span>WIN</span>
+            <span className={css({ fontSize: '1.5rem' })}>{currentSession.usStats.faceoffWins}</span>
+          </button>
+          <button 
+            onClick={() => updateStat('us', 'faceoffLosses', 1)}
+            className={css({
+              background: 'rgba(244, 67, 54, 0.15)',
+              color: '#ff6b6b',
+              border: '1px solid rgba(244, 67, 54, 0.3)',
+              borderRadius: '12px',
+              padding: '1rem',
+              fontSize: '0.9rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.25rem',
+              transition: 'all 0.1s',
+              '&:active': { transform: 'scale(0.98)', background: 'rgba(244, 67, 54, 0.25)' }
+            })}
+          >
+            <span>LOSS</span>
+            <span className={css({ fontSize: '1.5rem' })}>{currentSession.usStats.faceoffLosses}</span>
+          </button>
+          <button 
+            onClick={() => updateStat('us', 'faceoffTies', 1)}
+            className={css({
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: '#ccc',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '12px',
+              padding: '1rem',
+              fontSize: '0.9rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.25rem',
+              transition: 'all 0.1s',
+              '&:active': { transform: 'scale(0.98)', background: 'rgba(255, 255, 255, 0.1)' }
+            })}
+          >
+            <span>TIE</span>
+            <span className={css({ fontSize: '1.5rem' })}>{currentSession.usStats.faceoffTies}</span>
+          </button>
         </div>
       </div>
 
@@ -535,8 +692,17 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
                 {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
               {event.type === 'goal' ? (
-                <span className={css({ color: event.team === 'us' ? '#a5a4ff' : '#ff8a65', fontWeight: 'bold' })}>
+                <span className={css({ color: event.team === 'us' ? '#991b1b' : '#7877c6', fontWeight: 'bold' })}>
                   GOAL ({event.team === 'us' ? 'Us' : 'Them'}) {event.playerName ? `- ${event.playerName}` : ''}
+                  {event.assist1Name && (
+                    <span className={css({ fontWeight: 'normal', fontSize: '0.75rem', marginLeft: '0.5rem', color: '#888' })}>
+                      (A: {event.assist1Name}{event.assist2Name ? `, ${event.assist2Name}` : ''})
+                    </span>
+                  )}
+                </span>
+              ) : event.type === 'system' ? (
+                <span className={css({ color: '#ffd700', fontStyle: 'italic' })}>
+                  {event.note}
                 </span>
               ) : (
                 event.note
@@ -591,7 +757,7 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
             </h3>
             
             {showGoalModal === 'us' && (
-              <div className={css({ marginBottom: '1rem' })}>
+              <div className={css({ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' })}>
                 <select 
                   value={goalPlayerId}
                   onChange={(e) => setGoalPlayerId(e.target.value)}
@@ -613,6 +779,99 @@ export default function StatTracker({ session, onFinish, onExit }: StatTrackerPr
                     </option>
                   ))}
                 </select>
+
+                {!showAssist1 && (
+                    <button 
+                        onClick={() => setShowAssist1(true)}
+                        className={css({
+                            background: 'transparent',
+                            border: '1px dashed rgba(255,255,255,0.3)',
+                            color: '#aaa',
+                            padding: '0.5rem',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            '&:hover': { color: 'white', borderColor: 'white' }
+                        })}
+                    >
+                        + Add Assist
+                    </button>
+                )}
+
+                {showAssist1 && (
+                    <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.5rem' })}>
+                        <select 
+                            value={assist1Id}
+                            onChange={(e) => setAssist1Id(e.target.value)}
+                            className={css({
+                                width: '100%',
+                                padding: '0.5rem',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                color: '#ddd',
+                                borderRadius: '8px',
+                                fontSize: '0.9rem',
+                                '& option': { background: '#1a1a1a' }
+                            })}
+                        >
+                            <option value="">Select Assist 1...</option>
+                            {roster
+                                .filter(p => p.id !== goalPlayerId && p.id !== assist2Id)
+                                .sort((a,b) => parseInt(a.jerseyNumber) - parseInt(b.jerseyNumber))
+                                .map(player => (
+                                <option key={player.id} value={player.id}>
+                                    #{player.jerseyNumber} {player.name}
+                                </option>
+                            ))}
+                        </select>
+
+                        {!showAssist2 && (
+                            <button 
+                                onClick={() => setShowAssist2(true)}
+                                className={css({
+                                    background: 'transparent',
+                                    border: '1px dashed rgba(255,255,255,0.3)',
+                                    color: '#aaa',
+                                    padding: '0.5rem',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem',
+                                    alignSelf: 'flex-start',
+                                    '&:hover': { color: 'white', borderColor: 'white' }
+                                })}
+                            >
+                                + Add 2nd Assist
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {showAssist2 && (
+                    <select 
+                        value={assist2Id}
+                        onChange={(e) => setAssist2Id(e.target.value)}
+                        className={css({
+                            width: '100%',
+                            padding: '0.5rem',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            color: '#ddd',
+                            borderRadius: '8px',
+                            fontSize: '0.9rem',
+                            '& option': { background: '#1a1a1a' }
+                        })}
+                    >
+                        <option value="">Select Assist 2...</option>
+                        {roster
+                            .filter(p => p.id !== goalPlayerId && p.id !== assist1Id)
+                            .sort((a,b) => parseInt(a.jerseyNumber) - parseInt(b.jerseyNumber))
+                            .map(player => (
+                            <option key={player.id} value={player.id}>
+                                #{player.jerseyNumber} {player.name}
+                            </option>
+                        ))}
+                    </select>
+                )}
               </div>
             )}
 
