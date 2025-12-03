@@ -1,19 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { verifyAdminSecret } from '@/lib/auth';
 import { getSettings, setSettings } from '@/lib/kv';
-// import { getMockStore, seedMockStore } from '../mocks/redis.mock';
+import { resetMockStore } from '../mocks/redis.mock';
 import type { Settings } from '@/types';
 
 describe('Critical Integration Flows', () => {
-  beforeEach(async () => {
-    // Since we're using real Redis now, flush all data before each test
-    // IMPORTANT: Use TEST_REDIS_URL to avoid wiping production data!
-    const { createClient } = await import('redis');
-    const testRedisUrl = process.env.TEST_REDIS_URL || process.env.REDIS_URL;
-    const client = createClient({ url: testRedisUrl });
-    await client.connect();
-    await client.flushAll();
-    await client.quit();
+  beforeEach(() => {
+    // Reset the mock store before each test
+    resetMockStore();
   });
 
   describe('Admin workflow: Login → Configure Settings → Verify', () => {

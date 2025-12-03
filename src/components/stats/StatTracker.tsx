@@ -560,7 +560,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
           <div className={teamColumnStyle}>
             <div className={teamHeaderStyle}>
               <div className={teamNameStyle}>{currentSession.ourTeamName || 'Our Team'}</div>
-              <div className={scoreStyle} style={{ color: '#991b1b' }}>{currentSession.usStats.goals}</div>
+              <div className={cx(scoreStyle, css({ color: "#991b1b" }))}>{currentSession.usStats.goals}</div>
             </div>
             
             <StatRowReadOnly label="Shots" value={currentSession.usStats.shots} color="#991b1b" />
@@ -573,7 +573,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
           <div className={teamColumnStyle}>
             <div className={teamHeaderStyle}>
               <div className={teamNameStyle}>{currentSession.opponent}</div>
-              <div className={scoreStyle} style={{ color: '#7877c6' }}>{currentSession.themStats.goals}</div>
+              <div className={cx(scoreStyle, css({ color: "#7877c6" }))}>{currentSession.themStats.goals}</div>
             </div>
             
             <StatRowReadOnly label="Shots" value={currentSession.themStats.shots} color="#7877c6" />
@@ -607,16 +607,16 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
                         <tr key={stat.period}>
                             <td className={css({ padding: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>{stat.period}</td>
                             <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
-                                <span style={{ color: '#991b1b' }}>{stat.usGoals}</span> / <span style={{ color: '#7877c6' }}>{stat.themGoals}</span>
+                                <span className={css({ color: "#991b1b" })}>{stat.usGoals}</span> / <span className={css({ color: "#7877c6" })}>{stat.themGoals}</span>
                             </td>
                             <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
-                                <span style={{ color: '#991b1b' }}>{stat.usShots}</span> / <span style={{ color: '#7877c6' }}>{stat.themShots}</span>
+                                <span className={css({ color: "#991b1b" })}>{stat.usShots}</span> / <span className={css({ color: "#7877c6" })}>{stat.themShots}</span>
                             </td>
                             <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
-                                <span style={{ color: '#991b1b' }}>{stat.usChances}</span> / <span style={{ color: '#7877c6' }}>{stat.themChances}</span>
+                                <span className={css({ color: "#991b1b" })}>{stat.usChances}</span> / <span className={css({ color: "#7877c6" })}>{stat.themChances}</span>
                             </td>
                             <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
-                                <span style={{ color: '#4caf50' }}>{stat.faceoffWins}</span> / <span style={{ color: '#ff6b6b' }}>{stat.faceoffLosses}</span>
+                                <span className={css({ color: "#4caf50" })}>{stat.faceoffWins}</span> / <span className={css({ color: "#ff6b6b" })}>{stat.faceoffLosses}</span>
                             </td>
                         </tr>
                     ))}
@@ -819,7 +819,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
         <div className={teamColumnStyle}>
           <div className={teamHeaderStyle}>
             <div className={teamNameStyle}>{currentSession.opponent}</div>
-            <div className={scoreStyle} style={{ color: '#7877c6' }}>{currentSession.themStats.goals}</div>
+            <div className={cx(scoreStyle, css({ color: "#7877c6" }))}>{currentSession.themStats.goals}</div>
           </div>
           
           <button 

@@ -92,18 +92,18 @@ export class ErrorBoundary extends Component<Props, State> {
               We encountered an unexpected error. Please try refreshing the page.
             </p>
             {this.state.error && process.env.NODE_ENV === 'development' && (
-              <details style={{ marginBottom: '1rem' }}>
-                <summary style={{ cursor: 'pointer', marginBottom: '0.5rem' }}>
+              <details className={css({ marginBottom: '1rem' })}>
+                <summary className={css({ cursor: 'pointer', marginBottom: '0.5rem' })}>
                   Error details
                 </summary>
-                <pre style={{
+                <pre className={css({
                   fontSize: '0.875rem',
                   padding: '1rem',
                   background: 'rgba(0, 0, 0, 0.3)',
                   borderRadius: '8px',
                   overflow: 'auto',
                   maxHeight: '300px',
-                }}>
+                })}>
                   {this.state.error.stack}
                 </pre>
               </details>

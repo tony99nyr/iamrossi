@@ -213,6 +213,7 @@ export default function AdminPage() {
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState('');
     const [gameCount, setGameCount] = useState<number | null>(null);
+    const [lastCalendarSync, setLastCalendarSync] = useState<number | null>(null);
     const [teamName, setTeamName] = useState('');
     const [identifiers, setIdentifiers] = useState('');
     const [mhrTeamId, setMhrTeamId] = useState('');
@@ -225,6 +226,13 @@ export default function AdminPage() {
     const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
     const [newPlayerJersey, setNewPlayerJersey] = useState('');
     const [newPlayerName, setNewPlayerName] = useState('');
+    const [isYoutubeSyncing, setIsYoutubeSyncing] = useState(false);
+    const [youtubeSyncMessage, setYoutubeSyncMessage] = useState('');
+    const [youtubeSyncStatus, setYoutubeSyncStatus] = useState<{
+        lastSyncTime?: number;
+        isRevalidating?: boolean;
+        lastError?: string;
+    }>({});
 
     useEffect(() => {
         const auth = sessionStorage.getItem('admin_auth');
@@ -232,6 +240,7 @@ export default function AdminPage() {
             setIsAuthenticated(true);
             fetchSettings();
             fetchRoster();
+            fetchYoutubeSyncStatus();
         }
     }, []);
 
@@ -336,6 +345,7 @@ export default function AdminPage() {
             if (res.ok) {
                 setSyncMessage(`Success: ${data.message}`);
                 setGameCount(data.count || null);
+                setLastCalendarSync(Date.now());
             } else {
                 setSyncMessage(`Error: ${data.error || 'Unknown error'}`);
                 if (data.details) {
@@ -373,6 +383,46 @@ export default function AdminPage() {
             console.error('Backup error:', error);
         } finally {
             setIsBackingUp(false);
+        }
+    };
+
+    const fetchYoutubeSyncStatus = async () => {
+        try {
+            const res = await fetch('/api/admin/sync-youtube');
+            if (res.ok) {
+                const data = await res.json();
+                setYoutubeSyncStatus(data);
+            }
+        } catch (error) {
+            console.error('Failed to fetch YouTube sync status', error);
+        }
+    };
+
+    const handleYoutubeSync = async () => {
+        setIsYoutubeSyncing(true);
+        setYoutubeSyncMessage('Syncing YouTube videos... this may take a moment...');
+        try {
+            const adminSecret = sessionStorage.getItem('admin_secret');
+
+            const res = await fetch('/api/admin/sync-youtube', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${adminSecret}`,
+                },
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setYoutubeSyncMessage(`Success: ${data.message}`);
+                // Fetch updated status
+                setTimeout(() => fetchYoutubeSyncStatus(), 1000);
+            } else {
+                setYoutubeSyncMessage(`Error: ${data.error || 'Unknown error'}`);
+            }
+        } catch {
+            setYoutubeSyncMessage('Error: Failed to connect to server');
+        } finally {
+            setIsYoutubeSyncing(false);
         }
     };
 
@@ -539,6 +589,20 @@ export default function AdminPage() {
                             {isSyncing ? 'Syncing...' : 'Sync Schedule from Calendar'}
                         </button>
                         
+                        {/* Last Sync Time */}
+                        {lastCalendarSync && (
+                            <div className={css({ 
+                                fontSize: '0.875rem', 
+                                color: 'rgba(255, 255, 255, 0.6)',
+                                padding: '0.75rem',
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)'
+                            })}>
+                                <div>Last sync: {new Date(lastCalendarSync).toLocaleString()}</div>
+                            </div>
+                        )}
+                        
                         {syncMessage && (
                             <div className={messageStyle}>
                                 {syncMessage}
@@ -571,6 +635,49 @@ export default function AdminPage() {
                         {backupMessage && (
                             <div className={messageStyle}>
                                 {backupMessage}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className={cardStyle}>
+                    <h2>YouTube Video Sync</h2>
+                    <p className={css({ color: 'rgba(255, 255, 255, 0.6)', marginBottom: '1.5rem', lineHeight: '1.5' })}>
+                        Sync YouTube videos from the team channel. This will fetch the latest videos, upcoming streams, and live streams.
+                    </p>
+                    
+                    <div className={css({ display: 'flex', flexDirection: 'column', gap: '1rem' })}>
+                        <button 
+                            onClick={handleYoutubeSync} 
+                            disabled={isYoutubeSyncing || youtubeSyncStatus.isRevalidating}
+                            className={isYoutubeSyncing || youtubeSyncStatus.isRevalidating ? disabledButtonStyle : buttonStyle}
+                        >
+                            {isYoutubeSyncing || youtubeSyncStatus.isRevalidating ? 'Syncing...' : 'Sync YouTube Videos'}
+                        </button>
+                        
+                        {/* Sync Status */}
+                        {youtubeSyncStatus.lastSyncTime && (
+                            <div className={css({ 
+                                fontSize: '0.875rem', 
+                                color: 'rgba(255, 255, 255, 0.6)',
+                                padding: '0.75rem',
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)'
+                            })}>
+                                <div>Last sync: {new Date(youtubeSyncStatus.lastSyncTime).toLocaleString()}</div>
+                                {youtubeSyncStatus.isRevalidating && (
+                                    <div className={css({ color: '#60a5fa', marginTop: '0.25rem' })}>🔄 Syncing in background...</div>
+                                )}
+                                {youtubeSyncStatus.lastError && (
+                                    <div className={css({ color: '#f87171', marginTop: '0.25rem' })}>Last error: {youtubeSyncStatus.lastError}</div>
+                                )}
+                            </div>
+                        )}
+                        
+                        {youtubeSyncMessage && (
+                            <div className={messageStyle}>
+                                {youtubeSyncMessage}
                             </div>
                         )}
                     </div>

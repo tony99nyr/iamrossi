@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchCalendarEvents } from '@/lib/fetch-calendar';
 import { transformCalendarEvents } from '@/lib/transform-calendar-events';
 import { fetchMHRSchedule, scrapeTeamDetails } from '@/lib/mhr-service';
-import { getSettings, setSchedule, setMHRSchedule } from '@/lib/kv';
+import { getSettings, setSchedule, setMHRSchedule, getTeamMap, setTeamMap, isTeamCacheStale } from '@/lib/kv';
 import { verifyAdminAuth } from '@/lib/auth';
 import { debugLog } from '@/lib/logger';
 
@@ -30,10 +30,33 @@ export async function POST(request: NextRequest) {
     // Save MHR Schedule to KV
     await setMHRSchedule(mhrSchedule);
 
-    // 2b. Fetch Main Team Stats
-    debugLog('Fetching Main Team Stats...');
-    const mainTeamStats = await scrapeTeamDetails(mhrTeamId, mhrYear);
-    debugLog('Fetched Main Team Stats:', mainTeamStats);
+    // 2b. Fetch Main Team Stats (with weekly caching)
+    debugLog('Checking Main Team Stats cache...');
+    const teamMap = await getTeamMap();
+    const cachedMainTeam = teamMap[mhrTeamId];
+    
+    let mainTeamStats: { name: string; record: string; rating: string; logo: string };
+    if (cachedMainTeam && !isTeamCacheStale(cachedMainTeam) && cachedMainTeam.record && cachedMainTeam.rating) {
+      debugLog('Using cached Main Team Stats (fresh within 7 days)');
+      mainTeamStats = {
+        name: cachedMainTeam.name || '',
+        record: cachedMainTeam.record,
+        rating: cachedMainTeam.rating,
+        logo: cachedMainTeam.logo || ''
+      };
+    } else {
+      debugLog('Fetching fresh Main Team Stats (cache stale or missing)...');
+      mainTeamStats = await scrapeTeamDetails(mhrTeamId, mhrYear);
+      debugLog('Fetched Main Team Stats:', mainTeamStats);
+      
+      // Update cache with timestamp
+      teamMap[mhrTeamId] = {
+        ...mainTeamStats,
+        lastUpdated: Date.now()
+      };
+      await setTeamMap(teamMap);
+      debugLog('Updated Main Team Stats cache');
+    }
 
     // 3. Fetch Calendar Events
     debugLog('Fetching Calendar Events...');
@@ -42,7 +65,12 @@ export async function POST(request: NextRequest) {
 
     // 4. Transform and Merge
     debugLog('Transforming and Merging...');
-    const schedule = await transformCalendarEvents(calendarEvents, mhrSchedule, mhrYear, mainTeamStats);
+    const schedule = await transformCalendarEvents(
+      calendarEvents, 
+      mhrSchedule, 
+      mhrYear, 
+      { record: mainTeamStats.record, rating: mainTeamStats.rating }
+    );
 
     // 5. Save Schedule to KV
     await setSchedule(schedule);

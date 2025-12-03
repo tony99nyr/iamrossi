@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
       stats: {
         keys: Object.keys(allData).length,
+        exercises: Array.isArray(allData['rehab:exercises']) ? allData['rehab:exercises'].length : 0,
+        entries: Array.isArray(allData['rehab:entries']) ? allData['rehab:entries'].length : 0,
       },
       googleDrive: {
         uploaded: !!driveResult,

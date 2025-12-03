@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { transformCalendarEvents } from '@/lib/transform-calendar-events';
-// import { resetMockStore, seedMockStore } from '../mocks/redis.mock';
+import { resetMockStore } from '../mocks/redis.mock';
 import type { Settings } from '@/types';
 
 // Mock the mhr-service to avoid actual scraping during tests
@@ -25,16 +25,10 @@ vi.mock('@/lib/mhr-service', () => ({
 
 describe('Transform Calendar Events', () => {
   beforeEach(async () => {
-    // Since we're using real Redis now, flush all data before each test
-    // IMPORTANT: Use TEST_REDIS_URL to avoid wiping production data!
-    const { createClient } = await import('redis');
-    const testRedisUrl = process.env.TEST_REDIS_URL || process.env.REDIS_URL;
-    const client = createClient({ url: testRedisUrl });
-    await client.connect();
-    await client.flushAll();
-    await client.quit();
+    // Reset the mock store before each test
+    resetMockStore();
 
-    // Seed settings in real Redis
+    // Seed settings in mock Redis
     const { setSettings } = await import('@/lib/kv');
     const testSettings: Settings = {
       teamName: 'Carolina Junior Canes (Black) 10U AA',

@@ -65,6 +65,8 @@ const KV_KEYS = {
   YOUTUBE_VIDEOS: 'youtube:videos',
   TEAM_MAP: 'mhr:team-map',
   STATS: 'game:stats',
+  ENRICHED_GAMES: 'cache:enriched-games',
+  SYNC_STATUS: 'sync:status',
 } as const;
 
 // Exercise operations
@@ -265,6 +267,8 @@ export async function getAllData(): Promise<Record<string, unknown>> {
 export interface YouTubeVideo {
   title: string;
   url: string;
+  videoType?: 'regular' | 'upcoming' | 'live';
+  publishDate?: string;
 }
 
 export async function getYouTubeVideos(): Promise<YouTubeVideo[]> {
@@ -278,6 +282,28 @@ export async function setYouTubeVideos(videos: YouTubeVideo[]): Promise<void> {
   await redis.set(KV_KEYS.YOUTUBE_VIDEOS, JSON.stringify(videos));
 }
 
+// Sync status operations
+export interface SyncStatus {
+  lastSyncTime: number | null;
+  isRevalidating: boolean;
+  lastError: string | null;
+}
+
+export async function getSyncStatus(): Promise<SyncStatus> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.SYNC_STATUS);
+  return data ? JSON.parse(data) : {
+    lastSyncTime: null,
+    isRevalidating: false,
+    lastError: null
+  };
+}
+
+export async function setSyncStatus(status: SyncStatus): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.SYNC_STATUS, JSON.stringify(status));
+}
+
 // Team map operations (for MHR team data caching)
 export interface MHRTeamData {
   name: string;
@@ -286,6 +312,7 @@ export interface MHRTeamData {
   rating?: string;
   mhrId?: string;
   url?: string;
+  lastUpdated?: number; // Unix timestamp for cache TTL (7 days)
 }
 
 export async function getTeamMap(): Promise<Record<string, MHRTeamData>> {
@@ -297,6 +324,42 @@ export async function getTeamMap(): Promise<Record<string, MHRTeamData>> {
 export async function setTeamMap(map: Record<string, MHRTeamData>): Promise<void> {
   await ensureConnected();
   await redis.set(KV_KEYS.TEAM_MAP, JSON.stringify(map));
+}
+
+// Helper to check if cached team data is stale (7 days)
+const TEAM_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+
+export function isTeamCacheStale(teamData: MHRTeamData): boolean {
+  if (!teamData.lastUpdated) return true;
+  return Date.now() - teamData.lastUpdated > TEAM_CACHE_TTL;
+}
+
+// Enriched games cache operations (for video-matched games)
+export interface EnrichedGamesCache {
+  games: Game[];
+  lastUpdated: number;
+}
+
+export async function getEnrichedGames(): Promise<EnrichedGamesCache | null> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.ENRICHED_GAMES);
+  return data ? JSON.parse(data) : null;
+}
+
+export async function setEnrichedGames(games: Game[]): Promise<void> {
+  await ensureConnected();
+  const cache: EnrichedGamesCache = {
+    games,
+    lastUpdated: Date.now(),
+  };
+  await redis.set(KV_KEYS.ENRICHED_GAMES, JSON.stringify(cache));
+}
+
+// Check if enriched games cache is stale (1 hour)
+const ENRICHED_GAMES_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+
+export function isEnrichedGamesCacheStale(cache: EnrichedGamesCache): boolean {
+  return Date.now() - cache.lastUpdated > ENRICHED_GAMES_TTL;
 }
 
 // Roster operations

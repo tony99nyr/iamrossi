@@ -3,16 +3,24 @@ import type { Game } from '@/types';
 interface Video {
     title: string;
     url: string;
+    videoType?: 'regular' | 'upcoming' | 'live';
+    publishDate?: string;
 }
 
 export interface EnrichedGame extends Game {
     highlightsUrl?: string;
     fullGameUrl?: string;
+    upcomingStreamUrl?: string;
+    liveStreamUrl?: string;
 }
 
 export function matchVideosToGames(games: Game[], videos: Video[]): EnrichedGame[] {
     return games.map(game => {
         const gameDate = new Date(game.game_date_format || game.game_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const gameDateOnly = new Date(gameDate);
+        gameDateOnly.setHours(0, 0, 0, 0);
         
         // Find videos that match this game's date
         const matchingVideos = videos.filter(video => {
@@ -24,28 +32,36 @@ export function matchVideosToGames(games: Game[], videos: Video[]): EnrichedGame
 
         if (matchingVideos.length === 0) return game;
 
-        // If we have matching videos, try to determine if they are highlights or full games
-        // and if they match the opponent (though date matching might be enough for now if only one game per day)
-        
+        // Categorize videos by type
         let highlightsUrl: string | undefined;
         let fullGameUrl: string | undefined;
+        let upcomingStreamUrl: string | undefined;
+        let liveStreamUrl: string | undefined;
 
         matchingVideos.forEach(video => {
             const isHighlights = video.title.toLowerCase().includes('highlights');
-            // If it's not explicitly highlights, it might be the full game, or we can look for "full game"
-            // But based on the list, non-highlight videos seem to be full streams or just titled "v Opponent"
             
-            if (isHighlights) {
-                highlightsUrl = video.url;
+            // Handle based on video type
+            if (video.videoType === 'live') {
+                liveStreamUrl = video.url;
+            } else if (video.videoType === 'upcoming') {
+                upcomingStreamUrl = video.url;
             } else {
-                fullGameUrl = video.url;
+                // Regular past videos
+                if (isHighlights) {
+                    highlightsUrl = video.url;
+                } else {
+                    fullGameUrl = video.url;
+                }
             }
         });
 
         return {
             ...game,
             highlightsUrl,
-            fullGameUrl
+            fullGameUrl,
+            upcomingStreamUrl,
+            liveStreamUrl
         };
     });
 }
@@ -78,3 +94,4 @@ function isSameDay(d1: Date, d2: Date): boolean {
            d1.getMonth() === d2.getMonth() &&
            d1.getDate() === d2.getDate();
 }
+

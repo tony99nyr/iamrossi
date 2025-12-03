@@ -1,11 +1,11 @@
 import { chromium } from 'playwright-core';
 import chromiumPkg from '@sparticuz/chromium-min';
 import { debugLog } from '@/lib/logger';
-import { getTeamMap, setTeamMap, type MHRTeamData } from '@/lib/kv';
+import { getTeamMap, setTeamMap, isTeamCacheStale, type MHRTeamData } from '@/lib/kv';
 import type { MHRSearchResult, MHRScheduleGame } from '@/types';
 
-// Scrape team details (record, rating) from team info page
-export async function scrapeTeamDetails(teamId: string, year: string): Promise<{ record: string; rating: string; logo: string }> {
+// Scrape team details (name, record, rating, logo) from team info page
+export async function scrapeTeamDetails(teamId: string, year: string): Promise<{ name: string; record: string; rating: string; logo: string }> {
     debugLog(`[MHR] Scraping team details for ID ${teamId}, year ${year}`);
     
     const browser = await chromium.launch({
@@ -68,12 +68,23 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
             return '';
         });
 
-        debugLog(`[MHR] Scraped data for ${teamId}:`, { record, rating, logo });
+        // Extract Team Name
+        // Usually in an h1 or h2 at the top of the page
+        const name = await page.evaluate(() => {
+            const h1 = document.querySelector('h1');
+            if (h1) {
+                return h1.textContent?.trim() || '';
+            }
+            const h2 = document.querySelector('h2');
+            return h2?.textContent?.trim() || '';
+        });
+
+        debugLog(`[MHR] Scraped data for ${teamId}:`, { name, record, rating, logo });
         
-        return { record, rating, logo };
+        return { name, record, rating, logo };
     } catch (error) {
         console.error(`[MHR] Error scraping details for ${teamId}:`, error);
-        return { record: '', rating: '', logo: '' };
+        return { name: '', record: '', rating: '', logo: '' };
     } finally {
         await browser.close();
     }
@@ -245,18 +256,25 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
     
     debugLog(`[MHR] Getting data for opponent: ${opponentName}${resolvedName !== opponentName ? ` (resolved to: ${resolvedName})` : ''}, ageGroup: ${ageGroup}, year: ${year}`);
     const map = await getTeamMap();
-    
+
     // 1. Check Cache (check both original and resolved names)
     if (map[resolvedName]) {
-        debugLog(`[MHR] Found ${resolvedName} in cache:`, map[resolvedName]);
-        if (map[resolvedName].mhrId && (!map[resolvedName].record || !map[resolvedName].rating || !map[resolvedName].logo)) {
-             const scrapedDetails = await scrapeTeamDetails(String(map[resolvedName].mhrId), year);
-             map[resolvedName].record = scrapedDetails.record || map[resolvedName].record;
-             map[resolvedName].rating = scrapedDetails.rating || map[resolvedName].rating;
-             map[resolvedName].logo = scrapedDetails.logo || map[resolvedName].logo;
-             await setTeamMap(map);
+        // Check if cache is stale (7 days)
+        if (!isTeamCacheStale(map[resolvedName])) {
+            debugLog(`[MHR] Found ${resolvedName} in fresh cache:`, map[resolvedName]);
+            return map[resolvedName];
         }
-        return map[resolvedName];
+        debugLog(`[MHR] Cache for ${resolvedName} is stale, refreshing...`);
+        // If stale and we have mhrId, refresh the data
+        if (map[resolvedName].mhrId) {
+            const scrapedDetails = await scrapeTeamDetails(String(map[resolvedName].mhrId), year);
+            map[resolvedName].record = scrapedDetails.record || map[resolvedName].record;
+            map[resolvedName].rating = scrapedDetails.rating || map[resolvedName].rating;
+            map[resolvedName].logo = scrapedDetails.logo || map[resolvedName].logo;
+            map[resolvedName].lastUpdated = Date.now();
+            await setTeamMap(map);
+            return map[resolvedName];
+        }
     }
 
     // 2. Check Known Opponents (use resolved name)
@@ -276,7 +294,8 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
             logo: knownMatch.opponent_logo,
             record: knownMatch.opponent_record,
             rating: knownMatch.opponent_rating,
-            mhrId: knownMatch.opponent_team_id
+            mhrId: knownMatch.opponent_team_id,
+            lastUpdated: Date.now(),
         };
         if (data.mhrId) {
             const scrapedDetails = await scrapeTeamDetails(data.mhrId, year);
@@ -310,8 +329,9 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
         searchResult.record = scrapedDetails.record;
         searchResult.rating = scrapedDetails.rating;
         searchResult.logo = scrapedDetails.logo;
+        searchResult.lastUpdated = Date.now();
         debugLog(`[MHR] Final data for ${resolvedName}:`, searchResult);
-        
+
         // Update cache
         map[resolvedName] = searchResult;
         await setTeamMap(map);

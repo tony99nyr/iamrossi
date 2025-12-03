@@ -299,7 +299,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 <span className={teamNameStyle}>{game.visitor_team_name}</span>
                             </a>
                         ) : (
-                            <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
+                            <div className={cx('team-link', teamLinkStyle, css({ cursor: 'default', opacity: 1 }))}>
                                 {isValidLogoUrl(game.visitor_team_logo) && (
                                     <NextImage
                                         src={game.visitor_team_logo!}
@@ -344,7 +344,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </a>
                         ) : (
-                            <div className={cx('team-link', teamLinkStyle)} style={{ cursor: 'default', opacity: 1 }}>
+                            <div className={cx('team-link', teamLinkStyle, css({ cursor: 'default', opacity: 1 }))}>
                                 {isValidLogoUrl(game.home_team_logo) && (
                                     <NextImage
                                         src={game.home_team_logo!}
@@ -489,6 +489,46 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 Watch Full Game
                             </a>
                         )}
+                    </div>
+                )}
+
+                {/* Upcoming Stream Link */}
+                {game.upcomingStreamUrl && (
+                    <div className={css({
+                        paddingTop: '0.5rem',
+                        display: 'flex',
+                        justifyContent: 'center'
+                    })}>
+                        <a 
+                            href={game.upcomingStreamUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={css({
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.75rem 1.5rem',
+                                background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15))',
+                                color: '#a78bfa',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(139, 92, 246, 0.3)',
+                                textDecoration: 'none',
+                                fontSize: '0.875rem',
+                                fontWeight: '600',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.25))',
+                                    borderColor: 'rgba(139, 92, 246, 0.5)',
+                                    transform: 'translateY(-1px)'
+                                }
+                            })}
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            Scheduled Stream
+                        </a>
                     </div>
                 )}
             </div>

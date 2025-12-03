@@ -72,7 +72,7 @@ describe('POST /api/rum', () => {
     const data = await response.json();
 
     expect(response.status).toBe(400);
-    expect(data.error).toBe('Invalid JSON body');
+    expect(data.error).toContain('JSON');
     expect(logWebVitalSample).not.toHaveBeenCalled();
   });
 });

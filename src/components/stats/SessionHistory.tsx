@@ -71,7 +71,7 @@ const deleteBtnStyle = css({
   },
 });
 
-export default function SessionHistory() {
+export default function SessionHistory({ showTitle = false }: { showTitle?: boolean }) {
   const router = useRouter();
   const [sessions, setSessions] = useState<StatSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -136,7 +136,11 @@ export default function SessionHistory() {
   }
 
   return (
-    <div className={listContainerStyle}>
+    <>
+      {showTitle && sessions.length > 0 && (
+        <h2 className={css({ fontSize: '1.5rem', marginBottom: '1rem', color: '#ccc' })}>Recent Sessions</h2>
+      )}
+      <div className={listContainerStyle}>
       {sessions.map(session => (
         <div 
           key={session.id} 
@@ -230,5 +234,6 @@ export default function SessionHistory() {
         />
       )}
     </div>
+    </>
   );
 }

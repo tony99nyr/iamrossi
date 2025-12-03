@@ -7,16 +7,17 @@ import { Game, StatSession } from '@/types';
 import GameSetup from '@/components/stats/GameSetup';
 import SessionHistory from '@/components/stats/SessionHistory';
 import HeroSection from '../next-game/components/HeroSection';
+import { ThunderstormBackground } from '@/components/ThunderstormBackground';
 
 const containerStyle = css({
   minHeight: '100vh',
   padding: '2rem 1rem',
-  background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%)',
   color: '#ffffff',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
   gap: '2rem',
+  position: 'relative', // Ensure proper stacking context
 });
 
 
@@ -61,7 +62,32 @@ export default function StatRecordingPage() {
   };
 
   return (
-    <div className={containerStyle}>
+    <>
+      <ThunderstormBackground />
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        @keyframes fadeInDown {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+      <div className={containerStyle}>
       <HeroSection 
           teamName={settings.teamName}
           mhrTeamId={settings.mhrTeamId}
@@ -74,8 +100,7 @@ export default function StatRecordingPage() {
         <>
           <GameSetup onStartSession={handleStartSession} />
           <div className={css({ width: '100%', maxWidth: '800px', marginTop: '2rem' })}>
-            <h2 className={css({ fontSize: '1.5rem', marginBottom: '1rem', color: '#ccc' })}>Recent Sessions</h2>
-            <SessionHistory />
+            <SessionHistory showTitle={true} />
           </div>
         </>
       )}
@@ -100,6 +125,7 @@ export default function StatRecordingPage() {
           <SessionHistory />
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

@@ -1,23 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ThunderstormBackground } from '@/components/ThunderstormBackground';
-import { cx } from '@styled-system/css';
+import { css, cx } from '@styled-system/css';
 import { Game } from '@/types';
+import type { SyncStatus } from '@/lib/kv';
 
 import HeroSection from './components/HeroSection';
 import SocialLinks from './components/SocialLinks';
 import UpcomingGamesList from './components/UpcomingGamesList';
 import PastGamesSection from './components/PastGamesSection';
+import SyncStatusIndicator from '@/components/SyncStatusIndicator';
+import LiveStreamAlert from './components/LiveStreamAlert';
 import { containerStyle } from './styles';
+import type { EnrichedGame } from '@/utils/videoMatcher';
 
 interface NextGameClientProps {
     futureGames: Game[];
-    pastGames?: Game[];
-    settings: { mhrTeamId: string; mhrYear: string };
+    pastGames: Game[];
+    settings: {
+        mhrTeamId: string;
+        mhrYear: string;
+        teamName: string;
+        identifiers: string[];
+    };
+    syncStatus: SyncStatus;
+    liveGames: EnrichedGame[];
 }
 
-export default function NextGameClient({ futureGames, pastGames = [], settings }: NextGameClientProps) {
+export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, liveGames }: NextGameClientProps) {
     // State for accordion - first game expanded by default
     const [expandedGameId, setExpandedGameId] = useState<string | number | null>(
         futureGames.length > 0 ? (futureGames[0].game_nbr ?? null) : null
@@ -71,6 +82,11 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
             
             <SocialLinks />
 
+            {/* Live stream alert - show if any live games */}
+            {liveGames.length > 0 && (
+                <LiveStreamAlert liveGame={liveGames[0]} />
+            )}
+
             <UpcomingGamesList
                 games={futureGames}
                 expandedGameId={expandedGameId}
@@ -84,7 +100,9 @@ export default function NextGameClient({ futureGames, pastGames = [], settings }
                 onGameClick={handleGameClick}
                 mhrTeamId={settings.mhrTeamId}
             />
-            </div>
+            
+            <SyncStatusIndicator initialStatus={syncStatus} />
+        </div>
         </>
     );
 }

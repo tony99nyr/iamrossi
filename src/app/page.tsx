@@ -1,11 +1,14 @@
-'use client';
-
 import Link from 'next/link';
 import Image from 'next/image';
 import { AnimatedLogo } from '@/components/AnimatedLogo';
 import { css } from '@styled-system/css';
+import { getSettings } from '@/lib/kv';
 
-export default function HomePage() {
+export default async function HomePage() {
+    // Fetch team name from settings
+    const settingsData = await getSettings();
+    const teamName = settingsData?.teamName || 'Jr Canes 10U Black';
+
     return (
         <div className={containerStyle}>
             <main className={css({ maxWidth: '900px', margin: '0 auto' })}>
@@ -30,8 +33,18 @@ export default function HomePage() {
                                     <AnimatedLogo />
                                 </div>
                                 <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 })}>
-                                    <strong className={toolNameStyle}>Jr Canes 10U Black</strong>
+                                    <strong className={toolNameStyle}>{teamName} - Schedule</strong>
                                     <span className={toolDescStyle}>Schedule and game information</span>
+                                </div>
+                            </Link>
+                        </li>
+
+                         <li>
+                            <Link href="/tools/stat-recording" className={toolLinkStyle}>
+                                <span className={toolIconStyle}><AnimatedLogo /></span>
+                                <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 })}>
+                                    <strong className={toolNameStyle}>{teamName} - Game Stats</strong>
+                                    <span className={toolDescStyle}>Game statistics recording tool</span>
                                 </div>
                             </Link>
                         </li>
@@ -46,15 +59,7 @@ export default function HomePage() {
                             </Link>
                         </li>
 
-                        <li>
-                            <Link href="/tools/stat-recording" className={toolLinkStyle}>
-                                <span className={toolIconStyle}>📊</span>
-                                <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 })}>
-                                    <strong className={toolNameStyle}>Record Stats</strong>
-                                    <span className={toolDescStyle}>Game statistics recording tool</span>
-                                </div>
-                            </Link>
-                        </li>
+                       
                     </ul>
                 </section>
 

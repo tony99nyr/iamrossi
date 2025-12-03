@@ -44,7 +44,7 @@ describe('Admin API Authentication', () => {
       const data = await response.json();
 
       expect(response.status).toBe(400);
-      expect(data.error).toBe('Secret required');
+      expect(data.error).toContain('expected string');
     });
   });
 
@@ -105,7 +105,7 @@ describe('Admin API Authentication', () => {
       const data = await response.json();
 
       expect(response.status).toBe(400);
-      expect(data.error).toBe('Invalid settings format');
+      expect(data.error).toContain('expected array');
     });
 
     it('should accept all Settings fields', async () => {

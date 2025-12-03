@@ -52,20 +52,20 @@ export function verifyPin(pin: string): boolean {
  * Verifies authentication from request (cookie or header)
  */
 export async function verifyAuthToken(request: NextRequest): Promise<boolean> {
-    // Check for auth cookie
-    const cookieStore = await cookies();
-    const authCookie = cookieStore.get(COOKIE_NAME);
-    
-    if (authCookie?.value) {
+    // Check for auth cookie from request (works in both runtime and tests)
+    const cookieHeader = request.headers.get('cookie') || '';
+    const authCookie = cookieHeader.split(';').find(c => c.trim().startsWith(`${COOKIE_NAME}=`));
+
+    if (authCookie) {
         return true;
     }
-    
+
     // Check for Authorization header
     const authHeader = request.headers.get('Authorization');
     if (authHeader?.startsWith('Bearer ')) {
         return true;
     }
-    
+
     return false;
 }
 

@@ -2,10 +2,11 @@
 
 import React from 'react';
 import NextImage from 'next/image';
+import { css } from '@styled-system/css';
 
 export const AnimatedLogo = () => {
   return (
-    <div style={{ width: '100%', maxWidth: '500px', margin: '0 auto', position: 'relative' }}>
+    <div className={css({ width: '100%', maxWidth: '500px', margin: '0 auto', position: 'relative' })}>
       <style>{`
         @keyframes windAnimation {
           0% {
@@ -15,21 +16,21 @@ export const AnimatedLogo = () => {
             --seed: 100;
           }
         }
-        
+
         .wind-turbulence {
           animation: windAnimation 8s linear infinite;
         }
       `}</style>
-      
+
       {/* Container for the layered images */}
-      <div style={{ position: 'relative', width: '100%', paddingBottom: '100%' }}>
-        
+      <div className={css({ position: 'relative', width: '100%', paddingBottom: '100%' })}>
+
         {/* Layer 1: Animated Flags (Bottom) */}
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
+        <div className={css({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' })}>
           <svg
             viewBox="0 0 500 500"
             xmlns="http://www.w3.org/2000/svg"
-            style={{ width: '100%', height: '100%', overflow: 'visible' }}
+            className={css({ width: '100%', height: '100%', overflow: 'visible' })}
           >
             <defs>
               <filter id="windFilterFlags" x="-50%" y="-50%" width="200%" height="200%">
@@ -70,13 +71,13 @@ export const AnimatedLogo = () => {
         </div>
 
         {/* Layer 2: Static Stick (Top) */}
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-           <NextImage 
-             src="/assets/logo-stick.png" 
-             alt="Logo Stick" 
+        <div className={css({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' })}>
+           <NextImage
+             src="/assets/logo-stick.png"
+             alt="Logo Stick"
              fill
              sizes="(max-width: 768px) 240px, (max-width: 1200px) 360px, 500px"
-             style={{ objectFit: 'contain' }} 
+             className={css({ objectFit: 'contain' })}
            />
         </div>
 

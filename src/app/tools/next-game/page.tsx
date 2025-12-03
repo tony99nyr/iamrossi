@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
-import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos } from '@/lib/kv';
+import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus } from '@/lib/kv';
 import { Game } from '@/types';
 
 // Force dynamic rendering since we're reading from KV
@@ -75,6 +75,26 @@ export default async function NextGamePage() {
         identifiers: settingsData?.identifiers || ['Black', 'Jr Canes', 'Carolina', 'Jr']
     };
 
+    // Check sync status and trigger background sync if needed
+    const syncStatus = await getSyncStatus();
+    const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
+    const shouldTriggerSync = !syncStatus.isRevalidating && 
+        (!syncStatus.lastSyncTime || (Date.now() - syncStatus.lastSyncTime) > COOLDOWN_MS);
+
+    if (shouldTriggerSync) {
+        // Trigger sync in background (fire and forget)
+        const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+        const host = process.env.VERCEL_URL || 'localhost:3000';
+        
+        fetch(`${protocol}://${host}/api/admin/sync-youtube`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.ADMIN_SECRET}`,
+                'Content-Type': 'application/json'
+            }
+        }).catch(err => console.error('Background YouTube sync failed:', err));
+    }
+
     
     // Filter for future games
     const now = new Date();
@@ -106,8 +126,24 @@ export default async function NextGamePage() {
         return dateB.getTime() - dateA.getTime();
     });
 
-    // Enrich past games with video links
-    const enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
+    // Check cache for enriched games (video-matched)
+    let enrichedPastGames: Game[];
+    const cachedEnrichedGames = await getEnrichedGames();
 
-    return <NextGameClient futureGames={futureGames} pastGames={enrichedPastGames} settings={settings} />;
+    if (cachedEnrichedGames && !isEnrichedGamesCacheStale(cachedEnrichedGames)) {
+        // Use cached enriched games
+        enrichedPastGames = cachedEnrichedGames.games;
+    } else {
+        // Cache miss or stale - compute and cache
+        enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
+        await setEnrichedGames(enrichedPastGames);
+    }
+
+    // Enrich future games with upcoming/live video data
+    const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos);
+
+    // Check if there are any live games (games with live stream URLs)
+    const liveGames = enrichedFutureGames.filter((game: Game) => (game as any).liveStreamUrl);
+
+    return <NextGameClient futureGames={enrichedFutureGames} pastGames={enrichedPastGames} settings={settings} syncStatus={syncStatus} liveGames={liveGames} />;
 }

@@ -65,6 +65,11 @@ function resetAttempts(identifier: string): void {
     rateLimitStore.delete(identifier);
 }
 
+// Export for testing purposes
+export function resetRateLimitStore(): void {
+    rateLimitStore.clear();
+}
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
