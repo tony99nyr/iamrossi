@@ -131,6 +131,8 @@ describe('/api/backup', () => {
       expect(data.success).toBe(true);
       expect(data.stats).toEqual({
         keys: 3,
+        exercises: 1,
+        entries: 1,
       });
       expect(data.timestamp).toBeDefined();
     });

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { css } from '@styled-system/css';
-import { Game, StatSession } from '@/types';
+import { StatSession } from '@/types';
 import GameSetup from '@/components/stats/GameSetup';
 import SessionHistory from '@/components/stats/SessionHistory';
 import HeroSection from '../next-game/components/HeroSection';

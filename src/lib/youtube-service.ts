@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { chromium, Page } from 'playwright-core';
 import chromiumPkg from '@sparticuz/chromium-min';
 import { debugLog } from '@/lib/logger';
 
@@ -14,7 +14,7 @@ const CHANNEL_HANDLE = process.env.YOUTUBE_CHANNEL_HANDLE || '@2015JuniorCanes';
 /**
  * Scrape videos from the YouTube channel's videos tab
  */
-async function scrapeVideosTab(page: any): Promise<YouTubeVideo[]> {
+async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
     debugLog('[YouTube] Scraping videos tab...');
     
     await page.goto(`https://www.youtube.com/${CHANNEL_HANDLE}/videos`, {
@@ -34,7 +34,7 @@ async function scrapeVideosTab(page: any): Promise<YouTubeVideo[]> {
     // Extract video data
     const videos = await page.evaluate(() => {
         const videoElements = document.querySelectorAll('ytd-rich-grid-media, ytd-grid-video-renderer');
-        const results: any[] = [];
+        const results: YouTubeVideo[] = [];
 
         videoElements.forEach((element: Element) => {
             try {
@@ -74,7 +74,7 @@ async function scrapeVideosTab(page: any): Promise<YouTubeVideo[]> {
 /**
  * Scrape live and upcoming streams from the YouTube channel's streams tab
  */
-async function scrapeStreamsTab(page: any): Promise<YouTubeVideo[]> {
+async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
     debugLog('[YouTube] Scraping streams tab...');
     
     await page.goto(`https://www.youtube.com/${CHANNEL_HANDLE}/streams`, {
@@ -94,7 +94,7 @@ async function scrapeStreamsTab(page: any): Promise<YouTubeVideo[]> {
     // Extract stream data
     const streams = await page.evaluate(() => {
         const streamElements = document.querySelectorAll('ytd-rich-grid-media, ytd-grid-video-renderer');
-        const results: any[] = [];
+        const results: YouTubeVideo[] = [];
 
         streamElements.forEach((element: Element) => {
             try {

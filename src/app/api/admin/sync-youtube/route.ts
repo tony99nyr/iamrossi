@@ -77,20 +77,23 @@ export async function POST(request: NextRequest) {
       videos: videos.slice(0, 5) // Return first 5 for preview
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[YouTube Sync] Sync failed:', error);
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
 
     // Update sync status with error
     const currentStatus = await getSyncStatus();
     await setSyncStatus({
       ...currentStatus,
       isRevalidating: false,
-      lastError: error.message || 'Unknown error'
+      lastError: errorMessage
     });
 
     return NextResponse.json({ 
-      error: error.message || 'Sync failed',
-      details: error.stack
+      error: errorMessage || 'Sync failed',
+      details: errorStack
     }, { status: 500 });
   }
 }
@@ -118,7 +121,7 @@ export async function GET() {
       remainingMs,
       cooldownMinutes: Math.ceil(remainingMs / 60000)
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[YouTube Sync] Failed to get status:', error);
     return NextResponse.json({ error: 'Failed to get sync status' }, { status: 500 });
   }

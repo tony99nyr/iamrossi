@@ -47,16 +47,14 @@ export default function SessionPage() {
       } else {
         setError('Session not found');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to load session');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFinish = () => {
-    router.push('/tools/stat-recording');
-  };
+
 
   if (loading) {
     return (
@@ -92,7 +90,7 @@ export default function SessionPage() {
       <StatTracker 
         session={session} 
         initialRoster={roster}
-        onFinish={handleFinish}
+
         onExit={() => router.push('/tools/stat-recording')}
       />
     </div>

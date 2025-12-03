@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 interface StatTrackerProps {
   session: StatSession;
   initialRoster: Player[];
-  onFinish: () => void;
+
   onExit: () => void;
 }
 
@@ -173,7 +173,7 @@ const modalContentStyle = css({
 
 const SAD_EMOJIS = ['😢', '😭', '😞', '😠', '😡', '🤬', '👎', '💔', '😿', '🌧️'];
 
-const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerProps) => {
+const StatTracker = ({ initialRoster, session, onExit }: StatTrackerProps) => {
   const [currentSession, setCurrentSession] = useState<StatSession>(session);
   const [roster] = useState(initialRoster);
   const [showGoalModal, setShowGoalModal] = useState<'us' | 'them' | null>(null);
@@ -294,7 +294,7 @@ const StatTracker = ({ initialRoster, session, onFinish, onExit }: StatTrackerPr
             events: [startEvent, ...prev.events]
         }));
     }
-  }, []);
+  }, [currentSession.events.length]);
 
   useEffect(() => {
     if (sadEmoji) {

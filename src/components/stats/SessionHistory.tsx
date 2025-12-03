@@ -38,11 +38,7 @@ const matchupStyle = css({
   marginBottom: '0.5rem',
 });
 
-const scoreStyle = css({
-  fontSize: '1.1rem',
-  color: '#ccc',
-  marginBottom: '0.5rem',
-});
+
 
 const recorderStyle = css({
   fontSize: '0.85rem',

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { ThunderstormBackground } from '@/components/ThunderstormBackground';
-import { css, cx } from '@styled-system/css';
+import { cx } from '@styled-system/css';
 import { Game } from '@/types';
 import type { SyncStatus } from '@/lib/kv';
 

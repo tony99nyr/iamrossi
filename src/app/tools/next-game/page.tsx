@@ -79,6 +79,7 @@ export default async function NextGamePage() {
     const syncStatus = await getSyncStatus();
     const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
     const shouldTriggerSync = !syncStatus.isRevalidating && 
+        // eslint-disable-next-line react-hooks/rules-of-hooks
         (!syncStatus.lastSyncTime || (Date.now() - syncStatus.lastSyncTime) > COOLDOWN_MS);
 
     if (shouldTriggerSync) {
@@ -143,7 +144,7 @@ export default async function NextGamePage() {
     const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos);
 
     // Check if there are any live games (games with live stream URLs)
-    const liveGames = enrichedFutureGames.filter((game: Game) => (game as any).liveStreamUrl);
+    const liveGames = enrichedFutureGames.filter((game: Game) => (game as unknown as { liveStreamUrl?: string }).liveStreamUrl);
 
     return <NextGameClient futureGames={enrichedFutureGames} pastGames={enrichedPastGames} settings={settings} syncStatus={syncStatus} liveGames={liveGames} />;
 }
