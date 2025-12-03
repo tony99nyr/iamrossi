@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import crypto from 'crypto';
+import { logger } from './logger';
 
 const COOKIE_NAME = 'rehab_auth';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
@@ -20,18 +21,31 @@ export function hashPin(pin: string): string {
 }
 
 /**
- * Verifies the PIN against the environment variable
+ * Verifies the PIN against the environment variable using constant-time comparison
+ * to prevent timing attacks
  */
 export function verifyPin(pin: string): boolean {
     const correctPin = process.env.WORKOUT_ADMIN_PIN;
-    
+
     if (!correctPin) {
-        console.error('WORKOUT_ADMIN_PIN environment variable is not set');
+        logger.error('WORKOUT_ADMIN_PIN environment variable is not set');
         return false;
     }
-    
-    // Simple constant-time comparison
-    return pin === correctPin;
+
+    // Constant-time comparison to prevent timing attacks
+    try {
+        const pinBuffer = Buffer.from(pin, 'utf8');
+        const correctBuffer = Buffer.from(correctPin, 'utf8');
+
+        // Ensure same length to prevent length-based timing attacks
+        if (pinBuffer.length !== correctBuffer.length) {
+            return false;
+        }
+
+        return crypto.timingSafeEqual(pinBuffer, correctBuffer);
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -68,18 +82,31 @@ export const AUTH_COOKIE_CONFIG = {
 };
 
 /**
- * Verifies the admin secret from environment variable
+ * Verifies the admin secret from environment variable using constant-time comparison
+ * to prevent timing attacks
  */
 export function verifyAdminSecret(secret: string): boolean {
     const correctSecret = process.env.ADMIN_SECRET;
 
     if (!correctSecret) {
-        console.error('ADMIN_SECRET environment variable is not set');
+        logger.error('ADMIN_SECRET environment variable is not set');
         return false;
     }
 
-    // Constant-time comparison
-    return secret === correctSecret;
+    // Constant-time comparison to prevent timing attacks
+    try {
+        const secretBuffer = Buffer.from(secret, 'utf8');
+        const correctBuffer = Buffer.from(correctSecret, 'utf8');
+
+        // Ensure same length to prevent length-based timing attacks
+        if (secretBuffer.length !== correctBuffer.length) {
+            return false;
+        }
+
+        return crypto.timingSafeEqual(secretBuffer, correctBuffer);
+    } catch {
+        return false;
+    }
 }
 
 /**

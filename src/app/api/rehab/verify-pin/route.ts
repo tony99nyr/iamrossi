@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPin, createAuthToken, AUTH_COOKIE_CONFIG } from '@/lib/auth';
+import { pinVerifySchema, safeValidateRequest } from '@/lib/validation';
+import { logger } from '@/lib/logger';
 
 // In-memory rate limiting store (resets on server restart)
 // In production, consider using Redis or a database
@@ -65,14 +67,17 @@ function resetAttempts(identifier: string): void {
 
 export async function POST(request: NextRequest) {
     try {
-        const { pin } = await request.json();
-        
-        if (!pin || typeof pin !== 'string') {
+        const body = await request.json();
+        const validation = safeValidateRequest(pinVerifySchema, body);
+
+        if (!validation.success) {
             return NextResponse.json(
-                { error: 'PIN is required' },
+                { error: validation.issues[0]?.message || 'Invalid request body' },
                 { status: 400 }
             );
         }
+
+        const { pin } = validation.data;
         
         const identifier = getClientIdentifier(request);
         const rateLimit = checkRateLimit(identifier);
@@ -133,7 +138,7 @@ export async function POST(request: NextRequest) {
         
         return response;
     } catch (error) {
-        console.error('Error verifying PIN:', error);
+        logger.apiError('POST', '/api/rehab/verify-pin', error);
         return NextResponse.json(
             { error: 'Internal server error' },
             { status: 500 }

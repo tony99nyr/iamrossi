@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminSecret } from '@/lib/auth';
+import { adminVerifySchema, safeValidateRequest } from '@/lib/validation';
+import { logger } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { secret } = body;
+    const validation = safeValidateRequest(adminVerifySchema, body);
 
-    if (!secret) {
-      return NextResponse.json({ error: 'Secret required' }, { status: 400 });
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.issues[0]?.message || 'Invalid request body' },
+        { status: 400 }
+      );
     }
+
+    const { secret } = validation.data;
 
     if (verifyAdminSecret(secret)) {
       return NextResponse.json({ success: true, message: 'Authentication successful' });
@@ -16,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: 'Invalid secret' }, { status: 401 });
   } catch (error) {
-    console.error('Error verifying admin secret:', error);
+    logger.apiError('POST', '/api/admin/verify', error);
     return NextResponse.json({ error: 'Verification failed' }, { status: 500 });
   }
 }

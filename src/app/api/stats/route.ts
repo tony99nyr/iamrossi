@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStatSessions, saveStatSession, deleteStatSession } from '@/lib/kv';
 import { verifyAuthToken } from '@/lib/auth';
 import { StatSession } from '@/types';
+import { statSessionSchema, deleteSessionSchema, safeValidateRequest } from '@/lib/validation';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,24 +21,27 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json(sessions);
   } catch (error) {
-    console.error('Error fetching stat sessions:', error);
+    logger.apiError('GET', '/api/stats', error);
     return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await request.json() as StatSession;
-    
-    // Basic validation
-    if (!session.id || !session.date || !session.recorderName) {
-      return NextResponse.json({ error: 'Invalid session data' }, { status: 400 });
+    const body = await request.json();
+    const validation = safeValidateRequest(statSessionSchema, body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.issues[0]?.message || 'Invalid session data' },
+        { status: 400 }
+      );
     }
 
-    await saveStatSession(session);
+    await saveStatSession(validation.data as StatSession);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error saving stat session:', error);
+    logger.apiError('POST', '/api/stats', error);
     return NextResponse.json({ error: 'Failed to save session' }, { status: 500 });
   }
 }
@@ -49,15 +54,20 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const { id } = await request.json();
-    if (!id) {
-      return NextResponse.json({ error: 'ID required' }, { status: 400 });
+    const body = await request.json();
+    const validation = safeValidateRequest(deleteSessionSchema, body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.issues[0]?.message || 'Invalid request body' },
+        { status: 400 }
+      );
     }
 
-    await deleteStatSession(id);
+    await deleteStatSession(validation.data.id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting session:', error);
+    logger.apiError('DELETE', '/api/stats', error);
     return NextResponse.json({ error: 'Failed to delete session' }, { status: 500 });
   }
 }

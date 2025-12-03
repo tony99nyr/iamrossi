@@ -371,7 +371,7 @@ export default function WeeklyCalendar({
                                                 fontSize: '16px',
                                                 marginBottom: '6px',
                                                 display: 'flex',
-                                                alignItems: 'flex-start',
+                                                alignItems: 'baseline',
                                                 gap: '6px',
                                                 lineHeight: '1.4',
                                                 md: {
@@ -381,7 +381,7 @@ export default function WeeklyCalendar({
                                                 }
                                             }))}
                                         >
-                                            <span className={css({ color: '#2563eb', flexShrink: 0, marginTop: '4px' })}>•</span>
+                                            <span className={css({ color: '#2563eb', flexShrink: 0 })}>•</span>
                                             <div className={css({ lineHeight: '1.4' })}>
                                                 <span 
                                                     className={css({ color: '#ccc', marginRight: '6px' })}
@@ -396,6 +396,8 @@ export default function WeeklyCalendar({
                                                         parts.push(`${exercise.reps}x${exercise.sets}`);
                                                     } else if (exercise.reps) {
                                                         parts.push(`${exercise.reps}x`);
+                                                    } else if (exercise.sets) {
+                                                        parts.push(`x${exercise.sets}`);
                                                     }
                                                     const displayText = parts.join(' ');
                                                     const isBFR = exercise.bfr === true;

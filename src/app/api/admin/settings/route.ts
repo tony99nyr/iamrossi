@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, setSettings, Settings } from '@/lib/kv';
 import { verifyAdminAuth } from '@/lib/auth';
+import { adminSettingsSchema, safeValidateRequest } from '@/lib/validation';
+import { logger } from '@/lib/logger';
 
 export async function GET() {
   try {
@@ -16,7 +18,7 @@ export async function GET() {
       identifiers: ['Black', 'Jr Canes', 'Carolina', 'Jr']
     });
   } catch (error) {
-    console.error('Error loading settings:', error);
+    logger.apiError('GET', '/api/admin/settings', error);
     return NextResponse.json({ error: 'Failed to load settings' }, { status: 500 });
   }
 }
@@ -29,10 +31,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { teamName, identifiers, mhrTeamId, mhrYear, aliases } = body;
+    const validation = safeValidateRequest(adminSettingsSchema, body);
 
-    if (!teamName || !Array.isArray(identifiers)) {
-      return NextResponse.json({ error: 'Invalid settings format' }, { status: 400 });
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.issues[0]?.message || 'Invalid settings format' },
+        { status: 400 }
+      );
     }
 
     // Get existing settings to preserve fields not in the request
@@ -41,12 +46,7 @@ export async function POST(request: NextRequest) {
     // Build settings object - merge with existing to avoid losing fields
     const settings: Settings = {
       ...existingSettings, // Preserve existing fields
-      teamName,
-      identifiers,
-      // Update optional fields if provided
-      ...(mhrTeamId !== undefined && { mhrTeamId }),
-      ...(mhrYear !== undefined && { mhrYear }),
-      ...(aliases !== undefined && { aliases }),
+      ...validation.data,
     };
 
     // Save settings to KV
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Settings saved successfully' });
   } catch (error) {
-    console.error('Error saving settings:', error);
+    logger.apiError('POST', '/api/admin/settings', error);
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
   }
 }

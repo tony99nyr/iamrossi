@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/auth';
 import { getExercises, setExercises, Exercise } from '@/lib/kv';
+import { exerciseSchema, exerciseUpdateSchema, exerciseDeleteSchema, safeValidateRequest } from '@/lib/validation';
+import { logger } from '@/lib/logger';
 
 export async function GET() {
     try {
         const exercises = await getExercises();
         return NextResponse.json(exercises);
     } catch (error) {
-        console.error('Error reading exercises:', error);
+        logger.apiError('GET', '/api/rehab/exercises', error);
         return NextResponse.json({ error: 'Failed to read exercises' }, { status: 500 });
     }
 }
@@ -20,14 +22,19 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const { title, description } = await request.json();
-        
-        if (!title) {
-            return NextResponse.json({ error: 'Title is required' }, { status: 400 });
+        const body = await request.json();
+        const validation = safeValidateRequest(exerciseSchema, body);
+
+        if (!validation.success) {
+            return NextResponse.json(
+                { error: validation.issues[0]?.message || 'Invalid request body' },
+                { status: 400 }
+            );
         }
 
+        const { title, description } = validation.data;
         const exercises = await getExercises();
-        
+
         const newExercise: Exercise = {
             id: `ex-${Date.now()}`,
             title,
@@ -40,7 +47,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(newExercise, { status: 201 });
     } catch (error) {
-        console.error('Error creating exercise:', error);
+        logger.apiError('POST', '/api/rehab/exercises', error);
         return NextResponse.json({ error: 'Failed to create exercise' }, { status: 500 });
     }
 }
@@ -53,12 +60,17 @@ export async function PATCH(request: NextRequest) {
     }
 
     try {
-        const { id, title, description } = await request.json();
-        
-        if (!id) {
-            return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+        const body = await request.json();
+        const validation = safeValidateRequest(exerciseUpdateSchema, body);
+
+        if (!validation.success) {
+            return NextResponse.json(
+                { error: validation.issues[0]?.message || 'Invalid request body' },
+                { status: 400 }
+            );
         }
 
+        const { id, title, description } = validation.data;
         const exercises = await getExercises();
         const exerciseIndex = exercises.findIndex(e => e.id === id);
 
@@ -77,7 +89,7 @@ export async function PATCH(request: NextRequest) {
 
         return NextResponse.json(updatedExercise);
     } catch (error) {
-        console.error('Error updating exercise:', error);
+        logger.apiError('PATCH', '/api/rehab/exercises', error);
         return NextResponse.json({ error: 'Failed to update exercise' }, { status: 500 });
     }
 }
@@ -90,12 +102,17 @@ export async function DELETE(request: NextRequest) {
     }
 
     try {
-        const { id } = await request.json();
-        
-        if (!id) {
-            return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+        const body = await request.json();
+        const validation = safeValidateRequest(exerciseDeleteSchema, body);
+
+        if (!validation.success) {
+            return NextResponse.json(
+                { error: validation.issues[0]?.message || 'Invalid request body' },
+                { status: 400 }
+            );
         }
 
+        const { id } = validation.data;
         const exercises = await getExercises();
         const exerciseIndex = exercises.findIndex(e => e.id === id);
 
@@ -109,7 +126,7 @@ export async function DELETE(request: NextRequest) {
 
         return NextResponse.json({ success: true, id });
     } catch (error) {
-        console.error('Error deleting exercise:', error);
+        logger.apiError('DELETE', '/api/rehab/exercises', error);
         return NextResponse.json({ error: 'Failed to delete exercise' }, { status: 500 });
     }
 }

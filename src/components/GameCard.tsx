@@ -2,39 +2,7 @@
 
 import { css, cx } from '@styled-system/css';
 import NextImage from 'next/image';
-
-// interface TeamDetails {
-//     record?: string;
-//     goals?: string;
-//     rating?: number;
-// }
-
-export interface Game {
-    game_date: string;
-    game_time: string;
-    home_team_name: string;
-    visitor_team_name: string;
-    rink_name: string;
-    home_team_logo?: string;
-    visitor_team_logo?: string;
-    game_date_format?: string;
-    game_date_format_pretty?: string;
-    game_time_format_pretty?: string;
-    game_home_team?: number | string;
-    game_visitor_team?: number | string;
-    game_home_score?: number;
-    game_visitor_score?: number;
-    opponent_record?: string;
-    opponent_rating?: string;
-    home_team_record?: string;
-    home_team_rating?: string;
-    visitor_team_record?: string;
-    visitor_team_rating?: string;
-    game_nbr?: string | number;
-    highlightsUrl?: string;
-    fullGameUrl?: string;
-    isPlaceholder?: boolean;
-}
+import type { Game } from '@/types';
 
 interface GameCardProps {
     title: string;

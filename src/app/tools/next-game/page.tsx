@@ -89,12 +89,12 @@ export default async function NextGamePage() {
 
     // Filter for past games from MHR (current season only: 2025-2026)
     const currentSeasonStart = new Date('2025-08-01'); // Season typically starts in August
-    const pastGames = mhrSchedule.filter((game: Game) => {
+    const pastGames = (mhrSchedule as unknown as Game[]).filter((game: Game) => {
         const gameDate = new Date(game.game_date_format || game.game_date);
-        
+
         // Must be from current season (after Aug 1, 2024)
         if (gameDate < currentSeasonStart) return false;
-        
+
         // Must be in the past (before today)
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -107,7 +107,7 @@ export default async function NextGamePage() {
     });
 
     // Enrich past games with video links
-    const enrichedPastGames = matchVideosToGames(pastGames, youtubeVideos);
+    const enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
 
     return <NextGameClient futureGames={futureGames} pastGames={enrichedPastGames} settings={settings} />;
 }

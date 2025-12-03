@@ -399,6 +399,8 @@ export default function ExerciseCard({
                     parts.push(`${exercise.reps}x${exercise.sets}`);
                 } else if (exercise.reps) {
                     parts.push(`${exercise.reps}x`);
+                } else if (exercise.sets) {
+                    parts.push(`x${exercise.sets}`);
                 }
                 
                 const displayText = parts.join(' ');

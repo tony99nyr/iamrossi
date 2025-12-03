@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/auth';
 import { createClient } from 'redis';
 import type { RehabSettings } from '@/types';
+import { rehabSettingsSchema, safeValidateRequest } from '@/lib/validation';
+import { logger } from '@/lib/logger';
 
 const redis = createClient({
   url: process.env.REDIS_URL
@@ -18,7 +20,7 @@ async function ensureConnected(): Promise<void> {
     }
     isConnected = true;
   } catch (error) {
-    console.error('Redis connection failed:', error);
+    logger.redisError('connect', SETTINGS_KEY, error);
     throw error;
   }
 }
@@ -44,7 +46,7 @@ export async function GET() {
     
     return NextResponse.json(JSON.parse(data));
   } catch (error) {
-    console.error('Error reading settings:', error);
+    logger.apiError('GET', '/api/rehab/settings', error);
     return NextResponse.json({ error: 'Failed to read settings' }, { status: 500 });
   }
 }
@@ -57,14 +59,22 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const settings: RehabSettings = await request.json();
-    
+    const body = await request.json();
+    const validation = safeValidateRequest(rehabSettingsSchema, body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.issues[0]?.message || 'Invalid settings format' },
+        { status: 400 }
+      );
+    }
+
     await ensureConnected();
-    await redis.set(SETTINGS_KEY, JSON.stringify(settings));
-    
-    return NextResponse.json(settings);
+    await redis.set(SETTINGS_KEY, JSON.stringify(validation.data));
+
+    return NextResponse.json(validation.data);
   } catch (error) {
-    console.error('Error saving settings:', error);
+    logger.apiError('POST', '/api/rehab/settings', error);
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
   }
 }

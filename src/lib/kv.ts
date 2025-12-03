@@ -1,5 +1,5 @@
 import { createClient } from 'redis';
-import type { Exercise, RehabEntry, Settings, Game, WebVitalSample, Player, StatSession } from '@/types';
+import type { Exercise, RehabEntry, Settings, Game, WebVitalSample, Player, StatSession, MHRScheduleGame } from '@/types';
 
 // Create Redis client
 // Use TEST_REDIS_URL in test environments to avoid wiping production data
@@ -116,13 +116,13 @@ export async function setSchedule(schedule: Game[]): Promise<void> {
 }
 
 // MHR Schedule operations
-export async function getMHRSchedule(): Promise<Game[]> {
+export async function getMHRSchedule(): Promise<MHRScheduleGame[]> {
   await ensureConnected();
   const data = await redis.get(KV_KEYS.MHR_SCHEDULE);
   return data ? JSON.parse(data) : [];
 }
 
-export async function setMHRSchedule(schedule: Game[]): Promise<void> {
+export async function setMHRSchedule(schedule: MHRScheduleGame[]): Promise<void> {
   await ensureConnected();
   await redis.set(KV_KEYS.MHR_SCHEDULE, JSON.stringify(schedule));
 }

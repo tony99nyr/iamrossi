@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/auth';
 import { getEntries, setEntries, RehabEntry } from '@/lib/kv';
+import { rehabEntrySchema, rehabEntryPatchSchema, safeValidateRequest } from '@/lib/validation';
+import { logger } from '@/lib/logger';
 
 export async function GET() {
     try {
         const entries = await getEntries();
         return NextResponse.json(entries);
     } catch (error) {
-        console.error('Error reading entries:', error);
+        logger.apiError('GET', '/api/rehab/entries', error);
         return NextResponse.json({ error: 'Failed to read entries' }, { status: 500 });
     }
 }
@@ -20,11 +22,17 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const { date, exercises, isRestDay, vitaminsTaken, proteinShake, notes } = await request.json();
+        const body = await request.json();
+        const validation = safeValidateRequest(rehabEntrySchema, body);
 
-        if (!date) {
-            return NextResponse.json({ error: 'Date is required' }, { status: 400 });
+        if (!validation.success) {
+            return NextResponse.json(
+                { error: validation.issues[0]?.message || 'Invalid request body' },
+                { status: 400 }
+            );
         }
+
+        const { date, exercises, isRestDay, vitaminsTaken, proteinShake, notes } = validation.data;
 
         const entries = await getEntries();
         const existingEntryIndex = entries.findIndex(e => e.date === date);
@@ -49,7 +57,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(newEntry, { status: existingEntryIndex !== -1 ? 200 : 201 });
     } catch (error) {
-        console.error('Error saving entry:', error);
+        logger.apiError('POST', '/api/rehab/entries', error);
         return NextResponse.json({ error: 'Failed to save entry' }, { status: 500 });
     }
 }
@@ -62,11 +70,17 @@ export async function PATCH(request: NextRequest) {
     }
 
     try {
-        const { date, isRestDay, vitaminsTaken, proteinShake, exercises, notes } = await request.json();
-        
-        if (!date) {
-            return NextResponse.json({ error: 'Date is required' }, { status: 400 });
+        const body = await request.json();
+        const validation = safeValidateRequest(rehabEntryPatchSchema, body);
+
+        if (!validation.success) {
+            return NextResponse.json(
+                { error: validation.issues[0]?.message || 'Invalid request body' },
+                { status: 400 }
+            );
         }
+
+        const { date, isRestDay, vitaminsTaken, proteinShake, exercises, notes } = validation.data;
 
         const entries = await getEntries();
         const existingIndex = entries.findIndex(e => e.date === date);
@@ -95,7 +109,7 @@ export async function PATCH(request: NextRequest) {
         await setEntries(entries);
         return NextResponse.json(entries.find(e => e.date === date));
     } catch (error) {
-        console.error('Error updating entry:', error);
+        logger.apiError('PATCH', '/api/rehab/entries', error);
         return NextResponse.json({ error: 'Failed to update entry' }, { status: 500 });
     }
 }

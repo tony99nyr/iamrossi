@@ -157,6 +157,22 @@ export interface MHRGameDetails {
   };
 }
 
+export interface MHRSearchResult {
+  kind: string;
+  name: string;
+  nbr: string;
+  url: string;
+}
+
+export interface MHRScheduleGame {
+  opponent_name?: string;
+  opponent_logo?: string;
+  opponent_record?: string;
+  opponent_rating?: string;
+  opponent_team_id?: string;
+  [key: string]: unknown; // Allow other fields from MHR API
+}
+
 // ============================================================================
 // Observability Types
 // ============================================================================

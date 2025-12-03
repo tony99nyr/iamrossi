@@ -124,7 +124,20 @@ Required environment variables (see `.env.example`):
 
 ### Known Limitations
 1. **Serverless Compatibility**: Fully compatible with Vercel/serverless after removing file system dependencies
-2. **Rate Limiting**: Rehab PIN verification uses in-memory rate limiting (resets on server restart)
+
+2. **Rate Limiting** ⚠️:
+   - **Current Implementation**: In-memory rate limiting for PIN verification (`/api/rehab/verify-pin`)
+   - **Limitations**:
+     - Rate limit counters reset on server restart/redeployment
+     - Not distributed - each serverless instance maintains its own counter
+     - In multi-region deployments, rate limits are per-region, not global
+   - **Current Settings**: 3 failed attempts trigger 5-minute cooldown per IP address
+   - **Production Recommendations**:
+     - For high-security requirements: Migrate to Redis-based rate limiting
+     - For distributed deployments: Use Vercel Edge Config or Upstash Rate Limiting
+     - Consider implementing account lockout after repeated violations
+   - **Implementation**: See `src/app/api/rehab/verify-pin/route.ts:4-64`
+
 3. **Session Management**: SessionStorage-based auth for admin (client-side only)
 4. **Data Migration**: JSON files in `src/data/` should be removed after confirming Redis migration is complete
 

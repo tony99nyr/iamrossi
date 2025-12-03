@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRoster, setRoster, Player } from '@/lib/kv';
 import { verifyAdminAuth } from '@/lib/auth';
+import { rosterSchema, safeValidateRequest } from '@/lib/validation';
+import { logger } from '@/lib/logger';
 
 export async function GET() {
   try {
     const roster = await getRoster();
     return NextResponse.json(roster);
   } catch (error) {
-    console.error('Error loading roster:', error);
+    logger.apiError('GET', '/api/admin/roster', error);
     return NextResponse.json({ error: 'Failed to load roster' }, { status: 500 });
   }
 }
@@ -20,25 +22,21 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { roster } = body;
+    const validation = safeValidateRequest(rosterSchema, body);
 
-    if (!Array.isArray(roster)) {
-      return NextResponse.json({ error: 'Invalid roster format' }, { status: 400 });
-    }
-
-    // Validate each player
-    for (const player of roster) {
-      if (!player.id || typeof player.jerseyNumber !== 'string' || typeof player.name !== 'string') {
-        return NextResponse.json({ error: 'Invalid player data' }, { status: 400 });
-      }
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.issues[0]?.message || 'Invalid roster format' },
+        { status: 400 }
+      );
     }
 
     // Save roster to KV
-    await setRoster(roster as Player[]);
+    await setRoster(validation.data.players as Player[]);
 
     return NextResponse.json({ success: true, message: 'Roster saved successfully' });
   } catch (error) {
-    console.error('Error saving roster:', error);
+    logger.apiError('POST', '/api/admin/roster', error);
     return NextResponse.json({ error: 'Failed to save roster' }, { status: 500 });
   }
 }

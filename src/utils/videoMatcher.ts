@@ -1,4 +1,4 @@
-import { Game } from '@/components/GameCard';
+import type { Game } from '@/types';
 
 interface Video {
     title: string;
