@@ -98,14 +98,20 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
       const res = await fetch('/api/schedule');
       if (res.ok) {
         const data = await res.json();
-        // Filter for today's games or upcoming
-        const today = new Date().toISOString().split('T')[0];
-        // Simple filter for now, can be improved
+        // Filter for today's games or tomorrow's games
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
+        
+        const tomorrowDate = new Date(now);
+        tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+        const tomorrow = tomorrowDate.toISOString().split('T')[0];
+
         const relevantGames = data.filter((g: Game) => {
             const date = g.game_date_format || g.game_date;
             if (!date) return false;
-            return date >= today;
-        }).slice(0, 5); // Show max 5 upcoming games
+            // Check if date string starts with today or tomorrow (handling potential time components if present in raw date)
+            return date.startsWith(today) || date.startsWith(tomorrow);
+        }).slice(0, 3); // Show max 3 games
         setGames(relevantGames);
       }
     } catch (error) {

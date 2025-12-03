@@ -4,20 +4,20 @@ export const ROSSI_SHAKE = {
     ingredients: [
         {
             name: "Transparent Labs BCAA Glutamine",
-            amount: "1/3 scoop",
-            calories: 3.3,
+            amount: "1/2 scoop",
+            calories: 5,
             protein: 0,
-            carbs: 0.7,
+            carbs: 1.1,
             fat: 0,
-            notes: "BCAA 2.7g, Glutamine 1.7g"
+            notes: "BCAA 4g, Glutamine 2.5g"
         },
         {
             name: "Transparent Labs Whey Protein Isolate",
-            amount: "1.25 scoops (overflowing)",
-            calories: 150,
-            protein: 35,
-            carbs: 1.25,
-            fat: 0.6,
+            amount: "1 full scoop",
+            calories: 120,
+            protein: 28,
+            carbs: 1,
+            fat: 0.5,
             notes: "Grass-fed isolate"
         },
         {
