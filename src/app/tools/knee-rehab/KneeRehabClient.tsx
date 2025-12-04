@@ -745,8 +745,8 @@ export default function KneeRehabClient({
                 {/* Day View */}
                 {selectedDate && (
                     <div className={cx('day-section', css({
-                        paddingLeft: '8px',
-                        paddingRight: '8px',
+                        paddingLeft: '28px',
+                        paddingRight: '28px',
                         md: {
                             paddingLeft: '0',
                             paddingRight: '0',

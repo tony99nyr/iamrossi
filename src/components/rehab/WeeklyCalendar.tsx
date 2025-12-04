@@ -382,6 +382,7 @@ export default function WeeklyCalendar({
                             {entry?.isRestDay && (
                                 <div className={cx('rest-indicator', css({
                                     fontSize: '28px',
+                                    marginBottom: '16px',
                                     md: {
                                         fontSize: '32px',
                                     }
@@ -524,6 +525,51 @@ export default function WeeklyCalendar({
                         </button>
                     );
                 })}
+            </div>
+
+            {/* Legend */}
+            <div className={css({
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '24px',
+                paddingTop: '40px',
+                flexWrap: 'wrap',
+                md: {
+                    justifyContent: 'flex-end',
+                }
+
+            })}>
+                <div className={css({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    color: '#999',
+                })}>
+                    <span className={css({ color: '#22c55e', fontWeight: '600' })}>P</span>
+                    <span>Pain</span>
+                </div>
+                <div className={css({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    color: '#999',
+                })}>
+                    <span className={css({ color: '#a78bfa', fontWeight: '600' })}>D</span>
+                    <span>Difficulty</span>
+                </div>
+                <div className={css({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    color: '#999',
+                })}>
+                    <span className={css({ color: '#ef4444', fontWeight: '600' })}>BFR</span>
+                    <span>Blood Flow Restriction</span>
+                </div>
             </div>
 
             {/* Settings Button - Bottom Right */}

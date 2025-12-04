@@ -125,7 +125,7 @@ export default function DayView({
                     onClick={onBack}
                     className={cx('date-title', css({
                         color: '#ededed',
-                        fontSize: '24px',
+                        fontSize: '22px',
                         fontWeight: '600',
                         marginBottom: '0',
                         cursor: 'pointer',
