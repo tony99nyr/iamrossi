@@ -2,6 +2,11 @@ import { beforeAll, afterAll, afterEach, vi } from 'vitest';
 // Import redis mock to ensure it's applied globally
 import './mocks/redis.mock';
 
+// Mock next/cache
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}));
+
 // Mock environment variables for testing
 beforeAll(() => {
   process.env.ADMIN_SECRET = 'test-admin-secret';

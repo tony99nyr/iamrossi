@@ -67,29 +67,6 @@ const placeholderCardStyle = css({
     border: '1px solid rgba(255, 100, 100, 0.15)',
 });
 
-// const badgeStyle = css({
-//     position: 'absolute',
-//     top: 0,
-//     right: { base: '1rem', sm: '2rem' },
-//     padding: '0.5rem 1.5rem',
-//     fontSize: '0.75rem',
-//     fontWeight: '700',
-//     letterSpacing: '1px',
-//     borderRadius: '0 0 8px 8px',
-//     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-//     zIndex: 1,
-// });
-
-// const homeBadgeStyle = css({
-//     background: 'linear-gradient(135deg, #dc2626, #991b1b)',
-//     color: '#fff',
-// });
-
-// const awayBadgeStyle = css({
-//     background: 'linear-gradient(135deg, #dc2626, #991b1b)',
-//     color: '#fff',
-// });
-
 const titleStyle = css({
     fontSize: '0.9rem',
     color: '#888',
@@ -159,6 +136,11 @@ const teamLinkStyle = css({
     },
 });
 
+const teamLinkDisabledStyle = css({
+    cursor: 'default',
+    opacity: 1,
+});
+
 const logoStyle = css({
     width: '100px',
     height: '100px',
@@ -206,37 +188,6 @@ const rinkNameStyle = css({
     color: '#888',
 });
 
-
-
-// const loadingStyle = css({
-//     textAlign: 'center',
-//     color: '#888',
-//     fontSize: '0.9rem',
-//     fontStyle: 'italic',
-// });
-
-// const teamStatsStyle = css({
-//     display: 'flex',
-//     gap: '2rem',
-//     justifyContent: 'space-around',
-// });
-
-// const teamStatStyle = css({
-//     flex: 1,
-//     display: 'flex',
-//     flexDirection: 'column',
-//     gap: '0.5rem',
-// });
-
-// const statTeamNameStyle = css({
-//     fontWeight: '600',
-//     fontSize: '0.9rem',
-//     color: '#fff',
-//     textDecoration: 'none',
-//     transition: 'color 0.2s ease',
-//     marginBottom: '0.25rem',
-// });
-
 const statValueStyle = css({
     fontSize: '0.85rem',
     color: '#aaa',
@@ -247,20 +198,85 @@ const statLabelStyle = css({
     fontWeight: '500',
 });
 
-// const statDividerStyle = css({
-//     width: '1px',
-//     background: 'rgba(255, 255, 255, 0.1)',
-// });
+const statsContainerStyle = css({
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem',
+    marginTop: '0.5rem',
+});
+
+const linkContainerStyle = css({
+    marginTop: '1.5rem',
+    paddingTop: '1.5rem',
+    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+    textAlign: 'center'
+});
+
+const actionLinkStyle = css({
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '8px',
+    textDecoration: 'none',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    transition: 'all 0.2s ease',
+    '&:hover': {
+        transform: 'translateY(-1px)'
+    }
+});
+
+const previewLinkStyle = css({
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    color: '#60a5fa',
+    border: '1px solid rgba(59, 130, 246, 0.3)',
+    '&:hover': {
+        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+        borderColor: 'rgba(59, 130, 246, 0.5)',
+    }
+});
+
+const highlightsLinkStyle = css({
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    color: '#f87171',
+    border: '1px solid rgba(220, 38, 38, 0.3)',
+    '&:hover': {
+        backgroundColor: 'rgba(220, 38, 38, 0.2)',
+        borderColor: 'rgba(220, 38, 38, 0.5)',
+    }
+});
+
+const fullGameLinkStyle = css({
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    color: '#e5e5e5',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    '&:hover': {
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+    }
+});
+
+const streamLinkStyle = css({
+    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15))',
+    color: '#a78bfa',
+    border: '1px solid rgba(139, 92, 246, 0.3)',
+    '&:hover': {
+        background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.25))',
+        borderColor: 'rgba(139, 92, 246, 0.5)',
+    }
+});
+
+const videoLinksContainerStyle = css({
+    paddingTop: '0.5rem',
+    display: 'flex',
+    gap: '1rem',
+    justifyContent: 'center',
+    flexWrap: 'wrap'
+});
 
 export default function GameCard({ title, game }: GameCardProps) {
     const year = new Date().getFullYear();
-
-    // For the opponent team, we use the data from schedule.json
-    // The schedule already has opponent_record and opponent_rating populated
-    // const opponentDetails: TeamDetails = {
-    //     record: game?.opponent_record,
-    //     rating: game?.opponent_rating ? parseFloat(game.opponent_rating) : undefined,
-    // };
 
     if (!game) {
         return (
@@ -299,7 +315,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 <span className={teamNameStyle}>{game.visitor_team_name}</span>
                             </a>
                         ) : (
-                            <div className={cx('team-link', teamLinkStyle, css({ cursor: 'default', opacity: 1 }))}>
+                            <div className={cx('team-link', teamLinkStyle, teamLinkDisabledStyle)}>
                                 {isValidLogoUrl(game.visitor_team_logo) && (
                                     <NextImage
                                         src={game.visitor_team_logo!}
@@ -311,7 +327,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 <span className={cx('team-name', teamNameStyle)}>{game.visitor_team_name}</span>
                             </div>
                         )}
-                        <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.5rem' })}>
+                        <div className={statsContainerStyle}>
                             {game.visitor_team_record && (
                                 <div className={statValueStyle}>
                                     <span className={statLabelStyle}>Record:</span> {game.visitor_team_record}
@@ -344,7 +360,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </a>
                         ) : (
-                            <div className={cx('team-link', teamLinkStyle, css({ cursor: 'default', opacity: 1 }))}>
+                            <div className={cx('team-link', teamLinkStyle, teamLinkDisabledStyle)}>
                                 {isValidLogoUrl(game.home_team_logo) && (
                                     <NextImage
                                         src={game.home_team_logo!}
@@ -356,7 +372,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
                             </div>
                         )}
-                        <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.5rem' })}>
+                        <div className={statsContainerStyle}>
                             {game.home_team_record && (
                                 <div className={statValueStyle}>
                                     <span className={statLabelStyle}>Record:</span> {game.home_team_record}
@@ -378,35 +394,12 @@ export default function GameCard({ title, game }: GameCardProps) {
 
                 {/* Game Preview Link - Only show for MHR games with numeric game_nbr */}
                 {game.game_nbr && typeof game.game_nbr === 'number' && (
-                    <div className={css({
-                        marginTop: '1.5rem',
-                        paddingTop: '1.5rem',
-                        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                        textAlign: 'center'
-                    })}>
+                    <div className={linkContainerStyle}>
                         <a 
                             href={`https://myhockeyrankings.com/game-preview?g=${game.game_nbr}&y=2025`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={css({
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.5rem',
-                                padding: '0.75rem 1.5rem',
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                color: '#60a5fa',
-                                borderRadius: '8px',
-                                border: '1px solid rgba(59, 130, 246, 0.3)',
-                                textDecoration: 'none',
-                                fontSize: '0.875rem',
-                                fontWeight: '600',
-                                transition: 'all 0.2s ease',
-                                '&:hover': {
-                                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                                    borderColor: 'rgba(59, 130, 246, 0.5)',
-                                    transform: 'translateY(-1px)'
-                                }
-                            })}
+                            className={cx(actionLinkStyle, previewLinkStyle)}
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
@@ -418,37 +411,13 @@ export default function GameCard({ title, game }: GameCardProps) {
 
                 {/* Video Links */}
                 {(game.highlightsUrl || game.fullGameUrl) && (
-                    <div className={css({
-                        paddingTop: '0.5rem',
-                        display: 'flex',
-                        gap: '1rem',
-                        justifyContent: 'center',
-                        flexWrap: 'wrap'
-                    })}>
+                    <div className={videoLinksContainerStyle}>
                         {game.highlightsUrl && (
                             <a 
                                 href={game.highlightsUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={css({
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    padding: '0.75rem 1.5rem',
-                                    backgroundColor: 'rgba(220, 38, 38, 0.1)',
-                                    color: '#f87171',
-                                    borderRadius: '8px',
-                                    border: '1px solid rgba(220, 38, 38, 0.3)',
-                                    textDecoration: 'none',
-                                    fontSize: '0.875rem',
-                                    fontWeight: '600',
-                                    transition: 'all 0.2s ease',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(220, 38, 38, 0.2)',
-                                        borderColor: 'rgba(220, 38, 38, 0.5)',
-                                        transform: 'translateY(-1px)'
-                                    }
-                                })}
+                                className={cx(actionLinkStyle, highlightsLinkStyle)}
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.33 29 29 0 0 0-.46-5.33z"></path>
@@ -462,25 +431,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                                 href={game.fullGameUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={css({
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    padding: '0.75rem 1.5rem',
-                                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                                    color: '#e5e5e5',
-                                    borderRadius: '8px',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    textDecoration: 'none',
-                                    fontSize: '0.875rem',
-                                    fontWeight: '600',
-                                    transition: 'all 0.2s ease',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                        borderColor: 'rgba(255, 255, 255, 0.2)',
-                                        transform: 'translateY(-1px)'
-                                    }
-                                })}
+                                className={cx(actionLinkStyle, fullGameLinkStyle)}
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <circle cx="12" cy="12" r="10"></circle>
@@ -503,25 +454,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                             href={game.upcomingStreamUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={css({
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.5rem',
-                                padding: '0.75rem 1.5rem',
-                                background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15))',
-                                color: '#a78bfa',
-                                borderRadius: '8px',
-                                border: '1px solid rgba(139, 92, 246, 0.3)',
-                                textDecoration: 'none',
-                                fontSize: '0.875rem',
-                                fontWeight: '600',
-                                transition: 'all 0.2s ease',
-                                '&:hover': {
-                                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.25))',
-                                    borderColor: 'rgba(139, 92, 246, 0.5)',
-                                    transform: 'translateY(-1px)'
-                                }
-                            })}
+                            className={cx(actionLinkStyle, streamLinkStyle)}
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <circle cx="12" cy="12" r="10"></circle>

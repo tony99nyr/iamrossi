@@ -20,11 +20,12 @@
 - Memoize expensive calculations with `useMemo` only when necessary (don't over-optimize)
 
 ## Panda CSS
-- If 5 or less styles in a css() block do it inline rather than extracting
+- If 6 or less styles in a css() block do it inline rather than extracting
 - Ensure all classNames and css rules are static and deterministic
 - Use tokens from `panda.config.ts` for colors, spacing, animations
 - Prefer Panda patterns (`stack()`, `flex()`, etc.) for common layouts
 - Never use CSS Modules or inline styles - Panda CSS only
+- Use descriptive class names that document the element's purpose
 
 ## Next.js
 - Prefer fetching data in RSC (page can still be static)
@@ -40,16 +41,34 @@
   - Use appropriate HTTP status codes
   - Verify authentication on protected routes
 
-## Data Management
-- **Redis (Vercel KV)**:
-  - Always use functions from `src/lib/kv.ts`
-  - Never directly access the Redis client
-  - Connection handling is automatic (includes retry logic)
-  - All data must be JSON serializable
+## Data Persistence & Redis
+- **Infrastructure**: Single Redis instance (Vercel KV).
+- **Abstraction Layer**: All database interactions MUST go through `src/lib/kv.ts`.
+  - **Never** directly access the Redis client in components or API routes.
+  - **Never** hardcode Redis keys. Use `KV_KEYS` constant in `src/lib/kv.ts`.
+  - Connection handling is automatic (includes retry logic).
+- **Adding New Data**:
+  1. Define the data type in `@/types`.
+  2. Add a new key to `KV_KEYS` in `src/lib/kv.ts`.
+  3. Create strongly-typed `get` and `set` functions in `src/lib/kv.ts` (e.g., `getNewFeature`, `setNewFeature`).
+- **Testing Safety (CRITICAL)**:
+  - Tests **MUST** use `localhost` or mocks to avoid overwriting production data.
+  - `src/lib/kv.ts` automatically switches to `TEST_REDIS_URL` when `NODE_ENV === 'test'`.
+  - `tests/setup.ts` enforces `TEST_REDIS_URL = 'redis://localhost:6379'`.
+  - Most unit tests use the in-memory mock (`tests/mocks/redis.mock.ts`).
 - **Type Safety**:
-  - All Redis data should have types defined in `@/types`
-  - Validate data structure when reading from Redis
-  - Use TypeScript generics for type-safe Redis operations
+  - All Redis data must be JSON serializable.
+  - Validate data structure when reading from Redis (use Zod schemas where possible).
+  - Use TypeScript generics for type-safe Redis operations.
+- **Utility Scripts**:
+  - Use `pnpm redis` to interact with the database from the CLI.
+  - Commands:
+    - `pnpm redis list [pattern]` - List keys
+    - `pnpm redis get <key>` - Get value (pretty prints JSON)
+    - `pnpm redis del <key>` - Delete key
+    - `pnpm redis flush-test` - Clear localhost DB (safe for dev)
+  - Example: `pnpm redis get rehab:exercises`
+  - **Note**: The script automatically loads environment variables from `.env.local`. Ensure `REDIS_URL` is set there for remote connections, or it defaults to `localhost:6379`.
 
 ## Security
 - **Never hardcode secrets** - use environment variables
