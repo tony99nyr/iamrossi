@@ -4,7 +4,8 @@ import { css, cx } from '@styled-system/css';
 import { useState } from 'react';
 import SmartAutocomplete from './SmartAutocomplete';
 import ExerciseCard from './ExerciseCard';
-import type { Exercise, ExerciseEntry, RehabEntry } from '@/types';
+import OuraDayScores from '@/components/oura/OuraDayScores';
+import type { Exercise, ExerciseEntry, RehabEntry, OuraScores } from '@/types';
 
 interface DayViewProps {
     date: string;
@@ -22,6 +23,7 @@ interface DayViewProps {
     hasUnsavedNotes: boolean;
     onCreateExercise: (title: string, description: string) => Promise<Exercise>;
     onBack?: () => void;
+    ouraScores?: OuraScores;
 }
 
 function formatDateHeader(dateStr: string): string {
@@ -54,6 +56,7 @@ export default function DayView({
     hasUnsavedNotes,
     onCreateExercise,
     onBack,
+    ouraScores,
 }: DayViewProps) {
     const [exerciseToDelete, setExerciseToDelete] = useState<{id: string, title: string} | null>(null);
 
@@ -125,6 +128,13 @@ export default function DayView({
                     {formatDateHeader(date)}
                 </h2>
             </div>
+
+            {/* Oura Scores Section */}
+            {ouraScores && (
+                <div className={css({ marginBottom: '24px' })}>
+                    <OuraDayScores scores={ouraScores} />
+                </div>
+            )}
 
             {/* Daily Tracking Row */}
             <div className={cx('daily-tracking', css({

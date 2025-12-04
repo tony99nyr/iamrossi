@@ -1,7 +1,9 @@
 'use client';
 
-import { css, cx } from '@styled-system/css';
 import { useRef, type TouchEvent } from 'react';
+import { css, cx } from '@styled-system/css';
+import OuraDayScores from '@/components/oura/OuraDayScores';
+import type { OuraScores } from '@/types';
 
 interface RehabEntry {
     id: string;
@@ -35,6 +37,7 @@ interface WeeklyCalendarProps {
     onPreviousWeek: () => void;
     onNextWeek: () => void;
     onSettingsClick?: () => void;
+    ouraScores?: Record<string, OuraScores>;
 }
 
 function getWeekDates(date: Date): Date[] {
@@ -91,6 +94,7 @@ export default function WeeklyCalendar({
     onPreviousWeek,
     onNextWeek,
     onSettingsClick,
+    ouraScores = {},
 }: WeeklyCalendarProps) {
     const weekDates = getWeekDates(currentDate);
     const today = formatDate(new Date());
@@ -304,42 +308,56 @@ export default function WeeklyCalendar({
                         >
                             {/* Day Header */}
                             <div className={cx('day-header', css({
-                                marginBottom: '10px',
+                                marginBottom: '16px',
                                 display: 'flex',
                                 flexDirection: 'row',
-                                alignItems: 'baseline',
+                                alignItems: 'flex-start',
+                                justifyContent: 'space-between',
                                 gap: '8px',
                                 md: {
-                                    marginBottom: '14px',
-                                    flexDirection: 'column',
-                                    gap: '0',
+                                    marginBottom: '20px',
                                 }
                             }))}>
-                                <div className={cx('day-number', css({
-                                    color: isToday ? '#2563eb' : '#ededed',
-                                    fontSize: '28px',
-                                    fontWeight: '700',
-                                    lineHeight: '1',
-                                    md: {
-                                        fontSize: '32px',
-                                        order: 2,
-                                    }
-                                }))}>
-                                    {formatDayNumber(date)}
-                                </div>
-                                <div className={cx('day-name', css({
-                                    color: '#999',
-                                    fontSize: '15px',
-                                    fontWeight: '600',
-                                    letterSpacing: '0.5px',
-                                    md: {
-                                        fontSize: '11px',
+                                <div className={css({
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'flex-start',
+                                    gap: '0',
+                                })}>
+                                    <div className={cx('day-name', css({
+                                        color: '#999',
+                                        fontSize: '15px',
+                                        fontWeight: '600',
+                                        letterSpacing: '0.5px',
                                         marginBottom: '4px',
-                                        order: 1,
-                                    }
-                                }))}>
-                                    {formatDayName(date)}
+                                        md: {
+                                            fontSize: '11px',
+                                        }
+                                    }))}>
+                                        {formatDayName(date)}
+                                    </div>
+                                    <div className={cx('day-number', css({
+                                        color: isToday ? '#2563eb' : '#ededed',
+                                        fontSize: '28px',
+                                        fontWeight: '700',
+                                        lineHeight: '1',
+                                        md: {
+                                            fontSize: '32px',
+                                        }
+                                    }))}>
+                                        {formatDayNumber(date)}
+                                    </div>
                                 </div>
+
+                                {/* Oura Scores - Top right */}
+                                {ouraScores[dateStr] && (
+                                    <div className={css({ 
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                    })}>
+                                        <OuraDayScores scores={ouraScores[dateStr]} />
+                                    </div>
+                                )}
                             </div>
 
                             {/* Rest Day Indicator */}

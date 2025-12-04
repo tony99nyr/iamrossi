@@ -401,3 +401,53 @@ export async function deleteStatSession(id: string): Promise<void> {
   const filtered = sessions.filter(s => s.id !== id);
   await redis.set(KV_KEYS.STATS, JSON.stringify(filtered));
 }
+
+// ============================================================================
+// Generic KV operations (for Oura and other integrations)
+// ============================================================================
+
+export interface SetOptions {
+  ex?: number; // Expiration in seconds
+}
+
+/**
+ * Generic get operation
+ */
+export async function kvGet<T>(key: string): Promise<T | null> {
+  await ensureConnected();
+  const data = await redis.get(key);
+  return data ? JSON.parse(data) : null;
+}
+
+/**
+ * Generic set operation with optional expiration
+ */
+export async function kvSet<T>(key: string, value: T, options?: SetOptions): Promise<void> {
+  await ensureConnected();
+  const serialized = JSON.stringify(value);
+  
+  if (options?.ex) {
+    await redis.setEx(key, options.ex, serialized);
+  } else {
+    await redis.set(key, serialized);
+  }
+}
+
+/**
+ * Generic delete operation (supports multiple keys)
+ */
+export async function kvDel(...keys: string[]): Promise<void> {
+  await ensureConnected();
+  if (keys.length > 0) {
+    await redis.del(keys);
+  }
+}
+
+/**
+ * Get all keys matching a pattern
+ */
+export async function kvKeys(pattern: string): Promise<string[]> {
+  await ensureConnected();
+  return await redis.keys(pattern);
+}
+

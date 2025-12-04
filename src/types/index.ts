@@ -60,6 +60,25 @@ export interface RehabSettings {
 }
 
 // ============================================================================
+// Oura Integration Types
+// ============================================================================
+
+export interface OuraScores {
+  date: string;
+  sleepScore?: number;        // 0-100
+  readinessScore?: number;    // 0-100
+  activityScore?: number;     // 0-100
+  lastSynced?: string;        // ISO timestamp
+}
+
+export interface OuraTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;          // Unix timestamp
+}
+
+
+// ============================================================================
 // Admin/Settings Types
 // ============================================================================
 

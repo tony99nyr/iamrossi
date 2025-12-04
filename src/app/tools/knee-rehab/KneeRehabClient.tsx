@@ -6,7 +6,7 @@ import WeeklyCalendar from '@/components/rehab/WeeklyCalendar';
 import DayView from '@/components/rehab/DayView';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
 import SettingsModal from '@/components/rehab/SettingsModal';
-import type { Exercise, RehabEntry, ExerciseEntry, RehabSettings } from '@/types';
+import type { Exercise, RehabEntry, ExerciseEntry, RehabSettings, OuraScores } from '@/types';
 
 
 
@@ -29,6 +29,9 @@ export default function KneeRehabClient({
 
     const [settings, setSettings] = useState<RehabSettings>({ vitamins: ROSSI_VITAMINS, proteinShake: ROSSI_SHAKE });
     const [showSettingsModal, setShowSettingsModal] = useState(false);
+    
+    // Oura integration state
+    const [ouraScores, setOuraScores] = useState<Record<string, OuraScores>>({});
     
     // PIN authentication state
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -77,6 +80,74 @@ export default function KneeRehabClient({
         };
         fetchSettings();
     }, []);
+
+    // Helper functions for date formatting (matching WeeklyCalendar)
+    const getWeekDates = (date: Date): Date[] => {
+        const week: Date[] = [];
+        const current = new Date(date);
+        const day = current.getDay();
+        const diff = current.getDate() - day;
+        current.setDate(diff);
+        for (let i = 0; i < 7; i++) {
+            week.push(new Date(current));
+            current.setDate(current.getDate() + 1);
+        }
+        return week;
+    };
+
+    const formatDate = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    // Fetch Oura scores for the current week when week changes
+    useEffect(() => {
+        const fetchOuraScores = async () => {
+            try {
+                // Check if Oura is configured
+                const statusResponse = await fetch('/api/oura/status');
+                if (!statusResponse.ok) return;
+                
+                const status = await statusResponse.json();
+                if (!status.configured) return;
+
+                // Get all dates in current week
+                const weekDates = getWeekDates(currentWeekStart);
+                const scores: Record<string, OuraScores> = {};
+                
+                // Only fetch for past and current dates, not future
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                // Fetch scores for each day in parallel (only past/current dates)
+                await Promise.all(
+                    weekDates
+                        .filter(date => date <= today) // Only past and current dates
+                        .map(async (date) => {
+                            const dateStr = formatDate(date);
+                            try {
+                                const response = await fetch(`/api/oura/scores?date=${dateStr}`);
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    scores[dateStr] = data;
+                                }
+                            } catch (error) {
+                                console.error(`Failed to fetch Oura scores for ${dateStr}:`, error);
+                            }
+                        })
+                );
+
+                setOuraScores(scores);
+            } catch (error) {
+                console.error('Failed to fetch Oura scores:', error);
+            }
+        };
+        fetchOuraScores();
+    }, [currentWeekStart]);
+
+
 
     const selectedEntry = entries.find(e => e.date === selectedDate);
 
@@ -651,6 +722,7 @@ export default function KneeRehabClient({
                         onPreviousWeek={handlePreviousWeek}
                         onNextWeek={handleNextWeek}
                         onSettingsClick={() => requireAuth(async () => setShowSettingsModal(true))}
+                        ouraScores={ouraScores}
                     />
                 </div>
 
@@ -680,6 +752,7 @@ export default function KneeRehabClient({
                             hasUnsavedNotes={hasUnsavedNotes}
                             onCreateExercise={handleCreateExercise}
                             onBack={handleBackToCalendar}
+                            ouraScores={selectedDate ? ouraScores[selectedDate] : undefined}
                         />
                     </div>
                 )}
