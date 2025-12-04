@@ -79,8 +79,7 @@ export default async function NextGamePage() {
     const syncStatus = await getSyncStatus();
     const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
     const shouldTriggerSync = !syncStatus.isRevalidating && 
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        (!syncStatus.lastSyncTime || (Date.now() - syncStatus.lastSyncTime) > COOLDOWN_MS);
+        (!syncStatus.lastSyncTime || (new Date().getTime() - syncStatus.lastSyncTime) > COOLDOWN_MS);
 
     if (shouldTriggerSync) {
         // Trigger sync in background (fire and forget)
