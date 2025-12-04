@@ -37,6 +37,7 @@ interface WeeklyCalendarProps {
     onPreviousWeek: () => void;
     onNextWeek: () => void;
     onSettingsClick?: () => void;
+    onGoToToday?: () => void;
     ouraScores?: Record<string, OuraScores>;
 }
 
@@ -94,6 +95,7 @@ export default function WeeklyCalendar({
     onPreviousWeek,
     onNextWeek,
     onSettingsClick,
+    onGoToToday,
     ouraScores = {},
 }: WeeklyCalendarProps) {
     const weekDates = getWeekDates(currentDate);
@@ -154,82 +156,97 @@ export default function WeeklyCalendar({
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
         >
-            {/* Week Navigation */}
-            <div className={cx('week-nav', css({
+            {/* Header with Navigation */}
+            <div className={css({
                 display: 'flex',
-                justifyContent: 'space-between',
                 alignItems: 'center',
+                justifyContent: 'space-between',
                 marginBottom: '24px',
-            }))}>
+                gap: '16px',
+            })}>
                 <button
                     onClick={onPreviousWeek}
-                    className={cx('nav-button', css({
-                        padding: '8px 16px',
-                        backgroundColor: 'transparent',
+                    className={css({
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: '48px',
+                        height: '48px',
+                        backgroundColor: '#1a1a1a',
                         border: '1px solid #333',
-                        borderRadius: '8px',
+                        borderRadius: '12px',
                         color: '#ededed',
-                        fontSize: '20px',
+                        fontSize: '28px',
+                        fontWeight: '300',
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
+                        flexShrink: 0,
                         _hover: {
+                            backgroundColor: '#2a2a2a',
                             borderColor: '#2563eb',
-                            backgroundColor: '#1a1a1a',
+                            transform: 'scale(1.05)',
+                        },
+                        _active: {
+                            transform: 'scale(0.95)',
                         }
-                    }))}
+                    })}
                     aria-label="Previous week"
                 >
                     ‹
                 </button>
-                <div className={css({ display: 'flex', alignItems: 'center', gap: '12px' })}>
-                    <div className={cx('week-range', css({
+
+                <div
+                    onClick={onGoToToday}
+                    className={css({
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flex: 1,
+                        cursor: onGoToToday ? 'pointer' : 'default',
+                        transition: 'opacity 0.2s ease',
+                        _hover: onGoToToday ? {
+                            opacity: 0.7,
+                        } : {},
+                    })}
+                >
+                    <h2 className={css({
                         color: '#ededed',
-                        fontSize: '18px',
+                        fontSize: '19px',
                         fontWeight: '600',
-                    }))}>
+                        margin: 0,
+                        letterSpacing: '0.3px',
+                        textAlign: 'center',
+                    })}>
                         {formatMonthYear(weekDates[0], weekDates[6])}
-                    </div>
-                    {onSettingsClick && (
-                        <button
-                            onClick={onSettingsClick}
-                            className={css({
-                                padding: '6px 12px',
-                                backgroundColor: 'transparent',
-                                border: '1px solid #333',
-                                borderRadius: '6px',
-                                color: '#999',
-                                fontSize: '18px',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s ease',
-                                _hover: {
-                                    borderColor: '#2563eb',
-                                    backgroundColor: '#1a1a1a',
-                                    color: '#ededed',
-                                }
-                            })}
-                            aria-label="Settings"
-                            title="Settings"
-                        >
-                            ⚙️
-                        </button>
-                    )}
+                    </h2>
                 </div>
+
                 <button
                     onClick={onNextWeek}
-                    className={cx('nav-button', css({
-                        padding: '8px 16px',
-                        backgroundColor: 'transparent',
+                    className={css({
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: '48px',
+                        height: '48px',
+                        backgroundColor: '#1a1a1a',
                         border: '1px solid #333',
-                        borderRadius: '8px',
+                        borderRadius: '12px',
                         color: '#ededed',
-                        fontSize: '20px',
+                        fontSize: '28px',
+                        fontWeight: '300',
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
+                        flexShrink: 0,
                         _hover: {
+                            backgroundColor: '#2a2a2a',
                             borderColor: '#2563eb',
-                            backgroundColor: '#1a1a1a',
+                            transform: 'scale(1.05)',
+                        },
+                        _active: {
+                            transform: 'scale(0.95)',
                         }
-                    }))}
+                    })}
                     aria-label="Next week"
                 >
                     ›
@@ -283,6 +300,7 @@ export default function WeeklyCalendar({
                     return (
                         <button
                             key={dateStr}
+                            data-date={dateStr}
                             onClick={() => onDateSelect(dateStr)}
                             className={cx('day-card', css({
                                 backgroundColor: isSelected ? '#1a1a1a' : '#0f0f0f',
@@ -507,6 +525,36 @@ export default function WeeklyCalendar({
                     );
                 })}
             </div>
+
+            {/* Settings Button - Bottom Right */}
+            {onSettingsClick && (
+                <div className={css({
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    marginTop: '32px',
+                })}>
+                    <button
+                        onClick={onSettingsClick}
+                        className={css({
+                            fontSize: '1.25rem',
+                            opacity: 0.3,
+                            transition: 'all 0.3s ease',
+                            cursor: 'pointer',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            color: '#ededed',
+                            _hover: {
+                                opacity: 0.6,
+                                transform: 'rotate(90deg)',
+                            },
+                        })}
+                        aria-label="Settings"
+                        title="Settings"
+                    >
+                        ⚙️
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

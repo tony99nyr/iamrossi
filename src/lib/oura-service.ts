@@ -82,9 +82,17 @@ export async function getDailyScores(date: string): Promise<OuraScores> {
     lastSynced: new Date().toISOString(),
   };
 
-  // Cache for 24 hours
+  // Determine cache duration based on whether this is today's data
+  const today = new Date().toISOString().split('T')[0];
+  const isToday = date === today;
+  
+  // Today's data: 15 minutes (activity score changes throughout the day)
+  // Past days: 24 hours (data is final)
+  const cacheDuration = isToday ? 15 * 60 : 24 * 60 * 60;
+
+  // Cache with appropriate duration
   try {
-    await kvSet(cacheKey, scores, { ex: 24 * 60 * 60 });
+    await kvSet(cacheKey, scores, { ex: cacheDuration });
   } catch (error) {
     console.error('[Oura] Cache write error:', error);
   }

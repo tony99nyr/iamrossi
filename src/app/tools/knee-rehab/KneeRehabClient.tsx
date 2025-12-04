@@ -119,12 +119,12 @@ export default function KneeRehabClient({
                 
                 // Only fetch for past and current dates, not future
                 const today = new Date();
-                today.setHours(0, 0, 0, 0);
+                const todayStr = formatDate(today);
 
                 // Fetch scores for each day in parallel (only past/current dates)
                 await Promise.all(
                     weekDates
-                        .filter(date => date <= today) // Only past and current dates
+                        .filter(date => formatDate(date) <= todayStr) // Compare date strings, not Date objects
                         .map(async (date) => {
                             const dateStr = formatDate(date);
                             try {
@@ -690,6 +690,21 @@ export default function KneeRehabClient({
         });
     };
 
+    const handleGoToToday = useCallback(() => {
+        const today = new Date();
+        setCurrentWeekStart(today);
+        setSelectedDate(null);
+        
+        // Scroll to today's card after a brief delay to allow rendering
+        setTimeout(() => {
+            const todayStr = formatDate(today);
+            const todayCard = document.querySelector(`[data-date="${todayStr}"]`);
+            if (todayCard) {
+                todayCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 100);
+    }, [formatDate]);
+
     return (
         <div className={cx('knee-rehab-client', css({
             minHeight: '100vh',
@@ -722,6 +737,7 @@ export default function KneeRehabClient({
                         onPreviousWeek={handlePreviousWeek}
                         onNextWeek={handleNextWeek}
                         onSettingsClick={() => requireAuth(async () => setShowSettingsModal(true))}
+                        onGoToToday={handleGoToToday}
                         ouraScores={ouraScores}
                     />
                 </div>

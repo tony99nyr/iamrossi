@@ -4,7 +4,7 @@ import { css, cx } from '@styled-system/css';
 import { useState } from 'react';
 import SmartAutocomplete from './SmartAutocomplete';
 import ExerciseCard from './ExerciseCard';
-import OuraDayScores from '@/components/oura/OuraDayScores';
+import OuraDayScoresLarge from '@/components/oura/OuraDayScoresLarge';
 import type { Exercise, ExerciseEntry, RehabEntry, OuraScores } from '@/types';
 
 interface DayViewProps {
@@ -71,16 +71,26 @@ export default function DayView({
         };
     }).filter(Boolean) as (Exercise & Partial<ExerciseEntry>)[] || [];
 
+    const formattedDate = formatDateHeader(date);
+
     return (
         <div className={cx('day-view', css({
             width: '100%',
+            lg: {
+                maxWidth: '1000px',
+                margin: '0 auto',
+            }
         }))}>
             {/* Date Header */}
             <div className={cx('day-header', css({
-                marginBottom: '24px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
+                marginBottom: '24px',
+                justifyContent: 'center',
+                lg: {
+                    marginBottom: '32px',
+                }
             }))}>
                 {onBack && (
                     <button
@@ -125,25 +135,39 @@ export default function DayView({
                         }
                     }))}
                 >
-                    {formatDateHeader(date)}
+                    {formattedDate}
                 </h2>
             </div>
 
-            {/* Oura Scores Section */}
-            {ouraScores && (
-                <div className={css({ marginBottom: '24px' })}>
-                    <OuraDayScores scores={ouraScores} />
-                </div>
-            )}
-
-            {/* Daily Tracking Row */}
-            <div className={cx('daily-tracking', css({
+            {/* Oura Scores & Daily Tracking - Combined Grid */}
+            <div className={cx('tracking-section', css({
                 marginBottom: '24px',
-                display: 'flex',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
                 gap: '12px',
-                alignItems: 'center',
+                alignItems: 'start',
+                _xlg: {
+                    maxWidth: '600px',
+                    margin: '0 auto 24px auto',
+                    gap: '16px',
+                }
             }))}>
-                {/* Rest Day Toggle */}
+                {/* Oura Scores Row */}
+                {ouraScores && (
+                    <>
+                        <div className={css({ display: 'flex', justifyContent: 'center' })}>
+                            <OuraDayScoresLarge scores={{ readinessScore: ouraScores.readinessScore }} />
+                        </div>
+                        <div className={css({ display: 'flex', justifyContent: 'center' })}>
+                            <OuraDayScoresLarge scores={{ sleepScore: ouraScores.sleepScore }} />
+                        </div>
+                        <div className={css({ display: 'flex', justifyContent: 'center' })}>
+                            <OuraDayScoresLarge scores={{ activityScore: ouraScores.activityScore }} />
+                        </div>
+                    </>
+                )}
+
+                {/* Tracking Buttons Row */}
                 <button
                     onClick={onToggleRestDay}
                     className={cx('rest-day-toggle', css({
@@ -223,6 +247,44 @@ export default function DayView({
                 </button>
             </div>
 
+            {/* Exercises Section */}
+            <div className={cx('exercises-section', css({
+                marginBottom: '24px',
+            }))}>
+                {/* Inline Search/Add Exercise */}
+                <div className={css({ marginBottom: '16px' })}>
+                    <SmartAutocomplete
+                        exercises={exercises}
+                        entries={entries}
+                        onSelect={onAddExercise}
+                        onCreateNew={onCreateExercise}
+                        placeholder="Search or add exercise..."
+                    />
+                </div>
+
+                {/* Exercise List */}
+                <div className={css({ 
+                    display: 'grid',
+                    gridTemplateColumns: '1fr',
+                    gap: '12px',
+                    md: {
+                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gap: '16px',
+                    }
+                })}>
+                    {dayExercises.map((exercise) => (
+                        <ExerciseCard
+                            key={exercise.id}
+                            exercise={exercise}
+                            editable={true}
+                            showRemove={true}
+                            onUpdate={(data) => onUpdateExercise(exercise.id, data)}
+                            onRemove={() => setExerciseToDelete({ id: exercise.id, title: exercise.title })}
+                        />
+                    ))}
+                </div>
+            </div>
+
             {/* General Notes Section */}
             <div className={cx('notes-section', css({
                 marginBottom: '24px',
@@ -246,13 +308,13 @@ export default function DayView({
                     placeholder="Add any thoughts, concerns, pain notes, or observations about your day..."
                     className={cx('notes-textarea', css({
                         width: '100%',
-                        minHeight: '100px',
+                        minHeight: '150px',
                         padding: '12px',
                         backgroundColor: '#1a1a1a',
                         border: '1px solid #333',
                         borderRadius: '8px',
                         color: '#ededed',
-                        fontSize: '16px',
+                        fontSize: '14px',
                         lineHeight: '1.5',
                         fontFamily: 'inherit',
                         resize: 'vertical',
@@ -291,42 +353,6 @@ export default function DayView({
                     >
                         💾 Save Notes
                     </button>
-                )}
-            </div>
-
-            {/* Exercises Section */}
-            <div className={cx('exercises-section', css({
-                marginBottom: '24px',
-            }))}>
-                {/* Inline Search/Add Exercise */}
-                <div className={css({ marginBottom: '16px' })}>
-                    <SmartAutocomplete
-                        exercises={exercises}
-                        entries={entries}
-                        onSelect={onAddExercise}
-                        onCreateNew={onCreateExercise}
-                        placeholder="Search or add exercise..."
-                    />
-                </div>
-
-                {/* Exercise List with Inline Editing */}
-                {dayExercises.length > 0 && (
-                    <div className={cx('exercises-list', css({
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                    }))}>
-                        {dayExercises.map((exercise) => (
-                            <ExerciseCard 
-                                key={exercise.id} 
-                                exercise={exercise}
-                                editable={true}
-                                showRemove={true}
-                                onUpdate={(data) => onUpdateExercise(exercise.id, data)}
-                                onRemove={() => setExerciseToDelete({ id: exercise.id, title: exercise.title })}
-                            />
-                        ))}
-                    </div>
                 )}
             </div>
 
