@@ -14,7 +14,7 @@ interface WeeklyCalendarProps {
     onDateSelect: (date: string) => void;
     onPreviousWeek: () => void;
     onNextWeek: () => void;
-    onSettingsClick?: () => void;
+    onSettingsClick?: (tab?: 'vitamins' | 'protein' | 'exercises') => void;
     onGoToToday?: () => void;
     ouraScores?: Record<string, OuraScores>;
 }
@@ -177,6 +177,48 @@ export default function WeeklyCalendar({
                     <span className={css({ color: '#ef4444', fontWeight: '600' })}>BFR</span>
                     <span>Blood Flow Restriction</span>
                 </div>
+                <div className={css({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    color: '#999',
+                })}>
+                    <span className={css({ fontSize: '16px' })}>😴</span>
+                    <span>Rest day</span>
+                </div>
+                <div 
+                    onClick={() => onSettingsClick?.('vitamins')}
+                    className={css({
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '13px',
+                        color: '#999',
+                        cursor: 'pointer',
+                        transition: 'color 0.2s',
+                        _hover: { color: '#ededed' }
+                    })}
+                >
+                    <span className={css({ fontSize: '16px' })}>💊</span>
+                    <span>Vitamins</span>
+                </div>
+                <div 
+                    onClick={() => onSettingsClick?.('protein')}
+                    className={css({
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '13px',
+                        color: '#999',
+                        cursor: 'pointer',
+                        transition: 'color 0.2s',
+                        _hover: { color: '#ededed' }
+                    })}
+                >
+                    <span className={css({ fontSize: '16px' })}>🥤</span>
+                    <span>Protein shake</span>
+                </div>
             </div>
 
             {/* Settings Button - Bottom Right */}
@@ -187,7 +229,7 @@ export default function WeeklyCalendar({
                     marginTop: '32px',
                 })}>
                     <button
-                        onClick={onSettingsClick}
+                        onClick={() => onSettingsClick?.()}
                         className={css({
                             fontSize: '1.25rem',
                             opacity: 0.3,

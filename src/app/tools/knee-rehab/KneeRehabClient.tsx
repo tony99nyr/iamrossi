@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { css, cx } from '@styled-system/css';
 import WeeklyCalendar from '@/components/rehab/WeeklyCalendar';
 import DayView from '@/components/rehab/DayView';
@@ -51,6 +52,13 @@ export default function KneeRehabClient({
         handleGoToToday,
     } = useRehabState({ initialExercises, initialEntries });
 
+    const [settingsTab, setSettingsTab] = useState<'vitamins' | 'protein' | 'exercises'>('vitamins');
+
+    const handleOpenSettings = (tab: 'vitamins' | 'protein' | 'exercises' = 'vitamins') => {
+        setSettingsTab(tab);
+        requireAuth(async () => setShowSettingsModal(true));
+    };
+
     return (
         <div className={cx('knee-rehab-client', css({
             minHeight: '100vh',
@@ -82,7 +90,7 @@ export default function KneeRehabClient({
                         onDateSelect={handleDateSelect}
                         onPreviousWeek={handlePreviousWeek}
                         onNextWeek={handleNextWeek}
-                        onSettingsClick={() => requireAuth(async () => setShowSettingsModal(true))}
+                        onSettingsClick={handleOpenSettings}
                         onGoToToday={handleGoToToday}
                         ouraScores={ouraScores}
                     />
@@ -135,6 +143,7 @@ export default function KneeRehabClient({
                 <SettingsModal
                     settings={settings}
                     exercises={exercises}
+                    initialTab={settingsTab}
                     onSave={handleSaveSettings}
                     onUpdateExercise={handleUpdateExerciseDefinition}
                     onDeleteExercise={handleDeleteExercise}

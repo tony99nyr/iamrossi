@@ -15,6 +15,7 @@ interface SettingsModalProps {
   onUpdateExercise?: (id: string, title: string, description: string) => void;
   onDeleteExercise?: (id: string) => void;
   onClose: () => void;
+  initialTab?: Tab;
 }
 
 type Tab = 'vitamins' | 'protein' | 'exercises';
@@ -25,9 +26,10 @@ export default function SettingsModal({
   onSave, 
   onUpdateExercise,
   onDeleteExercise,
-  onClose 
+  onClose,
+  initialTab = 'vitamins'
 }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('vitamins');
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [vitamins, setVitamins] = useState<Vitamin[]>(settings.vitamins || []);
   const [proteinIngredients, setProteinIngredients] = useState<ProteinShakeIngredient[]>(
     settings.proteinShake?.ingredients || []
@@ -505,7 +507,7 @@ export default function SettingsModal({
                       _focus: { borderColor: '#2563eb' },
                       md: {
                         flex: 1,
-                        width: 'auto',
+                        width: '60px',
                       }
                     })}
                   />
