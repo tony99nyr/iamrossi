@@ -4,6 +4,8 @@ import { getEntries, setEntries, RehabEntry } from '@/lib/kv';
 import { rehabEntrySchema, rehabEntryPatchSchema, safeValidateRequest } from '@/lib/validation';
 import { logger } from '@/lib/logger';
 
+import { revalidatePath } from 'next/cache';
+
 export async function GET() {
     try {
         const entries = await getEntries();
@@ -54,6 +56,9 @@ export async function POST(request: NextRequest) {
         }
 
         await setEntries(entries);
+        
+        // Revalidate the AI page to show fresh data
+        revalidatePath('/tools/knee-rehab/ai');
 
         return NextResponse.json(newEntry, { status: existingEntryIndex !== -1 ? 200 : 201 });
     } catch (error) {
@@ -107,6 +112,10 @@ export async function PATCH(request: NextRequest) {
         }
 
         await setEntries(entries);
+        
+        // Revalidate the AI page to show fresh data
+        revalidatePath('/tools/knee-rehab/ai');
+        
         return NextResponse.json(entries.find(e => e.date === date));
     } catch (error) {
         logger.apiError('PATCH', '/api/rehab/entries', error);

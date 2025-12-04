@@ -5,6 +5,8 @@ import type { RehabSettings } from '@/types';
 import { rehabSettingsSchema, safeValidateRequest } from '@/lib/validation';
 import { logger } from '@/lib/logger';
 
+import { revalidatePath } from 'next/cache';
+
 const redis = createClient({
   url: process.env.REDIS_URL
 });
@@ -71,6 +73,9 @@ export async function POST(request: NextRequest) {
 
     await ensureConnected();
     await redis.set(SETTINGS_KEY, JSON.stringify(validation.data));
+
+    // Revalidate the AI page to show fresh data
+    revalidatePath('/tools/knee-rehab/ai');
 
     return NextResponse.json(validation.data);
   } catch (error) {

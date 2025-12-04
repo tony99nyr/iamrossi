@@ -4,6 +4,8 @@ import { getExercises, setExercises, Exercise } from '@/lib/kv';
 import { exerciseSchema, exerciseUpdateSchema, exerciseDeleteSchema, safeValidateRequest } from '@/lib/validation';
 import { logger } from '@/lib/logger';
 
+import { revalidatePath } from 'next/cache';
+
 export async function GET() {
     try {
         const exercises = await getExercises();
@@ -44,6 +46,9 @@ export async function POST(request: NextRequest) {
 
         exercises.push(newExercise);
         await setExercises(exercises);
+
+        // Revalidate the AI page to show fresh data
+        revalidatePath('/tools/knee-rehab/ai');
 
         return NextResponse.json(newExercise, { status: 201 });
     } catch (error) {
@@ -87,6 +92,9 @@ export async function PATCH(request: NextRequest) {
         exercises[exerciseIndex] = updatedExercise;
         await setExercises(exercises);
 
+        // Revalidate the AI page to show fresh data
+        revalidatePath('/tools/knee-rehab/ai');
+
         return NextResponse.json(updatedExercise);
     } catch (error) {
         logger.apiError('PATCH', '/api/rehab/exercises', error);
@@ -123,6 +131,9 @@ export async function DELETE(request: NextRequest) {
         // Remove the exercise
         exercises.splice(exerciseIndex, 1);
         await setExercises(exercises);
+
+        // Revalidate the AI page to show fresh data
+        revalidatePath('/tools/knee-rehab/ai');
 
         return NextResponse.json({ success: true, id });
     } catch (error) {
