@@ -5,23 +5,8 @@ import { z } from 'zod';
 export async function POST(request: NextRequest) {
   // Verify authentication using CRON_SECRET
   const authHeader = request.headers.get('authorization');
-  const expectedAuth = `Bearer ${process.env.CRON_SECRET}`;
-  
-  if (authHeader !== expectedAuth) {
-    console.log('Auth failed:', {
-      hasEnvVar: !!process.env.CRON_SECRET,
-      envVarLength: process.env.CRON_SECRET?.length,
-      headerLength: authHeader?.length,
-      receivedHeader: authHeader ? `${authHeader.substring(0, 10)}...` : 'null'
-    });
-    return NextResponse.json({ 
-      error: 'Unauthorized', 
-      debug: {
-        hasEnvVar: !!process.env.CRON_SECRET,
-        envLength: process.env.CRON_SECRET?.length,
-        headerLength: authHeader?.length
-      } 
-    }, { status: 401 });
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {

@@ -30,7 +30,7 @@ fi
 log "Current IP: $CURRENT_IP"
 
 # Update IP via API
-RESPONSE=$(curl -L -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$API_URL" \
+RESPONSE=$(curl --location-trusted -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$API_URL" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $IAMROSSI_TOKEN" \
   -d "{\"ip\": \"$CURRENT_IP\"}")
