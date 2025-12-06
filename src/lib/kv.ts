@@ -67,6 +67,7 @@ const KV_KEYS = {
   STATS: 'game:stats',
   ENRICHED_GAMES: 'cache:enriched-games',
   SYNC_STATUS: 'sync:status',
+  HOME_IP: 'admin:home-ip',
 } as const;
 
 // Exercise operations
@@ -400,6 +401,17 @@ export async function deleteStatSession(id: string): Promise<void> {
   const sessions = await getStatSessions();
   const filtered = sessions.filter(s => s.id !== id);
   await redis.set(KV_KEYS.STATS, JSON.stringify(filtered));
+}
+
+// Home IP operations
+export async function getHomeIp(): Promise<string | null> {
+  await ensureConnected();
+  return await redis.get(KV_KEYS.HOME_IP);
+}
+
+export async function setHomeIp(ip: string): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.HOME_IP, ip);
 }
 
 // ============================================================================
