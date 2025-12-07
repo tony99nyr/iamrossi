@@ -32,16 +32,19 @@ export default function GameListItem({
     const displayDate = game.game_date_format_pretty;
 
     // For past games, calculate score
-    const ourScore = isPastGame && isHomeGame ? game.home_team_score : game.visitor_team_score;
-    const theirScore = isPastGame && isHomeGame ? game.visitor_team_score : game.home_team_score;
+    // Check both possible field name variations from MHR
+    const homeScore = game.home_team_score ?? (game as any).game_home_score;
+    const visitorScore = game.visitor_team_score ?? (game as any).game_visitor_score;
+    const ourScore = isPastGame && isHomeGame ? homeScore : visitorScore;
+    const theirScore = isPastGame && isHomeGame ? visitorScore : homeScore;
     
-    // Check if scores are valid (both defined and not invalid placeholders)
+    // Check if scores are valid (both defined and not clearly invalid placeholders)
+    // Only reject 999-999 as invalid, allow 0-0 as it could be valid (though rare)
     const hasValidScores = isPastGame && 
         ourScore !== undefined && 
         theirScore !== undefined &&
         typeof ourScore === 'number' &&
         typeof theirScore === 'number' &&
-        !(ourScore === 0 && theirScore === 0) && // Not 0-0 placeholder
         !(ourScore === 999 && theirScore === 999) && // Not 999-999 placeholder
         ourScore >= 0 && ourScore <= 50 && // Reasonable range
         theirScore >= 0 && theirScore <= 50;
