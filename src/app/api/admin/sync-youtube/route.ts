@@ -22,12 +22,30 @@ export async function POST(request: NextRequest) {
     // Check current sync status
     const syncStatus = await getSyncStatus();
 
-    // Check if already revalidating
+    // Check if already revalidating, but reset if it seems stuck
+    // (if isRevalidating is true but lastSyncTime is old or null, it might be stuck)
     if (syncStatus.isRevalidating) {
-      return NextResponse.json({ 
-        message: 'Sync already in progress',
-        status: syncStatus
-      }, { status: 429 });
+      const stuckTimeout = 10 * 60 * 1000; // 10 minutes - if no sync completed in this time, consider it stuck
+      const timeSinceLastSync = syncStatus.lastSyncTime 
+        ? Date.now() - syncStatus.lastSyncTime 
+        : Infinity;
+      
+      // If lastSyncTime is null or very old, and we're marked as revalidating, it's likely stuck
+      if (!syncStatus.lastSyncTime || timeSinceLastSync > stuckTimeout) {
+        // Reset stuck revalidating flag
+        debugLog('[YouTube Sync] Resetting stuck revalidating flag (no recent sync activity)');
+        await setSyncStatus({
+          ...syncStatus,
+          isRevalidating: false,
+          lastError: syncStatus.lastError || 'Previous sync was stuck and has been reset'
+        });
+      } else {
+        return NextResponse.json({ 
+          error: 'Sync already in progress',
+          message: 'A sync operation is currently running. Please wait for it to complete.',
+          status: syncStatus
+        }, { status: 429 });
+      }
     }
 
     // Check cooldown
@@ -38,9 +56,11 @@ export async function POST(request: NextRequest) {
         const remainingMinutes = Math.ceil(remainingMs / 60000);
         
         return NextResponse.json({ 
-          message: `Cooldown active. Please wait ${remainingMinutes} minutes.`,
+          error: 'Cooldown active',
+          message: `Please wait ${remainingMinutes} minutes before syncing again. This helps prevent YouTube rate limiting.`,
           status: syncStatus,
-          remainingMs
+          remainingMs,
+          remainingMinutes
         }, { status: 429 });
       }
     }
@@ -83,6 +103,11 @@ export async function POST(request: NextRequest) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : undefined;
 
+    // Check if this is a rate limit error from YouTube
+    const isRateLimited = errorMessage.toLowerCase().includes('rate limit') || 
+                         errorMessage.toLowerCase().includes('429') ||
+                         errorMessage.toLowerCase().includes('too many requests');
+
     // Update sync status with error
     const currentStatus = await getSyncStatus();
     await setSyncStatus({
@@ -90,6 +115,16 @@ export async function POST(request: NextRequest) {
       isRevalidating: false,
       lastError: errorMessage
     });
+
+    // Return 429 for rate limiting, 500 for other errors
+    if (isRateLimited) {
+      return NextResponse.json({ 
+        error: 'YouTube rate limit exceeded. Please wait before trying again.',
+        message: errorMessage,
+        retryAfter: 'Please wait at least 1 hour before retrying.',
+        details: errorStack
+      }, { status: 429 });
+    }
 
     return NextResponse.json({ 
       error: errorMessage || 'Sync failed',
