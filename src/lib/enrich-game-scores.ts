@@ -149,6 +149,9 @@ export function enrichPastGamesWithStatScores(
 ): Game[] {
   console.log(`[Stat Session Enrichment] Processing ${games.length} games with ${statSessions.length} stat sessions`);
   
+  // Track which stat sessions have been used to prevent multiple games from using the same session
+  const usedSessionIds = new Set<string>();
+  
   return games.map(game => {
     // Check both possible field name variations from MHR
     const homeScore = game.home_team_score ?? (game as any).game_home_score;
@@ -170,8 +173,9 @@ export function enrichPastGamesWithStatScores(
       return game;
     }
     
-    // Try to find a matching stat session
-    const matchingSession = findMatchingStatSession(game, statSessions, ourTeamName);
+    // Try to find a matching stat session (excluding already used ones)
+    const availableSessions = statSessions.filter(s => !usedSessionIds.has(s.id));
+    const matchingSession = findMatchingStatSession(game, availableSessions, ourTeamName);
     
     if (!matchingSession) {
       // No stat session found - remove invalid scores (0-0, 999-999) so they don't display
@@ -187,18 +191,27 @@ export function enrichPastGamesWithStatScores(
       return game;
     }
     
+    // Mark this session as used
+    usedSessionIds.add(matchingSession.id);
+    
     // Extract scores from stat session
     const usGoals = matchingSession.usStats.goals;
     const themGoals = matchingSession.themStats.goals;
     
     console.log(`[Stat Session Match] Using scores from session: sessionId=${matchingSession.id}, usGoals=${usGoals}, themGoals=${themGoals}`);
     
-    // Determine if we're home or visitor
-    const isHomeGame = teamNamesMatch(game.home_team_name, ourTeamName);
+    // Determine which team is "us" using the stat session's ourTeamName
+    // This is more reliable than using the passed ourTeamName parameter
+    const sessionOurTeamName = matchingSession.ourTeamName || ourTeamName;
+    const isHomeGame = teamNamesMatch(game.home_team_name, sessionOurTeamName);
     
-    // Map stat session scores to home/visitor
+    // Map stat session scores to home/visitor correctly
+    // If we're home, usGoals goes to home, themGoals goes to visitor
+    // If we're visitor, usGoals goes to visitor, themGoals goes to home
     const enrichedHomeScore = isHomeGame ? usGoals : themGoals;
     const enrichedVisitorScore = isHomeGame ? themGoals : usGoals;
+    
+    console.log(`[Stat Session Match] Team mapping: sessionOurTeamName=${sessionOurTeamName}, isHomeGame=${isHomeGame}, homeTeam=${game.home_team_name}, visitorTeam=${game.visitor_team_name}`);
     
     // Use stat session scores if they're valid, otherwise keep original scores
     if (hasValidScores(enrichedHomeScore, enrichedVisitorScore)) {
