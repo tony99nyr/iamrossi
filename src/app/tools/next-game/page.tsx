@@ -165,5 +165,28 @@ export default async function NextGamePage() {
     // Check if there are any live games (games with live stream URLs)
     const liveGames = enrichedFutureGames.filter((game: Game) => (game as unknown as { liveStreamUrl?: string }).liveStreamUrl);
 
-    return <NextGameClient futureGames={enrichedFutureGames} pastGames={enrichedPastGames} settings={settings} syncStatus={syncStatus} liveGames={liveGames} />;
+    // Detect active live streams from YouTube videos (not just matched to games)
+    // Prioritize actually live streams over upcoming ones
+    const activeLiveStreams = youtubeVideos.filter(video => {
+        return video.videoType === 'live' || video.videoType === 'upcoming';
+    });
+
+    // Get the most recent active live stream (prioritize live over upcoming)
+    const activeLiveStream = activeLiveStreams
+        .sort((a, b) => {
+            // Sort live streams first, then upcoming
+            if (a.videoType === 'live' && b.videoType !== 'live') return -1;
+            if (a.videoType !== 'live' && b.videoType === 'live') return 1;
+            return 0;
+        })[0] || null;
+
+    return <NextGameClient 
+        futureGames={enrichedFutureGames} 
+        pastGames={enrichedPastGames} 
+        settings={settings} 
+        syncStatus={syncStatus} 
+        calendarSyncStatus={calendarSyncStatus} 
+        liveGames={liveGames}
+        activeLiveStream={activeLiveStream}
+    />;
 }

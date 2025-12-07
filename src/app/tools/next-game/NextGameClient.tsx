@@ -14,6 +14,8 @@ import SyncStatusIndicator from '@/components/SyncStatusIndicator';
 import LiveStreamAlert from './components/LiveStreamAlert';
 import { containerStyle } from './styles';
 import type { EnrichedGame } from '@/utils/videoMatcher';
+import type { YouTubeVideo } from '@/lib/youtube-service';
+import type { CalendarSyncStatus } from '@/lib/kv';
 
 interface NextGameClientProps {
     futureGames: Game[];
@@ -25,10 +27,12 @@ interface NextGameClientProps {
         identifiers: string[];
     };
     syncStatus: SyncStatus;
+    calendarSyncStatus?: CalendarSyncStatus;
     liveGames: EnrichedGame[];
+    activeLiveStream: YouTubeVideo | null;
 }
 
-export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, liveGames }: NextGameClientProps) {
+export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, calendarSyncStatus, liveGames, activeLiveStream }: NextGameClientProps) {
     // State for accordion - first game expanded by default
     const [expandedGameId, setExpandedGameId] = useState<string | number | null>(
         futureGames.length > 0 ? (futureGames[0].game_nbr ?? null) : null
@@ -80,10 +84,18 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 mhrYear={settings.mhrYear}
             />
             
+            {/* Active live stream alert - show above YouTube channel link if there's an active live/upcoming stream */}
+            {activeLiveStream && (
+                <LiveStreamAlert 
+                    liveStream={activeLiveStream}
+                    isStandalone={true}
+                />
+            )}
+
             <SocialLinks />
 
-            {/* Live stream alert - show if any live games */}
-            {liveGames.length > 0 && (
+            {/* Live stream alert - show if any live games (matched to games) */}
+            {liveGames.length > 0 && !activeLiveStream && (
                 <LiveStreamAlert liveGame={liveGames[0]} />
             )}
 
