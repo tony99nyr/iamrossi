@@ -51,8 +51,16 @@ function datesMatch(gameDate: string, sessionDate: string): boolean {
     const gameDateObj = new Date(gameDate);
     const sessionDateObj = new Date(sessionDate);
     
-    // Compare dates only (ignore time)
-    return gameDateObj.toDateString() === sessionDateObj.toDateString();
+    // Check if dates are valid
+    if (isNaN(gameDateObj.getTime()) || isNaN(sessionDateObj.getTime())) {
+      return false;
+    }
+    
+    // Compare dates only (ignore time) - use YYYY-MM-DD format for reliable comparison
+    const gameDateStr = gameDateObj.toISOString().split('T')[0];
+    const sessionDateStr = sessionDateObj.toISOString().split('T')[0];
+    
+    return gameDateStr === sessionDateStr;
   } catch {
     return false;
   }
@@ -62,12 +70,25 @@ function datesMatch(gameDate: string, sessionDate: string): boolean {
  * Finds a matching stat session for a game
  */
 function findMatchingStatSession(game: Game, statSessions: StatSession[], ourTeamName: string): StatSession | null {
-  // First try to match by gameId
-  if (game.game_nbr !== undefined) {
-    const gameIdMatch = statSessions.find(session => 
-      session.gameId && String(session.gameId) === String(game.game_nbr)
-    );
-    if (gameIdMatch) return gameIdMatch;
+  // First try to match by gameId (most reliable)
+  if (game.game_nbr !== undefined && game.game_nbr !== null) {
+    const gameNbr = String(game.game_nbr);
+    const gameIdMatch = statSessions.find(session => {
+      if (!session.gameId) return false;
+      // Handle both string and number gameIds
+      const sessionGameId = String(session.gameId).trim();
+      return sessionGameId === gameNbr;
+    });
+    if (gameIdMatch) {
+      console.log(`[Stat Session Match] ✅ Found by gameId: game_nbr=${game.game_nbr}, sessionId=${gameIdMatch.id}, opponent=${gameIdMatch.opponent}`);
+      return gameIdMatch;
+    } else {
+      // Log available gameIds for debugging
+      const sessionsWithGameIds = statSessions.filter(s => s.gameId).map(s => ({ id: s.id, gameId: s.gameId, opponent: s.opponent }));
+      if (sessionsWithGameIds.length > 0) {
+        console.log(`[Stat Session Match] ⚠️ No match by gameId for game_nbr=${game.game_nbr}. Available gameIds:`, sessionsWithGameIds);
+      }
+    }
   }
   
   // Then try to match by date and opponent
@@ -78,7 +99,7 @@ function findMatchingStatSession(game: Game, statSessions: StatSession[], ourTea
   const homeTeamName = game.home_team_name;
   const visitorTeamName = game.visitor_team_name;
   
-  return statSessions.find(session => {
+  const match = statSessions.find(session => {
     if (!datesMatch(gameDate, session.date)) return false;
     
     // Check if session opponent matches the opponent team name in the game
@@ -103,7 +124,19 @@ function findMatchingStatSession(game: Game, statSessions: StatSession[], ourTea
     }
     
     return false;
-  }) || null;
+  });
+  
+  if (match) {
+    console.log(`[Stat Session Match] ✅ Found by date/opponent: gameDate=${gameDate}, game_nbr=${game.game_nbr}, opponent=${match.opponent}, sessionId=${match.id}`);
+  } else {
+    // Log potential matches for debugging
+    const dateMatches = statSessions.filter(s => datesMatch(gameDate, s.date));
+    if (dateMatches.length > 0) {
+      console.log(`[Stat Session Match] ⚠️ Date matches but no opponent match for game_nbr=${game.game_nbr}, date=${gameDate}. Date-matched sessions:`, dateMatches.map(s => ({ id: s.id, opponent: s.opponent, gameId: s.gameId })));
+    }
+  }
+  
+  return match || null;
 }
 
 /**
@@ -114,6 +147,8 @@ export function enrichPastGamesWithStatScores(
   statSessions: StatSession[],
   ourTeamName: string
 ): Game[] {
+  console.log(`[Stat Session Enrichment] Processing ${games.length} games with ${statSessions.length} stat sessions`);
+  
   return games.map(game => {
     // Check both possible field name variations from MHR
     const homeScore = game.home_team_score ?? (game as any).game_home_score;
@@ -141,6 +176,7 @@ export function enrichPastGamesWithStatScores(
     if (!matchingSession) {
       // No stat session found - remove invalid scores (0-0, 999-999) so they don't display
       if (isInvalidPlaceholder || isMissing) {
+        console.log(`[Stat Session Match] No match found for game: game_nbr=${game.game_nbr}, date=${game.game_date_format || game.game_date}, opponent=${game.home_team_name} vs ${game.visitor_team_name}`);
         return {
           ...game,
           home_team_score: undefined,
@@ -155,6 +191,8 @@ export function enrichPastGamesWithStatScores(
     const usGoals = matchingSession.usStats.goals;
     const themGoals = matchingSession.themStats.goals;
     
+    console.log(`[Stat Session Match] Using scores from session: sessionId=${matchingSession.id}, usGoals=${usGoals}, themGoals=${themGoals}`);
+    
     // Determine if we're home or visitor
     const isHomeGame = teamNamesMatch(game.home_team_name, ourTeamName);
     
@@ -164,6 +202,7 @@ export function enrichPastGamesWithStatScores(
     
     // Use stat session scores if they're valid, otherwise keep original scores
     if (hasValidScores(enrichedHomeScore, enrichedVisitorScore)) {
+      console.log(`[Stat Session Match] Applied scores: home=${enrichedHomeScore}, visitor=${enrichedVisitorScore}`);
       return {
         ...game,
         home_team_score: enrichedHomeScore,

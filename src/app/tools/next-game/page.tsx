@@ -142,6 +142,17 @@ export default async function NextGamePage() {
 
     // Enrich past games with stat session scores when MHR scores are invalid
     const statSessions = await getStatSessions();
+    console.log(`[Next Game] Loaded ${statSessions.length} stat sessions for matching`);
+    if (statSessions.length > 0) {
+      console.log(`[Next Game] Sample stat sessions:`, statSessions.slice(0, 3).map(s => ({
+        id: s.id,
+        gameId: s.gameId,
+        date: s.date,
+        opponent: s.opponent,
+        usGoals: s.usStats.goals,
+        themGoals: s.themStats.goals
+      })));
+    }
     enrichedPastGames = enrichPastGamesWithStatScores(
         enrichedPastGames,
         statSessions,
