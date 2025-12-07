@@ -16,9 +16,9 @@ function isValidScore(score: number | undefined | null): boolean {
 function hasValidScores(homeScore: number | undefined | null, visitorScore: number | undefined | null): boolean {
   if (!isValidScore(homeScore) || !isValidScore(visitorScore)) return false;
   
-  // Only reject clearly invalid placeholder values (999-999)
-  // Allow 0-0 as it could be a valid score (though rare)
+  // Reject clearly invalid placeholder values
   if (homeScore === 999 && visitorScore === 999) return false; // 999-999 is clearly placeholder
+  if (homeScore === 0 && visitorScore === 0) return false; // 0-0 is likely a placeholder when MHR doesn't have scores yet
   
   return true;
 }
@@ -61,7 +61,7 @@ function datesMatch(gameDate: string, sessionDate: string): boolean {
 /**
  * Finds a matching stat session for a game
  */
-function findMatchingStatSession(game: Game, statSessions: StatSession[]): StatSession | null {
+function findMatchingStatSession(game: Game, statSessions: StatSession[], ourTeamName: string): StatSession | null {
   // First try to match by gameId
   if (game.game_nbr !== undefined) {
     const gameIdMatch = statSessions.find(session => 
@@ -72,15 +72,37 @@ function findMatchingStatSession(game: Game, statSessions: StatSession[]): StatS
   
   // Then try to match by date and opponent
   const gameDate = game.game_date_format || game.game_date;
-  const opponentName = game.home_team_name || game.visitor_team_name;
+  if (!gameDate) return null;
   
-  if (!gameDate || !opponentName) return null;
+  // Check both home and visitor team names to find the opponent
+  const homeTeamName = game.home_team_name;
+  const visitorTeamName = game.visitor_team_name;
   
   return statSessions.find(session => {
     if (!datesMatch(gameDate, session.date)) return false;
     
-    // Check if session opponent matches game opponent
-    return teamNamesMatch(session.opponent, opponentName);
+    // Check if session opponent matches the opponent team name in the game
+    const sessionOpponent = session.opponent;
+    
+    // Determine which team is the opponent (the one that's not our team)
+    const isHomeGame = teamNamesMatch(homeTeamName || '', ourTeamName);
+    const opponentTeamName = isHomeGame ? visitorTeamName : homeTeamName;
+    
+    // Match session opponent against the game's opponent team
+    if (opponentTeamName && teamNamesMatch(sessionOpponent, opponentTeamName)) {
+      return true;
+    }
+    
+    // Fallback: try matching against either team name (excluding our team)
+    if (homeTeamName && !teamNamesMatch(homeTeamName, ourTeamName)) {
+      if (teamNamesMatch(sessionOpponent, homeTeamName)) return true;
+    }
+    
+    if (visitorTeamName && !teamNamesMatch(visitorTeamName, ourTeamName)) {
+      if (teamNamesMatch(sessionOpponent, visitorTeamName)) return true;
+    }
+    
+    return false;
   }) || null;
 }
 
@@ -102,30 +124,30 @@ export function enrichPastGamesWithStatScores(
       return game;
     }
     
-    // Only try stat session fallback if scores are clearly invalid (999-999) or missing
-    const isInvalidPlaceholder = homeScore === 999 && visitorScore === 999;
+    // Try stat session fallback if scores are invalid (999-999, 0-0) or missing
+    const isInvalidPlaceholder = (homeScore === 999 && visitorScore === 999) || 
+                                 (homeScore === 0 && visitorScore === 0);
     const isMissing = (homeScore === undefined || homeScore === null) || 
                       (visitorScore === undefined || visitorScore === null);
     
-    // If scores exist and are not clearly invalid, keep them as-is
-    if (!isInvalidPlaceholder && !isMissing) {
+    // If scores exist and are valid, use them (don't overwrite)
+    if (!isInvalidPlaceholder && !isMissing && hasValidScores(homeScore, visitorScore)) {
       return game;
     }
     
     // Try to find a matching stat session
-    const matchingSession = findMatchingStatSession(game, statSessions);
+    const matchingSession = findMatchingStatSession(game, statSessions, ourTeamName);
     
     if (!matchingSession) {
-      // No stat session found - only remove scores if they were clearly invalid (999-999)
-      // Otherwise preserve whatever scores exist (even if 0-0)
-      if (isInvalidPlaceholder) {
+      // No stat session found - remove invalid scores (0-0, 999-999) so they don't display
+      if (isInvalidPlaceholder || isMissing) {
         return {
           ...game,
           home_team_score: undefined,
           visitor_team_score: undefined,
         };
       }
-      // Keep original game as-is (preserves any existing scores)
+      // Keep original game as-is (preserves any existing valid scores)
       return game;
     }
     
