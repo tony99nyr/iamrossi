@@ -67,6 +67,7 @@ const KV_KEYS = {
   STATS: 'game:stats',
   ENRICHED_GAMES: 'cache:enriched-games',
   SYNC_STATUS: 'sync:status',
+  CALENDAR_SYNC_STATUS: 'sync:calendar-status',
   HOME_IP: 'admin:home-ip',
 } as const;
 
@@ -303,6 +304,28 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 export async function setSyncStatus(status: SyncStatus): Promise<void> {
   await ensureConnected();
   await redis.set(KV_KEYS.SYNC_STATUS, JSON.stringify(status));
+}
+
+// Calendar sync status operations
+export interface CalendarSyncStatus {
+  lastSyncTime: number | null;
+  isRevalidating: boolean;
+  lastError: string | null;
+}
+
+export async function getCalendarSyncStatus(): Promise<CalendarSyncStatus> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.CALENDAR_SYNC_STATUS);
+  return data ? JSON.parse(data) : {
+    lastSyncTime: null,
+    isRevalidating: false,
+    lastError: null
+  };
+}
+
+export async function setCalendarSyncStatus(status: CalendarSyncStatus): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.CALENDAR_SYNC_STATUS, JSON.stringify(status));
 }
 
 // Team map operations (for MHR team data caching)

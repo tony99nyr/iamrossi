@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchCalendarEvents } from '@/lib/fetch-calendar';
 import { transformCalendarEvents } from '@/lib/transform-calendar-events';
 import { fetchMHRSchedule, scrapeTeamDetails } from '@/lib/mhr-service';
-import { getSettings, setSchedule, setMHRSchedule, getTeamMap, setTeamMap, isTeamCacheStale } from '@/lib/kv';
+import { getSettings, setSchedule, setMHRSchedule, getTeamMap, setTeamMap, isTeamCacheStale, getCalendarSyncStatus, setCalendarSyncStatus } from '@/lib/kv';
 import { verifyAdminAuth } from '@/lib/auth';
 import { debugLog } from '@/lib/logger';
 
@@ -16,6 +16,17 @@ export async function POST(request: NextRequest) {
   if (!verifyAdminAuth(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  
+  // Get current sync status
+  const syncStatus = await getCalendarSyncStatus();
+  
+  // Set revalidating flag
+  await setCalendarSyncStatus({
+    ...syncStatus,
+    isRevalidating: true,
+    lastError: null
+  });
+  
   try {
     // 1. Get Settings from KV
     const settings = await getSettings();
@@ -75,6 +86,13 @@ export async function POST(request: NextRequest) {
     // 5. Save Schedule to KV
     await setSchedule(schedule);
 
+    // Update sync status - success
+    await setCalendarSyncStatus({
+      lastSyncTime: Date.now(),
+      isRevalidating: false,
+      lastError: null
+    });
+
     return NextResponse.json({ 
         success: true, 
         message: `Successfully synced ${schedule.length} games`,
@@ -84,6 +102,14 @@ export async function POST(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('Sync failed:', error);
+    
+    // Update sync status - error
+    await setCalendarSyncStatus({
+      ...syncStatus,
+      isRevalidating: false,
+      lastError: error.message || 'Sync failed'
+    });
+    
     return NextResponse.json({ error: error.message || 'Sync failed' }, { status: 500 });
   }
 }

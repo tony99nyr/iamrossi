@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
-import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getStatSessions } from '@/lib/kv';
+import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, getStatSessions } from '@/lib/kv';
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
 
@@ -78,6 +78,7 @@ export default async function NextGamePage() {
 
     // Check sync status and trigger background sync if needed
     const syncStatus = await getSyncStatus();
+    const calendarSyncStatus = await getCalendarSyncStatus();
     const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
     const shouldTriggerSync = !syncStatus.isRevalidating && 
         (!syncStatus.lastSyncTime || (new Date().getTime() - syncStatus.lastSyncTime) > COOLDOWN_MS);

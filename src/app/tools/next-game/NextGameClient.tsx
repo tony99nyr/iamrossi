@@ -27,7 +27,7 @@ interface NextGameClientProps {
         identifiers: string[];
     };
     syncStatus: SyncStatus;
-    calendarSyncStatus?: CalendarSyncStatus;
+    calendarSyncStatus: CalendarSyncStatus;
     liveGames: EnrichedGame[];
     activeLiveStream: YouTubeVideo | null;
 }
