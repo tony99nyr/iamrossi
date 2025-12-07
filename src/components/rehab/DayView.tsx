@@ -70,7 +70,6 @@ export default function DayView({
             ...entryEx,
         };
     }).filter(Boolean) as (Exercise & Partial<ExerciseEntry>)[] || []).sort((a, b) => {
-<<<<<<< HEAD
         // Sort by timestamp: oldest exercises first, newest exercises last
         // Exercises without timestamps go to the end (after all timestamped exercises)
         
@@ -85,13 +84,6 @@ export default function DayView({
         
         // Both have timestamps: sort chronologically (oldest first)
         // localeCompare on ISO strings returns negative if a < b (a is older)
-=======
-        // Sort by timestamp (oldest first)
-        // Exercises without timestamps go to the end
-        if (!a.timestamp && !b.timestamp) return 0;
-        if (!a.timestamp) return 1;
-        if (!b.timestamp) return -1;
->>>>>>> origin/main
         return a.timestamp.localeCompare(b.timestamp);
     });
 
