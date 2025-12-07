@@ -99,16 +99,18 @@ export async function transformCalendarEvents(
             // Generate a unique ID for the placeholder
             const placeholderId = crypto.createHash('md5').update(`${event.start}-${event.summary}`).digest('hex').substring(0, 8);
 
-            const year = startDate.getFullYear();
-            const month = String(startDate.getMonth() + 1).padStart(2, '0');
-            const day = String(startDate.getDate()).padStart(2, '0');
-            const localDateStr = `${year}-${month}-${day}`;
+            // Extract date components in Eastern Time
+            const startEasternDateStr = startDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' });
+            const [startMonthNum, startDayNum, startYear] = startEasternDateStr.split('/');
+            const localDateStr = `${startYear}-${startMonthNum}-${startDayNum}`;
 
-            // Format date range: "Dec 13-15" or "Dec 31-Jan 2"
-            const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
-            const endMonth = endDate.toLocaleDateString('en-US', { month: 'short' });
-            const startDay = startDate.getDate();
-            const endDay = endDate.getDate();
+            // Format date range: "Dec 13-15" or "Dec 31-Jan 2" in Eastern Time
+            const startMonth = startDate.toLocaleDateString('en-US', { month: 'short', timeZone: 'America/New_York' });
+            const endMonth = endDate.toLocaleDateString('en-US', { month: 'short', timeZone: 'America/New_York' });
+            const startDay = parseInt(startDayNum, 10);
+            const endEasternDateStr = endDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' });
+            const [, endDayNum] = endEasternDateStr.split('/');
+            const endDay = parseInt(endDayNum, 10);
 
             const dateRangePretty = startMonth === endMonth
                 ? `${startMonth} ${startDay}-${endDay}`
@@ -153,8 +155,8 @@ export async function transformCalendarEvents(
                 isPlaceholder: true,
                 placeholderStartDate: startDate.toISOString(),
                 placeholderEndDate: endDate.toISOString(),
-                placeholderStartDatePretty: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                placeholderEndDatePretty: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                placeholderStartDatePretty: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' }),
+                placeholderEndDatePretty: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' }),
                 placeholderLabel: cleanSummary,
                 placeholderDescription: `${cleanSummary} - Schedule TBD`,
             };
@@ -173,7 +175,7 @@ export async function transformCalendarEvents(
         }
 
         const gameDate = new Date(event.start);
-        const gameTime = gameDate.toLocaleTimeString('en-US', { hour12: false });
+        const gameTime = gameDate.toLocaleTimeString('en-US', { hour12: false, timeZone: 'America/New_York' });
         
         // Generate a unique game ID
         const gameId = crypto.createHash('md5').update(`${event.start}-${event.summary}`).digest('hex').substring(0, 8);
@@ -185,10 +187,10 @@ export async function transformCalendarEvents(
             debugLog(`[MHR] Found data for ${opponent}:`, mhrData.name);
         }
 
-        // Use local date for matching to avoid timezone issues (e.g. Sat night game becoming Sun in UTC)
-        const year = gameDate.getFullYear();
-        const month = String(gameDate.getMonth() + 1).padStart(2, '0');
-        const day = String(gameDate.getDate()).padStart(2, '0');
+        // Use Eastern Time date for matching to avoid timezone issues (e.g. Sat night game becoming Sun in UTC)
+        // Extract date components in Eastern Time
+        const easternDateStr = gameDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' });
+        const [month, day, year] = easternDateStr.split('/');
         const localDateStr = `${year}-${month}-${day}`;
 
         // Try to match this calendar event with an MHR game to get the real game_nbr and scores
@@ -243,8 +245,8 @@ export async function transformCalendarEvents(
             game_nbr: mhrGameNbr, // Use MHR game_nbr if matched, otherwise hash ID
             game_date_format: localDateStr,
             game_time_format: gameTime,
-            game_date_format_pretty: gameDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-            game_time_format_pretty: gameDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+            game_date_format_pretty: gameDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }),
+            game_time_format_pretty: gameDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }),
             home_team_name: isHomeGame ? settings.teamName : (mhrData?.name || opponent),
             visitor_team_name: isHomeGame ? (mhrData?.name || opponent) : settings.teamName,
             home_team_logo: isHomeGame ? ourTeamLogo : (mhrData?.logo || ''),
