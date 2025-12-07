@@ -198,12 +198,25 @@ export function enrichPastGamesWithStatScores(
     const usGoals = matchingSession.usStats.goals;
     const themGoals = matchingSession.themStats.goals;
     
-    console.log(`[Stat Session Match] Using scores from session: sessionId=${matchingSession.id}, usGoals=${usGoals}, themGoals=${themGoals}`);
+    console.log(`[Stat Session Match] Using scores from session: sessionId=${matchingSession.id}, usGoals=${usGoals}, themGoals=${themGoals}, opponent=${matchingSession.opponent}`);
     
-    // Determine which team is "us" using the stat session's ourTeamName
-    // This is more reliable than using the passed ourTeamName parameter
+    // Determine which team is "us" by checking which team name matches
+    // First try using the stat session's ourTeamName if available
     const sessionOurTeamName = matchingSession.ourTeamName || ourTeamName;
-    const isHomeGame = teamNamesMatch(game.home_team_name, sessionOurTeamName);
+    let isHomeGame = teamNamesMatch(game.home_team_name, sessionOurTeamName);
+    
+    // Also check the opponent field - if opponent matches visitor, we're home; if opponent matches home, we're visitor
+    const opponentMatchesVisitor = teamNamesMatch(matchingSession.opponent, game.visitor_team_name);
+    const opponentMatchesHome = teamNamesMatch(matchingSession.opponent, game.home_team_name);
+    
+    if (opponentMatchesVisitor) {
+      // Opponent is visitor, so we're home
+      isHomeGame = true;
+    } else if (opponentMatchesHome) {
+      // Opponent is home, so we're visitor
+      isHomeGame = false;
+    }
+    // Otherwise fall back to team name matching
     
     // Map stat session scores to home/visitor correctly
     // If we're home, usGoals goes to home, themGoals goes to visitor
@@ -211,15 +224,18 @@ export function enrichPastGamesWithStatScores(
     const enrichedHomeScore = isHomeGame ? usGoals : themGoals;
     const enrichedVisitorScore = isHomeGame ? themGoals : usGoals;
     
-    console.log(`[Stat Session Match] Team mapping: sessionOurTeamName=${sessionOurTeamName}, isHomeGame=${isHomeGame}, homeTeam=${game.home_team_name}, visitorTeam=${game.visitor_team_name}`);
+    console.log(`[Stat Session Match] Team mapping: sessionOurTeamName=${sessionOurTeamName}, opponent=${matchingSession.opponent}, isHomeGame=${isHomeGame}, homeTeam=${game.home_team_name}, visitorTeam=${game.visitor_team_name}, enrichedHome=${enrichedHomeScore}, enrichedVisitor=${enrichedVisitorScore}`);
     
     // Use stat session scores if they're valid, otherwise keep original scores
     if (hasValidScores(enrichedHomeScore, enrichedVisitorScore)) {
-      console.log(`[Stat Session Match] Applied scores: home=${enrichedHomeScore}, visitor=${enrichedVisitorScore}`);
+      console.log(`[Stat Session Match] Applied scores: home=${enrichedHomeScore}, visitor=${enrichedVisitorScore}, isHomeGame=${isHomeGame}`);
+      // Store which team is "us" in the game object so GameListItem can use it correctly
       return {
         ...game,
         home_team_score: enrichedHomeScore,
         visitor_team_score: enrichedVisitorScore,
+        // Store metadata about which team is "us" based on stat session
+        _statSessionIsHomeGame: isHomeGame,
       };
     }
     

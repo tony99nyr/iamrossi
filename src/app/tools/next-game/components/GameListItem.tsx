@@ -35,8 +35,15 @@ export default function GameListItem({
     // Check both possible field name variations from MHR
     const homeScore = game.home_team_score ?? (game as any).game_home_score;
     const visitorScore = game.visitor_team_score ?? (game as any).game_visitor_score;
-    const ourScore = isPastGame && isHomeGame ? homeScore : visitorScore;
-    const theirScore = isPastGame && isHomeGame ? visitorScore : homeScore;
+    
+    // If we have stat session metadata about which team is "us", use that
+    // Otherwise fall back to the isHomeGame prop
+    const effectiveIsHomeGame = (game as any)._statSessionIsHomeGame !== undefined 
+        ? (game as any)._statSessionIsHomeGame 
+        : isHomeGame;
+    
+    const ourScore = isPastGame && effectiveIsHomeGame ? homeScore : visitorScore;
+    const theirScore = isPastGame && effectiveIsHomeGame ? visitorScore : homeScore;
     
     // Check if scores are valid (both defined and not invalid placeholders)
     // Reject 0-0 and 999-999 as invalid placeholders

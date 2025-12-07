@@ -136,6 +136,12 @@ export const statSessionSchema = z.object({
   location: z.string().optional(),
   startTime: z.number(),
   endTime: z.number().optional(),
+  // Additional game information from schedule
+  scheduledGameDate: z.string().optional(),
+  scheduledGameTime: z.string().optional(),
+  homeTeamName: z.string().optional(),
+  visitorTeamName: z.string().optional(),
+  gameType: z.string().optional(),
 });
 
 export const deleteSessionSchema = z.object({
