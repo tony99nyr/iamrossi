@@ -18,6 +18,19 @@ interface ExerciseCardProps {
     editable?: boolean; // New prop to control if fields are editable
 }
 
+function formatTimestamp(timestamp: string): string {
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+        });
+    } catch {
+        return '';
+    }
+}
+
 export default function ExerciseCard({ 
     exercise, 
     onRemove, 
@@ -45,13 +58,23 @@ export default function ExerciseCard({
             {/* Header with title and remove button */}
             <div className={css({ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' })}>
                 <div className={css({ flex: 1, minWidth: 0 })}>
-                    <div className={css({
-                        color: '#ededed',
-                        fontSize: '19px',
-                        fontWeight: '500',
-                        marginBottom: '4px',
-                    })}>
-                        {exercise.title}
+                    <div className={css({ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' })}>
+                        <div className={css({
+                            color: '#ededed',
+                            fontSize: '19px',
+                            fontWeight: '500',
+                        })}>
+                            {exercise.title}
+                        </div>
+                        {exercise.timestamp && (
+                            <div className={css({
+                                color: '#666',
+                                fontSize: '13px',
+                                fontWeight: '400',
+                            })}>
+                                {formatTimestamp(exercise.timestamp)}
+                            </div>
+                        )}
                     </div>
                     {exercise.description && (
                         <div className={css({
