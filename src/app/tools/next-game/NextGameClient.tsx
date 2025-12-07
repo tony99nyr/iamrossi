@@ -4,13 +4,14 @@ import { useState } from 'react';
 import { ThunderstormBackground } from '@/components/ThunderstormBackground';
 import { cx } from '@styled-system/css';
 import { Game } from '@/types';
-import type { SyncStatus } from '@/lib/kv';
+import type { SyncStatus, CalendarSyncStatus } from '@/lib/kv';
 
 import HeroSection from './components/HeroSection';
 import SocialLinks from './components/SocialLinks';
 import UpcomingGamesList from './components/UpcomingGamesList';
 import PastGamesSection from './components/PastGamesSection';
 import SyncStatusIndicator from '@/components/SyncStatusIndicator';
+import CacheStatusFooter from '@/components/CacheStatusFooter';
 import LiveStreamAlert from './components/LiveStreamAlert';
 import { containerStyle } from './styles';
 import type { EnrichedGame } from '@/utils/videoMatcher';
@@ -25,10 +26,11 @@ interface NextGameClientProps {
         identifiers: string[];
     };
     syncStatus: SyncStatus;
+    calendarSyncStatus: CalendarSyncStatus;
     liveGames: EnrichedGame[];
 }
 
-export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, liveGames }: NextGameClientProps) {
+export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, calendarSyncStatus, liveGames }: NextGameClientProps) {
     // State for accordion - first game expanded by default
     const [expandedGameId, setExpandedGameId] = useState<string | number | null>(
         futureGames.length > 0 ? (futureGames[0].game_nbr ?? null) : null
@@ -99,6 +101,11 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 expandedGameId={expandedGameId}
                 onGameClick={handleGameClick}
                 mhrTeamId={settings.mhrTeamId}
+            />
+            
+            <CacheStatusFooter 
+                initialYouTubeStatus={syncStatus}
+                initialCalendarStatus={calendarSyncStatus}
             />
             
             <SyncStatusIndicator initialStatus={syncStatus} />

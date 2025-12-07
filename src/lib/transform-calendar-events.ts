@@ -68,6 +68,9 @@ export async function transformCalendarEvents(
     // Use mhrYear from settings if available, otherwise use the passed year parameter
     const effectiveYear = mhrYear || year;
 
+    // Season ends March 1st - create cutoff date
+    const seasonEndDate = new Date(`${effectiveYear}-03-01T23:59:59`);
+
     // Fetch our team's MHR data to get logo
     let ourTeamLogo = '';
     if (settings.mhrTeamId) {
@@ -85,6 +88,20 @@ export async function transformCalendarEvents(
     const schedule = [];
 
     for (const event of events) {
+        // Skip events after season end (March 1st)
+        const eventStartDate = new Date(event.start);
+        if (eventStartDate > seasonEndDate) {
+            debugLog(`Skipping event after season end: "${event.summary}" (${eventStartDate.toISOString()})`);
+            continue;
+        }
+
+        // Skip practice events - only include actual games
+        const lowerSummary = event.summary.toLowerCase();
+        if (lowerSummary.includes('practice') || lowerSummary.includes('pd practice')) {
+            debugLog(`Skipping practice event: "${event.summary}"`);
+            continue;
+        }
+
         // Check if this is a placeholder event BEFORE parsing opponent
         // This allows us to create placeholders for multi-day events or explicit TBD events
         const isPlaceholder = isPlaceholderEvent(event, event.summary);
@@ -341,6 +358,15 @@ function parseEventSummary(summary: string, identifiers: string[]): { opponent: 
                     isHome = false;
                 }
             }
+        }
+    } else {
+        // No separator found - check if the title is just an opponent name
+        // If the summary doesn't contain any of our team identifiers, treat it as opponent
+        if (!isUs(cleanSummary, identifiers)) {
+            // Title is likely just the opponent name
+            // Default to home game (common convention when only opponent is listed)
+            opponent = cleanSummary;
+            isHome = true;
         }
     }
 

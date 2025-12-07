@@ -7,7 +7,9 @@ import { StatSession } from '@/types';
 import GameSetup from '@/components/stats/GameSetup';
 import SessionHistory from '@/components/stats/SessionHistory';
 import HeroSection from '../next-game/components/HeroSection';
+import CacheStatusFooter from '@/components/CacheStatusFooter';
 import { ThunderstormBackground } from '@/components/ThunderstormBackground';
+import type { SyncStatus, CalendarSyncStatus } from '@/lib/kv';
 
 const containerStyle = css({
   minHeight: '100vh',
@@ -29,6 +31,16 @@ export default function StatRecordingPage() {
       mhrTeamId: '19758',
       mhrYear: '2025'
   });
+  const [youtubeStatus, setYoutubeStatus] = useState<SyncStatus>({
+    lastSyncTime: null,
+    isRevalidating: false,
+    lastError: null
+  });
+  const [calendarStatus, setCalendarStatus] = useState<CalendarSyncStatus>({
+    lastSyncTime: null,
+    isRevalidating: false,
+    lastError: null
+  });
   const router = useRouter();
 
   useEffect(() => {
@@ -44,6 +56,15 @@ export default function StatRecordingPage() {
               }
           })
           .catch(err => console.error('Failed to load settings', err));
+
+      // Fetch sync statuses
+      Promise.all([
+        fetch('/api/admin/sync-youtube').then(res => res.ok ? res.json() : null),
+        fetch('/api/admin/sync-schedule-status').then(res => res.ok ? res.json() : null)
+      ]).then(([youtube, calendar]) => {
+        if (youtube) setYoutubeStatus(youtube);
+        if (calendar) setCalendarStatus(calendar);
+      }).catch(err => console.error('Failed to load sync status', err));
   }, []);
 
   const handleStartSession = async (session: StatSession) => {
@@ -125,6 +146,11 @@ export default function StatRecordingPage() {
           <SessionHistory />
         </div>
       )}
+
+      <CacheStatusFooter 
+        initialYouTubeStatus={youtubeStatus}
+        initialCalendarStatus={calendarStatus}
+      />
       </div>
     </>
   );

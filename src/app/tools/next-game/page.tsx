@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
-import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getStatSessions } from '@/lib/kv';
+import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, getStatSessions } from '@/lib/kv';
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
 
@@ -78,6 +78,7 @@ export default async function NextGamePage() {
 
     // Check sync status and trigger background sync if needed
     const syncStatus = await getSyncStatus();
+    const calendarSyncStatus = await getCalendarSyncStatus();
     const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
     const shouldTriggerSync = !syncStatus.isRevalidating && 
         (!syncStatus.lastSyncTime || (new Date().getTime() - syncStatus.lastSyncTime) > COOLDOWN_MS);
@@ -121,10 +122,10 @@ export default async function NextGamePage() {
         today.setHours(0, 0, 0, 0);
         return gameDate < today;
     }).sort((a: Game, b: Game) => {
-        // Sort descending (most recent first)
-        const dateA = new Date(a.game_date_format || a.game_date);
-        const dateB = new Date(b.game_date_format || b.game_date);
-        return dateB.getTime() - dateA.getTime();
+        // Sort descending (most recent first) - include time for same-day games
+        const dateTimeA = new Date(`${a.game_date_format || a.game_date}T${a.game_time_format || a.game_time || '00:00:00'}`);
+        const dateTimeB = new Date(`${b.game_date_format || b.game_date}T${b.game_time_format || b.game_time || '00:00:00'}`);
+        return dateTimeB.getTime() - dateTimeA.getTime();
     });
 
     // Check cache for enriched games (video-matched)
@@ -159,11 +160,18 @@ export default async function NextGamePage() {
         settings.teamName
     );
 
+    // Re-sort enriched past games to ensure correct order (most recent first, including time)
+    enrichedPastGames.sort((a: Game, b: Game) => {
+        const dateTimeA = new Date(`${a.game_date_format || a.game_date}T${a.game_time_format || a.game_time || '00:00:00'}`);
+        const dateTimeB = new Date(`${b.game_date_format || b.game_date}T${b.game_time_format || b.game_time || '00:00:00'}`);
+        return dateTimeB.getTime() - dateTimeA.getTime();
+    });
+
     // Enrich future games with upcoming/live video data
     const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos);
 
     // Check if there are any live games (games with live stream URLs)
     const liveGames = enrichedFutureGames.filter((game: Game) => (game as unknown as { liveStreamUrl?: string }).liveStreamUrl);
 
-    return <NextGameClient futureGames={enrichedFutureGames} pastGames={enrichedPastGames} settings={settings} syncStatus={syncStatus} liveGames={liveGames} />;
+    return <NextGameClient futureGames={enrichedFutureGames} pastGames={enrichedPastGames} settings={settings} syncStatus={syncStatus} calendarSyncStatus={calendarSyncStatus} liveGames={liveGames} />;
 }

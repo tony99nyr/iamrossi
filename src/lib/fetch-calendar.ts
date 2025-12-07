@@ -32,11 +32,21 @@ export async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
       
       // Only process VEVENT type (actual events, not todos or other types)
       if (event.type === 'VEVENT') {
-        // Filter for game events - look for patterns like "vs", "@", "versus", or "-" in summary
         const summary = event.summary || '';
-        const isGameEvent = /\b(vs\.?|@|versus)\b|(?:\s+(?:-|–|—)\s+)/i.test(summary);
         
-        if (isGameEvent && event.start) {
+        // Skip practice events - only include actual games
+        const lowerSummary = summary.toLowerCase();
+        if (lowerSummary.includes('practice')) {
+          continue;
+        }
+        
+        // Filter for game events:
+        // 1. Has separator pattern (vs, @, versus, or hyphen) - traditional format
+        // 2. OR has start time and location - likely a game even without separator
+        const hasSeparator = /\b(vs\.?|@|versus)\b|(?:\s+(?:-|–|—)\s+)/i.test(summary);
+        const hasTimeAndLocation = event.start && event.location;
+        
+        if ((hasSeparator || hasTimeAndLocation) && event.start) {
           calendarEvents.push({
             summary: summary,
             start: new Date(event.start),
