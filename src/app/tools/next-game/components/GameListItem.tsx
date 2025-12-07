@@ -32,9 +32,32 @@ export default function GameListItem({
     const displayDate = game.game_date_format_pretty;
 
     // For past games, calculate score
-    const ourScore = isPastGame && isHomeGame ? game.game_home_score : game.game_visitor_score;
-    const theirScore = isPastGame && isHomeGame ? game.game_visitor_score : game.game_home_score;
-    const won = isPastGame && ourScore !== undefined && theirScore !== undefined && ourScore > theirScore;
+    // Check both possible field name variations from MHR
+    const homeScore = game.home_team_score ?? (game as any).game_home_score;
+    const visitorScore = game.visitor_team_score ?? (game as any).game_visitor_score;
+    
+    // If we have stat session metadata about which team is "us", use that
+    // Otherwise fall back to the isHomeGame prop
+    const effectiveIsHomeGame = (game as any)._statSessionIsHomeGame !== undefined 
+        ? (game as any)._statSessionIsHomeGame 
+        : isHomeGame;
+    
+    const ourScore = isPastGame && effectiveIsHomeGame ? homeScore : visitorScore;
+    const theirScore = isPastGame && effectiveIsHomeGame ? visitorScore : homeScore;
+    
+    // Check if scores are valid (both defined and not invalid placeholders)
+    // Reject 0-0 and 999-999 as invalid placeholders
+    const hasValidScores = isPastGame && 
+        ourScore !== undefined && 
+        theirScore !== undefined &&
+        typeof ourScore === 'number' &&
+        typeof theirScore === 'number' &&
+        !(ourScore === 0 && theirScore === 0) && // Not 0-0 placeholder
+        !(ourScore === 999 && theirScore === 999) && // Not 999-999 placeholder
+        ourScore >= 0 && ourScore <= 50 && // Reasonable range
+        theirScore >= 0 && theirScore <= 50;
+    
+    const won = hasValidScores && ourScore > theirScore;
 
     const opponentName = isHomeGame ? game.visitor_team_name : game.home_team_name;
     const displayOpponent = isPlaceholder 
@@ -73,12 +96,14 @@ export default function GameListItem({
                 {!isPlaceholder && (
                     <span 
                         className={cx('game-time', timeStyle)} 
-                        style={isPastGame ? { 
+                        style={isPastGame && hasValidScores ? { 
                             fontWeight: 'bold', 
                             color: won ? '#4ade80' : '#f87171' 
                         } : undefined}
                     >
-                        {isPastGame ? `${won ? 'W' : 'L'} ${ourScore}-${theirScore}` : game.game_time_format_pretty}
+                        {isPastGame && hasValidScores 
+                            ? `${won ? 'W' : 'L'} ${ourScore}-${theirScore}` 
+                            : game.game_time_format_pretty}
                     </span>
                 )}
             </div>

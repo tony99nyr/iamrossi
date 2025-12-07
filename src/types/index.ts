@@ -22,6 +22,7 @@ export interface ExerciseEntry {
   painLevel?: number | null;    // 0-10 scale
   difficultyLevel?: number | null; // 1-10 scale
   bfr?: boolean;
+  timestamp?: string;    // ISO 8601 timestamp when exercise was added
 }
 
 export interface RehabEntry {
@@ -255,5 +256,11 @@ export interface StatSession {
   location?: string;
   startTime: number;
   endTime?: number;
+  // Additional game information from schedule (when linked to a scheduled game)
+  scheduledGameDate?: string; // Scheduled game date (ISO string)
+  scheduledGameTime?: string; // Scheduled game time
+  homeTeamName?: string; // Home team name from schedule
+  visitorTeamName?: string; // Visitor team name from schedule
+  gameType?: string; // Game type (e.g., "Regular Season", "Playoff", etc.)
 }
 

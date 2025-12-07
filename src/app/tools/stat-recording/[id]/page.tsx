@@ -23,13 +23,23 @@ export default function SessionPage() {
   const [session, setSession] = useState<StatSession | null>(null);
   const [roster, setRoster] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rosterLoading, setRosterLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     fetch('/api/admin/roster')
-      .then(res => res.json())
-      .then(data => setRoster(data))
-      .catch(err => console.error('Failed to load roster', err));
+      .then(res => {
+        if (res.ok) {
+          return res.json();
+        }
+        throw new Error('Failed to load roster');
+      })
+      .then(data => setRoster(data || []))
+      .catch(err => {
+        console.error('Failed to load roster', err);
+        setError('Failed to load roster');
+      })
+      .finally(() => setRosterLoading(false));
   }, []);
 
   useEffect(() => {
@@ -56,10 +66,10 @@ export default function SessionPage() {
 
 
 
-  if (loading) {
+  if (loading || rosterLoading) {
     return (
       <div className={containerStyle}>
-        <div className={css({ color: '#888' })}>Loading session...</div>
+        <div className={css({ color: '#888' })}>Loading session and roster...</div>
       </div>
     );
   }

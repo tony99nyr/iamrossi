@@ -142,12 +142,25 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
 
     const isCustom = selectedGame === 'custom';
     let opponent = '';
-    let gameId = undefined;
-    let location = undefined;
+    let gameId: string | undefined = undefined;
+    let location: string | undefined = undefined;
+    let scheduledGameDate: string | undefined = undefined;
+    let scheduledGameTime: string | undefined = undefined;
+    let homeTeamName: string | undefined = undefined;
+    let visitorTeamName: string | undefined = undefined;
+    let gameType: string | undefined = undefined;
 
     if (isCustom) {
       opponent = customOpponent.trim();
+      // Custom games don't have a gameId - they're not linked to the schedule
     } else if (selectedGame && typeof selectedGame !== 'string') {
+      // Validate that game_nbr exists before proceeding
+      if (!selectedGame.game_nbr) {
+        console.error('Selected game is missing game_nbr');
+        alert('Selected game is missing game information. Please select a different game or use Custom Game.');
+        return;
+      }
+
       // Determine opponent based on who is not "Us"
       // Since we don't have the "Us" logic fully wired with settings yet, 
       // we'll assume the user selects the game and we can display both teams in the tracker
@@ -167,8 +180,19 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
       // Or just use the visitor name if we assume we are home?
       // Let's use "Opponent" for now and fix it when we have settings.
       opponent = selectedGame.visitor_team_name; // Fallback guess
-      gameId = selectedGame.game_nbr?.toString();
+      
+      // Save gameId to link this session to the scheduled game
+      // This makes it easier to combine data later for scores and other game information
+      // Normalize game_nbr to string (handles both string and number types)
+      gameId = String(selectedGame.game_nbr);
       location = selectedGame.rink_name;
+      
+      // Store additional identifying information from the schedule entry
+      scheduledGameDate = selectedGame.game_date_format || selectedGame.game_date;
+      scheduledGameTime = selectedGame.game_time_format || selectedGame.game_time;
+      homeTeamName = selectedGame.home_team_name;
+      visitorTeamName = selectedGame.visitor_team_name;
+      gameType = selectedGame.game_type;
     }
 
     const newSession: StatSession = {
@@ -184,6 +208,12 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
       location,
       startTime: Date.now(),
       ourTeamName: teamName,
+      // Additional game information from schedule (only set when linked to a scheduled game)
+      scheduledGameDate,
+      scheduledGameTime,
+      homeTeamName,
+      visitorTeamName,
+      gameType,
     };
 
     onStartSession(newSession);

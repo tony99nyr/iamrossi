@@ -29,6 +29,7 @@ export const exerciseEntrySchema = z.object({
   painLevel: z.number().min(0).max(10).nullable().optional(),
   difficultyLevel: z.number().min(1).max(10).nullable().optional(),
   bfr: z.boolean().optional(),
+  timestamp: z.string().optional(),
 });
 
 export const rehabEntrySchema = z.object({
@@ -135,6 +136,12 @@ export const statSessionSchema = z.object({
   location: z.string().optional(),
   startTime: z.number(),
   endTime: z.number().optional(),
+  // Additional game information from schedule
+  scheduledGameDate: z.string().optional(),
+  scheduledGameTime: z.string().optional(),
+  homeTeamName: z.string().optional(),
+  visitorTeamName: z.string().optional(),
+  gameType: z.string().optional(),
 });
 
 export const deleteSessionSchema = z.object({

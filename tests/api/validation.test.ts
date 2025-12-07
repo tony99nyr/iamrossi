@@ -122,6 +122,33 @@ describe('Request Validation Schemas', () => {
 
       expect(result.success).toBe(false);
     });
+
+    it('should accept optional timestamp field in exercise entries', () => {
+      const entry = {
+        date: '2025-01-15',
+        exercises: [
+          {
+            id: 'ex-1',
+            weight: '135lb',
+            timestamp: '2025-01-15T14:30:00.000Z',
+          },
+          {
+            id: 'ex-2',
+            weight: '100lb',
+            // No timestamp - should still be valid
+          },
+        ],
+      };
+
+      const result = safeValidateRequest(rehabEntrySchema, entry);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.exercises).toHaveLength(2);
+        expect(result.data.exercises[0].timestamp).toBe('2025-01-15T14:30:00.000Z');
+        expect(result.data.exercises[1].timestamp).toBeUndefined();
+      }
+    });
   });
 
   describe('exerciseSchema', () => {

@@ -60,7 +60,7 @@ export default function DayView({
 }: DayViewProps) {
     const [exerciseToDelete, setExerciseToDelete] = useState<{id: string, title: string} | null>(null);
 
-    const dayExercises = entry?.exercises.map(entryEx => {
+    const dayExercises = (entry?.exercises.map(entryEx => {
         const fullExercise = exercises.find(ex => ex.id === entryEx.id);
         if (!fullExercise) return null;
         
@@ -69,7 +69,14 @@ export default function DayView({
             ...fullExercise,
             ...entryEx,
         };
-    }).filter(Boolean) as (Exercise & Partial<ExerciseEntry>)[] || [];
+    }).filter(Boolean) as (Exercise & Partial<ExerciseEntry>)[] || []).sort((a, b) => {
+        // Sort by timestamp (oldest first)
+        // Exercises without timestamps go to the end
+        if (!a.timestamp && !b.timestamp) return 0;
+        if (!a.timestamp) return 1;
+        if (!b.timestamp) return -1;
+        return a.timestamp.localeCompare(b.timestamp);
+    });
 
     const formattedDate = formatDateHeader(date);
 

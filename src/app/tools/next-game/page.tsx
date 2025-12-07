@@ -1,7 +1,8 @@
 import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
-import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus } from '@/lib/kv';
+import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getStatSessions } from '@/lib/kv';
+import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
 
 // Force dynamic rendering since we're reading from KV
@@ -138,6 +139,25 @@ export default async function NextGamePage() {
         enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
         await setEnrichedGames(enrichedPastGames);
     }
+
+    // Enrich past games with stat session scores when MHR scores are invalid
+    const statSessions = await getStatSessions();
+    console.log(`[Next Game] Loaded ${statSessions.length} stat sessions for matching`);
+    if (statSessions.length > 0) {
+      console.log(`[Next Game] Sample stat sessions:`, statSessions.slice(0, 3).map(s => ({
+        id: s.id,
+        gameId: s.gameId,
+        date: s.date,
+        opponent: s.opponent,
+        usGoals: s.usStats.goals,
+        themGoals: s.themStats.goals
+      })));
+    }
+    enrichedPastGames = enrichPastGamesWithStatScores(
+        enrichedPastGames,
+        statSessions,
+        settings.teamName
+    );
 
     // Enrich future games with upcoming/live video data
     const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos);
