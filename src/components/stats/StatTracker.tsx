@@ -175,7 +175,7 @@ const SAD_EMOJIS = ['😢', '😭', '😞', '😠', '😡', '🤬', '👎', '�
 
 const StatTracker = ({ initialRoster, session, onExit }: StatTrackerProps) => {
   const [currentSession, setCurrentSession] = useState<StatSession>(session);
-  const [roster] = useState(initialRoster);
+  const [roster, setRoster] = useState(initialRoster);
   const [showGoalModal, setShowGoalModal] = useState<'us' | 'them' | null>(null);
   const [goalPlayerId, setGoalPlayerId] = useState<string>('');
   const [assist1Id, setAssist1Id] = useState<string>('');
@@ -252,14 +252,10 @@ const StatTracker = ({ initialRoster, session, onExit }: StatTrackerProps) => {
     });
   };
 
-  // Load roster on mount
+  // Sync roster state when initialRoster prop changes
   useEffect(() => {
-    // Roster is now passed as a prop, no need to fetch here
-    // fetch('/api/admin/roster')
-    //   .then(res => res.json())
-    //   .then(data => setRoster(data))
-    //   .catch(err => console.error('Failed to load roster', err));
-  }, []);
+    setRoster(initialRoster);
+  }, [initialRoster]);
 
   // Auto-save on changes
   useEffect(() => {
