@@ -110,11 +110,12 @@ export default async function NextGamePage() {
 
     // Filter for past games from MHR (current season only: 2025-2026)
     const currentSeasonStart = new Date('2025-08-01'); // Season typically starts in August
+    const currentSeasonEnd = new Date('2026-03-01'); // Season ends March 1st, 2026
     const pastGames = (mhrSchedule as unknown as Game[]).filter((game: Game) => {
         const gameDate = new Date(game.game_date_format || game.game_date);
 
-        // Must be from current season (after Aug 1, 2024)
-        if (gameDate < currentSeasonStart) return false;
+        // Must be from current season (after Aug 1, 2025 and before March 1, 2026)
+        if (gameDate < currentSeasonStart || gameDate >= currentSeasonEnd) return false;
 
         // Must be in the past (before today)
         const today = new Date();
