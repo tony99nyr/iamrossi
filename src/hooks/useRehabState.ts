@@ -414,6 +414,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
                     id: exercise.id,
                     painLevel: null,
                     difficultyLevel: null,
+                    timestamp: new Date().toISOString(),
                 };
 
                 const updatedExercises = [

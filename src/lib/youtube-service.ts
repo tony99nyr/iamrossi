@@ -13,6 +13,7 @@ const CHANNEL_HANDLE = process.env.YOUTUBE_CHANNEL_HANDLE || '@2015JuniorCanes';
 
 /**
  * Retry a page navigation with exponential backoff
+ * Handles 429 rate limiting with longer backoff
  */
 async function retryNavigation(
     page: Page,
@@ -22,23 +23,72 @@ async function retryNavigation(
 ): Promise<void> {
     let lastError: Error | null = null;
     
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            await page.goto(url, options);
-            return; // Success
-        } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-            const isLastAttempt = attempt === maxRetries;
-            
-            if (isLastAttempt) {
-                throw new Error(`Failed to navigate to ${url} after ${maxRetries} attempts: ${lastError.message}`);
-            }
-            
-            // Exponential backoff: 1s, 2s, 4s
-            const backoffMs = Math.pow(2, attempt - 1) * 1000;
-            debugLog(`[YouTube] Navigation attempt ${attempt} failed, retrying in ${backoffMs}ms...`);
-            await page.waitForTimeout(backoffMs);
+    // Set up response listener to detect 429 errors
+    let rateLimited = false;
+    const responseHandler = (response: any) => {
+        if (response && response.status() === 429) {
+            rateLimited = true;
         }
+    };
+    page.on('response', responseHandler);
+    
+    try {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            rateLimited = false;
+            try {
+                const response = await page.goto(url, options);
+                
+                // Check for 429 rate limiting
+                if (response && response.status() === 429) {
+                    rateLimited = true;
+                }
+                
+                if (rateLimited) {
+                    const retryAfter = response?.headers()?.['retry-after'];
+                    const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 5000;
+                    const isLastAttempt = attempt === maxRetries;
+                    
+                    if (isLastAttempt) {
+                        throw new Error(`Rate limited by YouTube after ${maxRetries} attempts. Please wait before trying again.`);
+                    }
+                    
+                    debugLog(`[YouTube] Rate limited (429), waiting ${waitTime}ms before retry ${attempt}/${maxRetries}...`);
+                    await page.waitForTimeout(waitTime);
+                    continue;
+                }
+                
+                // Success
+                page.off('response', responseHandler);
+                return;
+            } catch (error) {
+                lastError = error instanceof Error ? error : new Error(String(error));
+                const errorMessage = lastError.message.toLowerCase();
+                const isLastAttempt = attempt === maxRetries;
+                
+                // Check if it's a rate limit error
+                if (rateLimited || errorMessage.includes('429') || errorMessage.includes('too many requests') || errorMessage.includes('rate limit')) {
+                    const waitTime = Math.pow(2, attempt) * 5000; // 10s, 20s, 40s for rate limits
+                    if (isLastAttempt) {
+                        throw new Error(`Rate limited by YouTube after ${maxRetries} attempts. Please wait before trying again.`);
+                    }
+                    debugLog(`[YouTube] Rate limited, waiting ${waitTime}ms before retry ${attempt}/${maxRetries}...`);
+                    await page.waitForTimeout(waitTime);
+                    continue;
+                }
+                
+                if (isLastAttempt) {
+                    page.off('response', responseHandler);
+                    throw new Error(`Failed to navigate to ${url} after ${maxRetries} attempts: ${lastError.message}`);
+                }
+                
+                // Exponential backoff: 2s, 4s, 8s for other errors
+                const backoffMs = Math.pow(2, attempt) * 1000;
+                debugLog(`[YouTube] Navigation attempt ${attempt} failed, retrying in ${backoffMs}ms...`);
+                await page.waitForTimeout(backoffMs);
+            }
+        }
+    } finally {
+        page.off('response', responseHandler);
     }
     
     throw lastError || new Error('Navigation failed');
@@ -188,8 +238,20 @@ async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
 export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
     debugLog(`[YouTube] Starting scrape for channel: ${CHANNEL_HANDLE}`);
     
+    // Prepare browser args - ensure no user data directory issues in serverless
+    const browserArgs = [
+        ...chromiumPkg.args,
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu'
+    ];
+    
     const browser = await chromium.launch({
-        args: chromiumPkg.args,
+        args: browserArgs,
         executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar'),
         headless: true,
     });
@@ -206,21 +268,31 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
         const videosPage = await context.newPage();
         const streamsPage = await context.newPage();
 
-        // Scrape both tabs in parallel with separate pages
-        const [videos, streams] = await Promise.all([
-            scrapeVideosTab(videosPage).catch(error => {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                debugLog(`[YouTube] Error scraping videos tab: ${errorMessage}`);
-                console.error('[YouTube] Error scraping videos tab:', error);
-                return [];
-            }),
-            scrapeStreamsTab(streamsPage).catch(error => {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                debugLog(`[YouTube] Error scraping streams tab: ${errorMessage}`);
-                console.error('[YouTube] Error scraping streams tab:', error);
-                return [];
-            })
-        ]);
+        // Scrape sequentially to avoid rate limiting (429 errors)
+        // Add delay between tabs to respect YouTube's rate limits
+        let videos: YouTubeVideo[] = [];
+        let streams: YouTubeVideo[] = [];
+        
+        try {
+            videos = await scrapeVideosTab(videosPage);
+            debugLog(`[YouTube] Successfully scraped ${videos.length} videos`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            debugLog(`[YouTube] Error scraping videos tab: ${errorMessage}`);
+            console.error('[YouTube] Error scraping videos tab:', error);
+        }
+        
+        // Wait between requests to avoid rate limiting
+        await videosPage.waitForTimeout(3000);
+        
+        try {
+            streams = await scrapeStreamsTab(streamsPage);
+            debugLog(`[YouTube] Successfully scraped ${streams.length} streams`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            debugLog(`[YouTube] Error scraping streams tab: ${errorMessage}`);
+            console.error('[YouTube] Error scraping streams tab:', error);
+        }
 
         // Close pages
         await Promise.all([

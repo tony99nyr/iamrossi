@@ -22,6 +22,7 @@ export interface ExerciseEntry {
   painLevel?: number | null;    // 0-10 scale
   difficultyLevel?: number | null; // 1-10 scale
   bfr?: boolean;
+  timestamp?: string;    // ISO 8601 timestamp when exercise was added
 }
 
 export interface RehabEntry {
