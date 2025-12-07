@@ -38,13 +38,14 @@ export default function GameListItem({
     const ourScore = isPastGame && isHomeGame ? homeScore : visitorScore;
     const theirScore = isPastGame && isHomeGame ? visitorScore : homeScore;
     
-    // Check if scores are valid (both defined and not clearly invalid placeholders)
-    // Only reject 999-999 as invalid, allow 0-0 as it could be valid (though rare)
+    // Check if scores are valid (both defined and not invalid placeholders)
+    // Reject 0-0 and 999-999 as invalid placeholders
     const hasValidScores = isPastGame && 
         ourScore !== undefined && 
         theirScore !== undefined &&
         typeof ourScore === 'number' &&
         typeof theirScore === 'number' &&
+        !(ourScore === 0 && theirScore === 0) && // Not 0-0 placeholder
         !(ourScore === 999 && theirScore === 999) && // Not 999-999 placeholder
         ourScore >= 0 && ourScore <= 50 && // Reasonable range
         theirScore >= 0 && theirScore <= 50;
