@@ -29,6 +29,7 @@ export const exerciseEntrySchema = z.object({
   painLevel: z.number().min(0).max(10).nullable().optional(),
   difficultyLevel: z.number().min(1).max(10).nullable().optional(),
   bfr: z.boolean().optional(),
+  timestamp: z.string().optional(),
 });
 
 export const rehabEntrySchema = z.object({
