@@ -16,8 +16,8 @@ function isValidScore(score: number | undefined | null): boolean {
 function hasValidScores(homeScore: number | undefined | null, visitorScore: number | undefined | null): boolean {
   if (!isValidScore(homeScore) || !isValidScore(visitorScore)) return false;
   
-  // Reject common placeholder values
-  if (homeScore === 0 && visitorScore === 0) return false; // 0-0 is likely placeholder
+  // Only reject clearly invalid placeholder values (999-999)
+  // Allow 0-0 as it could be a valid score (though rare)
   if (homeScore === 999 && visitorScore === 999) return false; // 999-999 is clearly placeholder
   
   return true;
@@ -93,11 +93,22 @@ export function enrichPastGamesWithStatScores(
   ourTeamName: string
 ): Game[] {
   return games.map(game => {
-    const homeScore = game.home_team_score;
-    const visitorScore = game.visitor_team_score;
+    // Check both possible field name variations from MHR
+    const homeScore = game.home_team_score ?? (game as any).game_home_score;
+    const visitorScore = game.visitor_team_score ?? (game as any).game_visitor_score;
     
-    // If MHR scores are valid, use them
+    // If MHR scores are valid, use them (don't overwrite)
     if (hasValidScores(homeScore, visitorScore)) {
+      return game;
+    }
+    
+    // Only try stat session fallback if scores are clearly invalid (999-999) or missing
+    const isInvalidPlaceholder = homeScore === 999 && visitorScore === 999;
+    const isMissing = (homeScore === undefined || homeScore === null) || 
+                      (visitorScore === undefined || visitorScore === null);
+    
+    // If scores exist and are not clearly invalid, keep them as-is
+    if (!isInvalidPlaceholder && !isMissing) {
       return game;
     }
     
@@ -105,12 +116,17 @@ export function enrichPastGamesWithStatScores(
     const matchingSession = findMatchingStatSession(game, statSessions);
     
     if (!matchingSession) {
-      // No valid score source - set scores to undefined
-      return {
-        ...game,
-        home_team_score: undefined,
-        visitor_team_score: undefined,
-      };
+      // No stat session found - only remove scores if they were clearly invalid (999-999)
+      // Otherwise preserve whatever scores exist (even if 0-0)
+      if (isInvalidPlaceholder) {
+        return {
+          ...game,
+          home_team_score: undefined,
+          visitor_team_score: undefined,
+        };
+      }
+      // Keep original game as-is (preserves any existing scores)
+      return game;
     }
     
     // Extract scores from stat session
@@ -124,7 +140,7 @@ export function enrichPastGamesWithStatScores(
     const enrichedHomeScore = isHomeGame ? usGoals : themGoals;
     const enrichedVisitorScore = isHomeGame ? themGoals : usGoals;
     
-    // Validate the extracted scores
+    // Use stat session scores if they're valid, otherwise keep original scores
     if (hasValidScores(enrichedHomeScore, enrichedVisitorScore)) {
       return {
         ...game,
@@ -133,12 +149,17 @@ export function enrichPastGamesWithStatScores(
       };
     }
     
-    // Even stat session scores are invalid - set to undefined
-    return {
-      ...game,
-      home_team_score: undefined,
-      visitor_team_score: undefined,
-    };
+    // Stat session scores are invalid - only remove if original was 999-999, otherwise keep original
+    if (isInvalidPlaceholder) {
+      return {
+        ...game,
+        home_team_score: undefined,
+        visitor_team_score: undefined,
+      };
+    }
+    
+    // Keep original game as-is
+    return game;
   });
 }
 
