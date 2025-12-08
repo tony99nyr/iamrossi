@@ -85,7 +85,7 @@ export default function CacheStatusFooter({
     return date.toLocaleString();
   };
 
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   // Update current time periodically for status color calculation
   useEffect(() => {

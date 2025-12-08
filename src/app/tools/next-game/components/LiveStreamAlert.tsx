@@ -78,17 +78,18 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
 
     // Update current time every minute to check if scheduled time has passed
     useEffect(() => {
-        // Check immediately
-        if (isUpcoming && scheduledTime) {
+        if (!isUpcoming || !scheduledTime) return;
+
+        // Check immediately using a callback to avoid cascading renders
+        const checkScheduledTime = () => {
             setIsScheduledTimePassed(new Date() >= scheduledTime);
-        }
+        };
+        
+        // Check immediately
+        checkScheduledTime();
 
         // Then check every minute
-        const interval = setInterval(() => {
-            if (isUpcoming && scheduledTime) {
-                setIsScheduledTimePassed(new Date() >= scheduledTime);
-            }
-        }, 60000); // Update every minute
+        const interval = setInterval(checkScheduledTime, 60000);
 
         return () => clearInterval(interval);
     }, [isUpcoming, scheduledTime]);

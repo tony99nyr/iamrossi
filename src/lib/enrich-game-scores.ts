@@ -154,8 +154,9 @@ export function enrichPastGamesWithStatScores(
   
   return games.map(game => {
     // Check both possible field name variations from MHR
-    const homeScore = game.home_team_score ?? (game as any).game_home_score;
-    const visitorScore = game.visitor_team_score ?? (game as any).game_visitor_score;
+    const gameWithLegacyFields = game as Game & { game_home_score?: number; game_visitor_score?: number };
+    const homeScore = game.home_team_score ?? gameWithLegacyFields.game_home_score;
+    const visitorScore = game.visitor_team_score ?? gameWithLegacyFields.game_visitor_score;
     
     // If MHR scores are valid, use them (don't overwrite)
     if (hasValidScores(homeScore, visitorScore)) {

@@ -162,7 +162,8 @@ async function getSettingsFromKV(): Promise<Partial<{
     return settings || {};
 }
 
-export async function searchMHRTeam(query: string, ageGroup?: string, preferredLevel?: string): Promise<MHRTeamData | null> {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function searchMHRTeam(query: string, ageGroup?: string, _preferredLevel?: string): Promise<MHRTeamData | null> {
     try {
         // Fix common typos before searching
         // Fix "Pheonix" -> "Phoenix" typo
