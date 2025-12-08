@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { getMHRTeamData, scrapeTeamDetails } from './mhr-service';
-import { getSettings as getSettingsFromKV } from './kv';
+import { getSettings as getSettingsFromKV, type MHRTeamData } from './kv';
 import { debugLog } from '@/lib/logger';
 
 async function getSettings() {
@@ -68,8 +68,14 @@ export async function transformCalendarEvents(
     // Use mhrYear from settings if available, otherwise use the passed year parameter
     const effectiveYear = mhrYear || year;
 
-    // Season ends March 1st - create cutoff date
-    const seasonEndDate = new Date(`${effectiveYear}-03-01T23:59:59`);
+    // Calculate season boundaries from MHR year
+    // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
+    const startYear = effectiveYear;
+    const endYear = String(parseInt(effectiveYear) + 1);
+    const seasonStartDate = new Date(`${startYear}-08-01T00:00:00`);
+    const seasonEndDate = new Date(`${endYear}-03-01T23:59:59`);
+    
+    debugLog(`[Season Filter] Season: ${seasonStartDate.toISOString()} to ${seasonEndDate.toISOString()} (MHR Year: ${effectiveYear})`);
 
     // Fetch our team's MHR data to get logo
     let ourTeamLogo = '';
@@ -88,10 +94,15 @@ export async function transformCalendarEvents(
     const schedule = [];
 
     for (const event of events) {
-        // Skip events after season end (March 1st)
         const eventStartDate = new Date(event.start);
+        
+        // Skip events outside season boundaries
+        if (eventStartDate < seasonStartDate) {
+            debugLog(`Skipping event before season start: "${event.summary}" (${eventStartDate.toISOString()}) - Season starts ${seasonStartDate.toISOString()}`);
+            continue;
+        }
         if (eventStartDate > seasonEndDate) {
-            debugLog(`Skipping event after season end: "${event.summary}" (${eventStartDate.toISOString()})`);
+            debugLog(`Skipping event after season end: "${event.summary}" (${eventStartDate.toISOString()}) - Season ends ${seasonEndDate.toISOString()}`);
             continue;
         }
 
@@ -194,21 +205,62 @@ export async function transformCalendarEvents(
         const gameDate = new Date(event.start);
         const gameTime = gameDate.toLocaleTimeString('en-US', { hour12: false, timeZone: 'America/New_York' });
         
+        // Use Eastern Time date for matching to avoid timezone issues (e.g. Sat night game becoming Sun in UTC)
+        // Extract date components in Eastern Time (calculate early for override checks)
+        const easternDateStr = gameDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' });
+        const [month, day, year] = easternDateStr.split('/');
+        const localDateStr = `${year}-${month}-${day}`;
+        
         // Generate a unique game ID
         const gameId = crypto.createHash('md5').update(`${event.start}-${event.summary}`).digest('hex').substring(0, 8);
 
-        // Get opponent MHR data
-        const mhrData = await getMHRTeamData(opponent, effectiveYear);
+        // Check if this is a Tier 1 tournament/event (Tier 1 = AAA level)
+        const isTier1Event = /\btier\s*1\b/i.test(event.summary) || /\btier\s*1\b/i.test(event.description || '');
+        
+        // Normalize opponent name and fix common typos before searching
+        // Fix "Pheonix" -> "Phoenix" typo
+        let normalizedOpponent = opponent;
+        if (/\bpheonix\b/i.test(opponent)) {
+            normalizedOpponent = opponent.replace(/\bpheonix\b/gi, 'Phoenix');
+            debugLog(`[MHR] Fixed typo: "${opponent}" -> "${normalizedOpponent}"`);
+        }
+        
+        // Check if this is the Dec 14 Buffalo Jr Sabres game that needs override
+        const normalizedOpponentForOverride = (normalizedOpponent || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const isBuffaloJrSabres = normalizedOpponentForOverride.includes('buffalo') && 
+                                   (normalizedOpponentForOverride.includes('sabres') || normalizedOpponentForOverride.includes('jrsabres'));
+        const isDec14 = localDateStr.includes('12-14') || localDateStr.includes('2024-12-14') || localDateStr.includes('2025-12-14');
+        const needsBuffaloOverride = isBuffaloJrSabres && isDec14;
+        
+        // Check if this is Phoenix Coyotes that needs override (team ID 4576)
+        const isPhoenixCoyotes = normalizedOpponentForOverride.includes('phoenix') && normalizedOpponentForOverride.includes('coyotes');
+        const needsPhoenixOverride = isPhoenixCoyotes;
+        
+        // If this is a game that needs override, clear any cached team data first to force a fresh search
+        if (needsBuffaloOverride || needsPhoenixOverride) {
+            const { getTeamMap, setTeamMap } = await import('./kv');
+            const teamMap = await getTeamMap();
+            // Clear cache for matching teams
+            Object.keys(teamMap).forEach(key => {
+                const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (needsBuffaloOverride && normalizedKey.includes('buffalo') && (normalizedKey.includes('sabres') || normalizedKey.includes('jrsabres'))) {
+                    delete teamMap[key];
+                    debugLog(`[MHR] Cleared cached team data for "${key}" to force fresh search`);
+                } else if (needsPhoenixOverride && normalizedKey.includes('phoenix') && normalizedKey.includes('coyotes')) {
+                    delete teamMap[key];
+                    debugLog(`[MHR] Cleared cached team data for "${key}" to force fresh search`);
+                }
+            });
+            await setTeamMap(teamMap);
+        }
+        
+        // Get opponent MHR data using normalized name
+        // If it's a Tier 1 event, prioritize AAA teams in the search
+        let mhrData = await getMHRTeamData(normalizedOpponent, effectiveYear, '10U', mhrSchedule, isTier1Event ? 'AAA' : undefined);
         
         if (mhrData) {
             debugLog(`[MHR] Found data for ${opponent}:`, mhrData.name);
         }
-
-        // Use Eastern Time date for matching to avoid timezone issues (e.g. Sat night game becoming Sun in UTC)
-        // Extract date components in Eastern Time
-        const easternDateStr = gameDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' });
-        const [month, day, year] = easternDateStr.split('/');
-        const localDateStr = `${year}-${month}-${day}`;
 
         // Try to match this calendar event with an MHR game to get the real game_nbr and scores
         let mhrGameNbr = gameId; // Default to hash ID
@@ -255,7 +307,119 @@ export async function transformCalendarEvents(
             }
         }
 
-
+        // Get opponent team ID from matched game if available, otherwise use mhrData
+        // The matched game has opponent_team_id, or we can determine from home/visitor team IDs
+        let opponentTeamId: string | null = null;
+        
+        // Specific override for known games with incorrect team IDs - CHECK THIS FIRST
+        // Dec 14, 2024/2025 game against Buffalo Jr Sabres should use team ID 4624
+        if (needsBuffaloOverride) {
+            opponentTeamId = '4624';
+            debugLog(`[MHR] Using override team ID 4624 for Buffalo Jr Sabres game on Dec 14 (forcing override regardless of cache/match)`);
+            
+            // If we don't have mhrData, fetch it using the override team ID
+            if (!mhrData) {
+                debugLog(`[MHR] No team data found via search, fetching details for team ID 4624`);
+                try {
+                    const scrapedDetails = await scrapeTeamDetails('4624', effectiveYear);
+                    const { getTeamMap, setTeamMap } = await import('./kv');
+                    const teamMap = await getTeamMap();
+                    const cacheKey = normalizedOpponent;
+                    if (cacheKey) {
+                        const overrideTeamData: MHRTeamData = {
+                            name: scrapedDetails.name || normalizedOpponent,
+                            mhrId: '4624',
+                            record: scrapedDetails.record,
+                            rating: scrapedDetails.rating,
+                            logo: scrapedDetails.logo,
+                            lastUpdated: Date.now()
+                        };
+                        teamMap[cacheKey] = overrideTeamData;
+                        await setTeamMap(teamMap);
+                        // Update mhrData so it can be used below
+                        mhrData = overrideTeamData;
+                        debugLog(`[MHR] Fetched and cached team data for "${cacheKey}" with team ID 4624`);
+                    }
+                } catch (error) {
+                    debugLog(`[MHR] Error fetching team details for ID 4624:`, error);
+                }
+            } else {
+                // Update existing mhrData with correct team ID
+                const { getTeamMap, setTeamMap } = await import('./kv');
+                const teamMap = await getTeamMap();
+                const cacheKey = mhrData.name || normalizedOpponent;
+                if (cacheKey) {
+                    teamMap[cacheKey] = {
+                        ...mhrData,
+                        mhrId: '4624',
+                        lastUpdated: Date.now()
+                    };
+                    await setTeamMap(teamMap);
+                    debugLog(`[MHR] Updated team map cache for "${cacheKey}" with correct team ID 4624`);
+                }
+            }
+        } else if (needsPhoenixOverride) {
+            // Phoenix Coyotes (including "Pheonix" typo) should use team ID 4576
+            opponentTeamId = '4576';
+            debugLog(`[MHR] Using override team ID 4576 for Phoenix Coyotes (forcing override regardless of cache/match)`);
+            
+            // If we don't have mhrData, fetch it using the override team ID
+            if (!mhrData) {
+                debugLog(`[MHR] No team data found via search, fetching details for team ID 4576`);
+                try {
+                    const scrapedDetails = await scrapeTeamDetails('4576', effectiveYear);
+                    const { getTeamMap, setTeamMap } = await import('./kv');
+                    const teamMap = await getTeamMap();
+                    const cacheKey = normalizedOpponent;
+                    if (cacheKey) {
+                        const overrideTeamData: MHRTeamData = {
+                            name: scrapedDetails.name || normalizedOpponent,
+                            mhrId: '4576',
+                            record: scrapedDetails.record,
+                            rating: scrapedDetails.rating,
+                            logo: scrapedDetails.logo,
+                            lastUpdated: Date.now()
+                        };
+                        teamMap[cacheKey] = overrideTeamData;
+                        await setTeamMap(teamMap);
+                        // Update mhrData so it can be used below
+                        mhrData = overrideTeamData;
+                        debugLog(`[MHR] Fetched and cached team data for "${cacheKey}" with team ID 4576`);
+                    }
+                } catch (error) {
+                    debugLog(`[MHR] Error fetching team details for ID 4576:`, error);
+                }
+            } else {
+                // Update existing mhrData with correct team ID
+                const { getTeamMap, setTeamMap } = await import('./kv');
+                const teamMap = await getTeamMap();
+                const cacheKey = mhrData.name || normalizedOpponent;
+                if (cacheKey) {
+                    teamMap[cacheKey] = {
+                        ...mhrData,
+                        mhrId: '4576',
+                        lastUpdated: Date.now()
+                    };
+                    await setTeamMap(teamMap);
+                    debugLog(`[MHR] Updated team map cache for "${cacheKey}" with correct team ID 4576`);
+                }
+            }
+        } else if (matchedGame) {
+            // If matched game has opponent_team_id, use it
+            if (matchedGame.opponent_team_id) {
+                opponentTeamId = String(matchedGame.opponent_team_id);
+                debugLog(`[MHR] Using opponent_team_id from matched game: ${opponentTeamId}`);
+            } else if (matchedGame.home_team_id && matchedGame.visitor_team_id) {
+                // Determine based on which team is the opponent
+                opponentTeamId = isHomeGame ? String(matchedGame.visitor_team_id) : String(matchedGame.home_team_id);
+                debugLog(`[MHR] Using team ID from matched game (${isHomeGame ? 'visitor' : 'home'}): ${opponentTeamId}`);
+            }
+        }
+        
+        // Fallback to mhrData if we don't have a team ID from matched game
+        if (!opponentTeamId) {
+            opponentTeamId = mhrData?.mhrId || null;
+        }
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const gameEntry: any = {
@@ -264,8 +428,8 @@ export async function transformCalendarEvents(
             game_time_format: gameTime,
             game_date_format_pretty: gameDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }),
             game_time_format_pretty: gameDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }),
-            home_team_name: isHomeGame ? settings.teamName : (mhrData?.name || opponent),
-            visitor_team_name: isHomeGame ? (mhrData?.name || opponent) : settings.teamName,
+            home_team_name: isHomeGame ? settings.teamName : (mhrData?.name || normalizedOpponent),
+            visitor_team_name: isHomeGame ? (mhrData?.name || normalizedOpponent) : settings.teamName,
             home_team_logo: isHomeGame ? ourTeamLogo : (mhrData?.logo || ''),
             visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : ourTeamLogo,
             home_team_score: matchedGame?.home_team_score ?? 0, // Use matched score or default to 0
@@ -280,9 +444,9 @@ export async function transformCalendarEvents(
             home_team_rating: isHomeGame ? (mainTeamStats?.rating || '') : (mhrData?.rating || ''),
             visitor_team_record: isHomeGame ? (mhrData?.record || '') : (mainTeamStats?.record || ''),
             visitor_team_rating: isHomeGame ? (mhrData?.rating || '') : (mainTeamStats?.rating || ''),
-            // Team IDs for links
-            game_home_team: isHomeGame ? settings.mhrTeamId : (mhrData?.mhrId || null),
-            game_visitor_team: isHomeGame ? (mhrData?.mhrId || null) : settings.mhrTeamId
+            // Team IDs for links - use opponentTeamId from matched game if available
+            game_home_team: isHomeGame ? settings.mhrTeamId : opponentTeamId,
+            game_visitor_team: isHomeGame ? opponentTeamId : settings.mhrTeamId
         };
 
         schedule.push(gameEntry);

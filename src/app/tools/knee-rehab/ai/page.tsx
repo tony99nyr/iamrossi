@@ -67,7 +67,11 @@ export default async function AIContextPage() {
 
   // Sort entries by date descending (newest first)
   const sortedEntries = entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const today = new Date().toISOString().split('T')[0];
+  
+  // Get today's date in local timezone (YYYY-MM-DD format)
+  // This matches how dates are stored in entries (local timezone, not UTC)
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const todaysEntry = sortedEntries.find(e => e.date === today);
   const recentEntries = sortedEntries.filter(e => e.date !== today).slice(0, 30);
 

@@ -164,7 +164,15 @@ async function getSettingsFromKV(): Promise<Partial<{
 
 export async function searchMHRTeam(query: string, ageGroup?: string, preferredLevel?: string): Promise<MHRTeamData | null> {
     try {
-        const encodedQuery = encodeURIComponent(query);
+        // Fix common typos before searching
+        // Fix "Pheonix" -> "Phoenix" typo
+        let normalizedQuery = query;
+        if (/\bpheonix\b/i.test(query)) {
+            normalizedQuery = query.replace(/\bpheonix\b/gi, 'Phoenix');
+            debugLog(`[MHR] Fixed typo in search query: "${query}" -> "${normalizedQuery}"`);
+        }
+        
+        const encodedQuery = encodeURIComponent(normalizedQuery);
         const res = await fetch(`https://myhockeyrankings.com/services/search/?q=${encodedQuery}`);
         if (!res.ok) return null;
         
@@ -185,49 +193,41 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
             }
         }
 
-        // If we have multiple teams and a preferred level, try to match it
-        if (teams.length > 1 && preferredLevel) {
-            // Look for exact level match (e.g. "AA" but not "AAA" or "A")
-            // MHR names are like "Team Name 10U AA"
-            
-            const levelRegex = new RegExp(`\\b${preferredLevel}\\b`, 'i');
-            const levelMatch = teams.find((t) => levelRegex.test(t.name));
-            
-            if (levelMatch) {
-                debugLog(`[MHR] Found level match for ${preferredLevel}: ${levelMatch.name}`);
+        // Always prioritize AAA teams first, then AA teams
+        // This ensures we get the highest level team available
+        if (teams.length > 1) {
+            // First, try to find AAA teams
+            const aaaTeam = teams.find((t) => /\bAAA\b/i.test(t.name));
+            if (aaaTeam) {
+                debugLog(`[MHR] Found AAA team (prioritized): ${aaaTeam.name}`);
                 return {
-                    name: levelMatch.name,
-                    mhrId: levelMatch.nbr,
-                    url: `https://myhockeyrankings.com${levelMatch.url}`
+                    name: aaaTeam.name,
+                    mhrId: aaaTeam.nbr,
+                    url: `https://myhockeyrankings.com${aaaTeam.url}`
                 };
             }
-        }
-        
-        // If preferredLevel is AA, filter out single-A teams to avoid mismatches
-        if (preferredLevel === 'AA' && teams.length > 1) {
-            // Filter out teams that are single-A (not AA or AAA)
+            
+            // If no AAA, try to find AA teams
+            const aaTeam = teams.find((t) => /\bAA\b/i.test(t.name) && !/\bAAA\b/i.test(t.name));
+            if (aaTeam) {
+                debugLog(`[MHR] Found AA team (fallback): ${aaTeam.name}`);
+                return {
+                    name: aaTeam.name,
+                    mhrId: aaTeam.nbr,
+                    url: `https://myhockeyrankings.com${aaTeam.url}`
+                };
+            }
+            
+            // Filter out single-A teams to avoid mismatches
             const nonSingleATeams = teams.filter((t) => {
                 const name = t.name;
-                // Check if it has AA or AAA (good)
-                if (/\bAAA?\b/i.test(name)) return true;
-                // Check if it has single A (bad)
-                if (/\b\d+U\s+A\b/i.test(name)) return false;
-                return true; // Keep if no level specified
+                // Check if it has single A (bad - we want AA or AAA)
+                if (/\b\d+U\s+A\b/i.test(name) && !/\bAA\b/i.test(name)) return false;
+                return true; // Keep if no level specified or has AA/AAA
             });
             
             if (nonSingleATeams.length > 0) {
                 teams = nonSingleATeams;
-
-                // If we have both AA and AAA, prioritize AAA (higher level)
-                const aaaTeam = teams.find((t) => /\bAAA\b/i.test(t.name));
-                if (aaaTeam) {
-                    debugLog(`[MHR] Found AAA team (higher level): ${aaaTeam.name}`);
-                    return {
-                        name: aaaTeam.name,
-                        mhrId: aaaTeam.nbr,
-                        url: `https://myhockeyrankings.com${aaaTeam.url}`
-                    };
-                }
             }
         }
 
@@ -248,7 +248,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, preferredL
     }
 }
 
-export async function getMHRTeamData(opponentName: string, year: string, ageGroup: string = '10U', knownOpponents: MHRScheduleGame[] = []): Promise<MHRTeamData | null> {
+export async function getMHRTeamData(opponentName: string, year: string, ageGroup: string = '10U', knownOpponents: MHRScheduleGame[] = [], preferredLevelOverride?: string): Promise<MHRTeamData | null> {
     // Resolve aliases first
     const settings = await getSettingsFromKV();
     const aliases = settings.aliases || {};
@@ -310,15 +310,16 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
 
     // 3. Fallback Search
     // Determine preferred level from settings (already have settings from above)
-    let preferredLevel = 'AA'; // Default
-    if (settings.teamName) {
+    // If preferredLevelOverride is provided (e.g., "AAA" for Tier 1 tournaments), use it
+    let preferredLevel = preferredLevelOverride || 'AA'; // Default to AA, or use override
+    if (!preferredLevelOverride && settings.teamName) {
         if (settings.teamName.includes('AAA')) preferredLevel = 'AAA';
         else if (settings.teamName.includes('AA')) preferredLevel = 'AA';
         else if (settings.teamName.includes(' A ')) preferredLevel = 'A'; // Space to avoid matching inside words
         else if (settings.teamName.endsWith(' A')) preferredLevel = 'A';
     }
 
-    debugLog(`[MHR] Searching MHR for: ${resolvedName} (Age: ${ageGroup}, Level: ${preferredLevel})`);
+    debugLog(`[MHR] Searching MHR for: ${resolvedName} (Age: ${ageGroup}, Level: ${preferredLevel}${preferredLevelOverride ? ' [Tier 1 override]' : ''})`);
     const searchResult = await searchMHRTeam(resolvedName, ageGroup, preferredLevel);
 
     if (searchResult && searchResult.mhrId) {

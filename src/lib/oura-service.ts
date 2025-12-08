@@ -50,21 +50,28 @@ export function isOuraConfigured(): boolean {
 /**
  * Fetch daily scores for a specific date
  */
-export async function getDailyScores(date: string): Promise<OuraScores> {
+export async function getDailyScores(date: string, forceRefresh = false): Promise<OuraScores> {
   if (!OURA_ACCESS_TOKEN) {
     throw new Error('OURA_PAT is not configured');
   }
 
-  // Check cache first
+  // Determine if this is today's data (use local timezone, not UTC)
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const isToday = date === today;
+
+  // Check cache first - but skip cache for today's data or if forceRefresh is true
   const cacheKey = `oura:scores:${date}`;
   
-  try {
-    const cached = await kvGet<OuraScores>(cacheKey);
-    if (cached) {
-      return cached;
+  if (!isToday && !forceRefresh) {
+    try {
+      const cached = await kvGet<OuraScores>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch (error) {
+      console.error('[Oura] Cache read error:', error);
     }
-  } catch (error) {
-    console.error('[Oura] Cache read error:', error);
   }
 
   // Fetch data from all three endpoints in parallel
@@ -83,9 +90,6 @@ export async function getDailyScores(date: string): Promise<OuraScores> {
   };
 
   // Determine cache duration based on whether this is today's data
-  const today = new Date().toISOString().split('T')[0];
-  const isToday = date === today;
-  
   // Today's data: 15 minutes (activity score changes throughout the day)
   // Past days: 24 hours (data is final)
   const cacheDuration = isToday ? 15 * 60 : 24 * 60 * 60;

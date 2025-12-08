@@ -2,33 +2,51 @@
 
 import { useState, useEffect } from 'react';
 import { css, cx } from '@styled-system/css';
-import type { SyncStatus } from '@/lib/kv';
+import type { SyncStatus, CalendarSyncStatus } from '@/lib/kv';
 
 interface SyncStatusIndicatorProps {
     initialStatus: SyncStatus;
+    initialCalendarStatus: CalendarSyncStatus;
 }
 
-export default function SyncStatusIndicator({ initialStatus }: SyncStatusIndicatorProps) {
+export default function SyncStatusIndicator({ initialStatus, initialCalendarStatus }: SyncStatusIndicatorProps) {
     const [syncStatus, setSyncStatus] = useState<SyncStatus>(initialStatus);
+    const [calendarSyncStatus, setCalendarSyncStatus] = useState<CalendarSyncStatus>(initialCalendarStatus);
     const [showRefresh, setShowRefresh] = useState(false);
+
+    const isRevalidating = syncStatus.isRevalidating || calendarSyncStatus.isRevalidating;
 
     // Poll for status updates while revalidating
     useEffect(() => {
-        if (!syncStatus.isRevalidating) {
+        if (!isRevalidating) {
             return;
         }
 
         const pollInterval = setInterval(async () => {
             try {
-                const response = await fetch('/api/admin/sync-youtube');
-                if (response.ok) {
-                    const status = await response.json();
-                    setSyncStatus(status);
+                // Fetch both sync statuses
+                const [youtubeResponse, calendarResponse] = await Promise.all([
+                    fetch('/api/admin/sync-youtube').then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch('/api/admin/sync-schedule-status').then(r => r.ok ? r.json() : null).catch(() => null)
+                ]);
 
-                    // If sync just completed, show refresh button
-                    if (!status.isRevalidating && syncStatus.isRevalidating) {
-                        setShowRefresh(true);
-                    }
+                if (youtubeResponse) {
+                    setSyncStatus(prev => {
+                        // If sync just completed, show refresh button
+                        if (prev.isRevalidating && !youtubeResponse.isRevalidating) {
+                            setShowRefresh(true);
+                        }
+                        return youtubeResponse;
+                    });
+                }
+                if (calendarResponse) {
+                    setCalendarSyncStatus(prev => {
+                        // If sync just completed, show refresh button
+                        if (prev.isRevalidating && !calendarResponse.isRevalidating) {
+                            setShowRefresh(true);
+                        }
+                        return calendarResponse;
+                    });
                 }
             } catch (error) {
                 console.error('Failed to fetch sync status:', error);
@@ -36,10 +54,10 @@ export default function SyncStatusIndicator({ initialStatus }: SyncStatusIndicat
         }, 5000); // Poll every 5 seconds
 
         return () => clearInterval(pollInterval);
-    }, [syncStatus.isRevalidating]);
+    }, [isRevalidating]);
 
     // Don't show anything if not revalidating and no refresh needed
-    if (!syncStatus.isRevalidating && !showRefresh) {
+    if (!isRevalidating && !showRefresh) {
         return null;
     }
 
@@ -82,7 +100,7 @@ export default function SyncStatusIndicator({ initialStatus }: SyncStatusIndicat
                 gap: '12px',
                 animation: 'slideInUp 0.3s ease-out',
             }))}>
-                {syncStatus.isRevalidating ? (
+                {isRevalidating ? (
                     <>
                         {/* Spinner */}
                         <div className={css({
@@ -98,7 +116,11 @@ export default function SyncStatusIndicator({ initialStatus }: SyncStatusIndicat
                             fontSize: '14px',
                             fontWeight: '500',
                         })}>
-                            Syncing latest videos...
+                            {syncStatus.isRevalidating && calendarSyncStatus.isRevalidating 
+                                ? 'Syncing schedule and videos...'
+                                : syncStatus.isRevalidating 
+                                ? 'Syncing videos...'
+                                : 'Syncing schedule...'}
                         </span>
                     </>
                 ) : showRefresh ? (
@@ -114,7 +136,7 @@ export default function SyncStatusIndicator({ initialStatus }: SyncStatusIndicat
                             fontSize: '14px',
                             fontWeight: '500',
                         })}>
-                            New videos available
+                            Schedule and videos updated
                         </span>
                         <button
                             onClick={handleRefresh}

@@ -534,11 +534,11 @@ const StatTracker = ({ initialRoster, session, onExit }: StatTrackerProps) => {
         };
     }).filter(stat => {
         if (stat.period !== 'OT') return true;
+        // Only show OT if there's actual activity (goals, shots, or chances)
         return (
             stat.usGoals > 0 || stat.themGoals > 0 ||
             stat.usShots > 0 || stat.themShots > 0 ||
-            stat.usChances > 0 || stat.themChances > 0 ||
-            stat.faceoffWins > 0 || stat.faceoffLosses > 0
+            stat.usChances > 0 || stat.themChances > 0
         );
     });
 
@@ -577,47 +577,112 @@ const StatTracker = ({ initialRoster, session, onExit }: StatTrackerProps) => {
           </div>
         </div>
 
-        {/* Period Breakdown */}
+        {/* Period Breakdown - Goals */}
         <div className={css({ 
             background: 'rgba(25, 25, 30, 0.6)', 
             backdropFilter: 'blur(10px)',
-            padding: '1rem', 
+            padding: '1.5rem', 
             borderRadius: '16px',
             border: '1px solid rgba(255, 255, 255, 0.1)',
-            marginTop: '0.5rem',
-            overflowX: 'auto'
+            marginTop: '1rem'
         })}>
-            <h3 className={css({ color: '#ccc', marginBottom: '0.5rem', fontSize: '1rem', textAlign: 'center' })}>Period Breakdown</h3>
-            <table className={css({ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', color: '#ddd' })}>
-                <thead>
-                    <tr>
-                        <th className={css({ padding: '0.5rem', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>Period</th>
-                        <th className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>G (Us/Them)</th>
-                        <th className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>S (Us/Them)</th>
-                        <th className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>C (Us/Them)</th>
-                        <th className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' })}>FO (W/L)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {periodStats.map(stat => (
-                        <tr key={stat.period}>
-                            <td className={css({ padding: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>{stat.period}</td>
-                            <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
-                                <span className={css({ color: "#991b1b" })}>{stat.usGoals}</span> / <span className={css({ color: "#7877c6" })}>{stat.themGoals}</span>
-                            </td>
-                            <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
-                                <span className={css({ color: "#991b1b" })}>{stat.usShots}</span> / <span className={css({ color: "#7877c6" })}>{stat.themShots}</span>
-                            </td>
-                            <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
-                                <span className={css({ color: "#991b1b" })}>{stat.usChances}</span> / <span className={css({ color: "#7877c6" })}>{stat.themChances}</span>
-                            </td>
-                            <td className={css({ padding: '0.5rem', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' })}>
-                                <span className={css({ color: "#4caf50" })}>{stat.faceoffWins}</span> / <span className={css({ color: "#ff6b6b" })}>{stat.faceoffLosses}</span>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+            <h3 className={css({ color: '#fff', marginBottom: '1rem', fontSize: '1.25rem', fontWeight: '600', textAlign: 'center' })}>Goals by Period</h3>
+            <div className={css({ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem' })}>
+                {periodStats.map(stat => (
+                    <div key={`goals-${stat.period}`} className={css({ 
+                        textAlign: 'center',
+                        padding: '1rem',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(255, 255, 255, 0.05)'
+                    })}>
+                        <div className={css({ fontSize: '0.875rem', color: '#888', marginBottom: '0.5rem', fontWeight: '500' })}>Period {stat.period}</div>
+                        <div className={css({ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem' })}>
+                            <div className={css({ textAlign: 'center' })}>
+                                <div className={css({ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' })}>Us</div>
+                                <div className={css({ fontSize: '2rem', fontWeight: 'bold', color: "#991b1b" })}>{stat.usGoals}</div>
+                            </div>
+                            <div className={css({ fontSize: '1.5rem', color: '#555' })}>/</div>
+                            <div className={css({ textAlign: 'center' })}>
+                                <div className={css({ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' })}>Them</div>
+                                <div className={css({ fontSize: '2rem', fontWeight: 'bold', color: "#7877c6" })}>{stat.themGoals}</div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        {/* Period Breakdown - Shots */}
+        <div className={css({ 
+            background: 'rgba(25, 25, 30, 0.6)', 
+            backdropFilter: 'blur(10px)',
+            padding: '1.5rem', 
+            borderRadius: '16px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            marginTop: '1rem'
+        })}>
+            <h3 className={css({ color: '#fff', marginBottom: '1rem', fontSize: '1.25rem', fontWeight: '600', textAlign: 'center' })}>Shots by Period</h3>
+            <div className={css({ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem' })}>
+                {periodStats.map(stat => (
+                    <div key={`shots-${stat.period}`} className={css({ 
+                        textAlign: 'center',
+                        padding: '1rem',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(255, 255, 255, 0.05)'
+                    })}>
+                        <div className={css({ fontSize: '0.875rem', color: '#888', marginBottom: '0.5rem', fontWeight: '500' })}>Period {stat.period}</div>
+                        <div className={css({ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem' })}>
+                            <div className={css({ textAlign: 'center' })}>
+                                <div className={css({ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' })}>Us</div>
+                                <div className={css({ fontSize: '2rem', fontWeight: 'bold', color: "#991b1b" })}>{stat.usShots}</div>
+                            </div>
+                            <div className={css({ fontSize: '1.5rem', color: '#555' })}>/</div>
+                            <div className={css({ textAlign: 'center' })}>
+                                <div className={css({ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' })}>Them</div>
+                                <div className={css({ fontSize: '2rem', fontWeight: 'bold', color: "#7877c6" })}>{stat.themShots}</div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        {/* Period Breakdown - Chances */}
+        <div className={css({ 
+            background: 'rgba(25, 25, 30, 0.6)', 
+            backdropFilter: 'blur(10px)',
+            padding: '1.5rem', 
+            borderRadius: '16px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            marginTop: '1rem'
+        })}>
+            <h3 className={css({ color: '#fff', marginBottom: '1rem', fontSize: '1.25rem', fontWeight: '600', textAlign: 'center' })}>Scoring Chances by Period</h3>
+            <div className={css({ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem' })}>
+                {periodStats.map(stat => (
+                    <div key={`chances-${stat.period}`} className={css({ 
+                        textAlign: 'center',
+                        padding: '1rem',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(255, 255, 255, 0.05)'
+                    })}>
+                        <div className={css({ fontSize: '0.875rem', color: '#888', marginBottom: '0.5rem', fontWeight: '500' })}>Period {stat.period}</div>
+                        <div className={css({ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem' })}>
+                            <div className={css({ textAlign: 'center' })}>
+                                <div className={css({ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' })}>Us</div>
+                                <div className={css({ fontSize: '2rem', fontWeight: 'bold', color: "#991b1b" })}>{stat.usChances}</div>
+                            </div>
+                            <div className={css({ fontSize: '1.5rem', color: '#555' })}>/</div>
+                            <div className={css({ textAlign: 'center' })}>
+                                <div className={css({ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' })}>Them</div>
+                                <div className={css({ fontSize: '2rem', fontWeight: 'bold', color: "#7877c6" })}>{stat.themChances}</div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
 
         {/* Full Width Faceoff Summary */}
@@ -646,18 +711,83 @@ const StatTracker = ({ initialRoster, session, onExit }: StatTrackerProps) => {
             </div>
         </div>
 
-        {/* Read-only Event Log */}
+        {/* Notes Section - Manual Notes Only */}
+        {currentSession.events.filter(e => e.type === 'note').length > 0 && (
+          <div className={css({ 
+            background: 'rgba(25, 25, 30, 0.6)', 
+            padding: '1.5rem', 
+            borderRadius: '16px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            marginTop: '1rem'
+          })}>
+            <h3 className={css({ color: '#fff', marginBottom: '1rem', fontSize: '1.25rem', fontWeight: '600' })}>Notes</h3>
+            <div className={css({ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '0.75rem', 
+              maxHeight: '400px', 
+              overflowY: 'auto',
+              paddingRight: '0.5rem'
+            })}>
+              {currentSession.events
+                .filter(event => event.type === 'note')
+                .map(event => (
+                  <div key={event.id} className={css({ 
+                    fontSize: '0.95rem', 
+                    color: '#fff', 
+                    padding: '1rem', 
+                    background: 'rgba(0,0,0,0.3)', 
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                  })}>
+                    <div className={css({ 
+                      display: 'flex', 
+                      alignItems: 'flex-start', 
+                      gap: '0.75rem' 
+                    })}>
+                      <span className={css({ 
+                        color: '#888', 
+                        fontSize: '0.8rem',
+                        whiteSpace: 'nowrap',
+                        marginTop: '0.1rem'
+                      })}>
+                        {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <div className={css({ flex: 1, lineHeight: '1.5' })}>
+                        {event.note}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Full Game Log - All Events */}
         <div className={css({ 
           background: 'rgba(25, 25, 30, 0.6)', 
-          padding: '1rem', 
+          padding: '1.5rem', 
           borderRadius: '16px',
           border: '1px solid rgba(255, 255, 255, 0.1)',
           marginTop: '1rem'
         })}>
-          <h3 className={css({ color: '#ccc', marginBottom: '0.5rem', fontSize: '1rem' })}>Game Log</h3>
-          <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' })}>
+          <h3 className={css({ color: '#fff', marginBottom: '1rem', fontSize: '1.25rem', fontWeight: '600' })}>Full Game Log</h3>
+          <div className={css({ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '0.5rem', 
+            maxHeight: '400px', 
+            overflowY: 'auto',
+            paddingRight: '0.5rem'
+          })}>
             {currentSession.events.map(event => (
-              <div key={event.id} className={css({ fontSize: '0.85rem', color: '#ccc', padding: '0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' })}>
+              <div key={event.id} className={css({ 
+                fontSize: '0.85rem', 
+                color: '#ccc', 
+                padding: '0.75rem', 
+                background: 'rgba(0,0,0,0.2)', 
+                borderRadius: '6px'
+              })}>
                 <span className={css({ color: '#666', marginRight: '0.5rem', fontSize: '0.75rem' })}>
                   {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
@@ -680,6 +810,10 @@ const StatTracker = ({ initialRoster, session, onExit }: StatTrackerProps) => {
                 ) : event.type === 'chance' ? (
                   <span className={css({ color: '#fff', fontWeight: 'bold' })}>
                     {event.note}
+                  </span>
+                ) : event.type === 'note' ? (
+                  <span className={css({ color: '#fff', fontWeight: '500' })}>
+                    📝 {event.note}
                   </span>
                 ) : (
                   event.note

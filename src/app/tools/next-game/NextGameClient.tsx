@@ -96,7 +96,21 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 />
             )}
 
-            <SocialLinks />
+            <SocialLinks streamState={
+                activeLiveStream?.videoType === 'live' || 
+                liveGames.some(game => {
+                    const enrichedGame = game as unknown as EnrichedGame;
+                    return enrichedGame.liveStreamUrl !== undefined;
+                })
+                    ? 'live'
+                    : activeLiveStream?.videoType === 'upcoming' || 
+                      futureGames.some(game => {
+                          const enrichedGame = game as unknown as EnrichedGame;
+                          return enrichedGame.upcomingStreamUrl !== undefined;
+                      })
+                    ? 'upcoming'
+                    : null
+            } />
 
             {/* Live stream alert - show if any live games (matched to games) */}
             {liveGames.length > 0 && !activeLiveStream && (
@@ -124,7 +138,7 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 onClose={() => setIsCacheModalOpen(false)}
             />
             
-            <SyncStatusIndicator initialStatus={syncStatus} />
+            <SyncStatusIndicator initialStatus={syncStatus} initialCalendarStatus={calendarSyncStatus} />
         </div>
         </>
     );

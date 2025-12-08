@@ -567,6 +567,9 @@ export default function AdminPage() {
                                 className={inputStyle}
                                 placeholder="e.g. 2025"
                             />
+                            <small style={{ display: 'block', marginTop: '0.5rem', color: '#666' }}>
+                                Season runs from August 1st of this year to March 1st of next year (e.g., 2025 = Aug 2025 - Mar 2026)
+                            </small>
                         </div>
 
                         <button type="submit" className={buttonStyle}>Save Settings</button>

@@ -76,25 +76,42 @@ export default async function NextGamePage() {
         identifiers: settingsData?.identifiers || ['Black', 'Jr Canes', 'Carolina', 'Jr']
     };
 
-    // Check sync status and trigger background sync if needed
+    // Check sync status and trigger background syncs if needed (every 2 hours)
     const syncStatus = await getSyncStatus();
     const calendarSyncStatus = await getCalendarSyncStatus();
     const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
-    const shouldTriggerSync = !syncStatus.isRevalidating && 
+    const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+    const host = process.env.VERCEL_URL || 'localhost:3000';
+    const adminSecret = process.env.ADMIN_SECRET;
+    
+    // Trigger YouTube sync if needed
+    const shouldTriggerYouTubeSync = !syncStatus.isRevalidating && 
         (!syncStatus.lastSyncTime || (new Date().getTime() - syncStatus.lastSyncTime) > COOLDOWN_MS);
 
-    if (shouldTriggerSync) {
-        // Trigger sync in background (fire and forget)
-        const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
-        const host = process.env.VERCEL_URL || 'localhost:3000';
-        
+    if (shouldTriggerYouTubeSync && adminSecret) {
+        // Trigger YouTube sync in background (fire and forget)
         fetch(`${protocol}://${host}/api/admin/sync-youtube`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${process.env.ADMIN_SECRET}`,
+                'Authorization': `Bearer ${adminSecret}`,
                 'Content-Type': 'application/json'
             }
         }).catch(err => console.error('Background YouTube sync failed:', err));
+    }
+
+    // Trigger Schedule sync if needed
+    const shouldTriggerScheduleSync = !calendarSyncStatus.isRevalidating && 
+        (!calendarSyncStatus.lastSyncTime || (new Date().getTime() - calendarSyncStatus.lastSyncTime) > COOLDOWN_MS);
+
+    if (shouldTriggerScheduleSync && adminSecret) {
+        // Trigger schedule sync in background (fire and forget)
+        fetch(`${protocol}://${host}/api/admin/sync-schedule`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${adminSecret}`,
+                'Content-Type': 'application/json'
+            }
+        }).catch(err => console.error('Background schedule sync failed:', err));
     }
 
     
@@ -109,13 +126,17 @@ export default async function NextGamePage() {
         return dateA.getTime() - dateB.getTime();
     });
 
-    // Filter for past games from MHR (current season only: 2025-2026)
-    const currentSeasonStart = new Date('2025-08-01'); // Season typically starts in August
-    const currentSeasonEnd = new Date('2026-03-01'); // Season ends March 1st, 2026
+    // Filter for past games from MHR (current season only)
+    // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
+    const mhrYear = settings.mhrYear || '2025';
+    const seasonStartYear = mhrYear;
+    const seasonEndYear = String(parseInt(mhrYear) + 1);
+    const currentSeasonStart = new Date(`${seasonStartYear}-08-01T00:00:00`);
+    const currentSeasonEnd = new Date(`${seasonEndYear}-03-01T23:59:59`);
     const pastGames = (mhrSchedule as unknown as Game[]).filter((game: Game) => {
         const gameDate = new Date(game.game_date_format || game.game_date);
 
-        // Must be from current season (after Aug 1, 2025 and before March 1, 2026)
+        // Must be from current season
         if (gameDate < currentSeasonStart || gameDate >= currentSeasonEnd) return false;
 
         // Must be in the past (before today)

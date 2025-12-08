@@ -41,7 +41,20 @@ const instagramLinkStyle = css({
     },
 });
 
-export default function SocialLinks() {
+interface SocialLinksProps {
+    streamState?: 'live' | 'upcoming' | null;
+}
+
+export default function SocialLinks({ streamState = null }: SocialLinksProps) {
+    const getButtonLabel = () => {
+        if (streamState === 'live') {
+            return 'Watch Live Stream Now';
+        } else if (streamState === 'upcoming') {
+            return 'Upcoming Live Stream';
+        }
+        return 'Visit YouTube Channel';
+    };
+
     return (
         <div className={socialLinksContainerStyle}>
             <a 
@@ -53,7 +66,7 @@ export default function SocialLinks() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
                 </svg>
-                Visit YouTube Channel
+                {getButtonLabel()}
             </a>
             
             <a 

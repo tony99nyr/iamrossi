@@ -25,7 +25,13 @@ const footerStyle = css({
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: '2rem 1.5rem',
+    paddingTop: '2rem',
+    paddingLeft: '1.5rem',
+    paddingRight: '1.5rem',
+    paddingBottom: { 
+        base: 'max(3rem, calc(3rem + env(safe-area-inset-bottom, 0px)))', 
+        md: '2rem' 
+    }, // Extra bottom padding on mobile for browser "chin" and safe area
     background: '#000000',
     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
 });
