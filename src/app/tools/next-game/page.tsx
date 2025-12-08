@@ -190,7 +190,7 @@ export default async function NextGamePage() {
 
     // Detect active live streams from YouTube videos (not just matched to games)
     // Prioritize actually live streams over upcoming ones
-    const activeLiveStreams = youtubeVideos.filter(video => {
+    const activeLiveStreams = youtubeVideos.filter((video): video is import('@/lib/youtube-service').YouTubeVideo => {
         return video.videoType === 'live' || video.videoType === 'upcoming';
     });
 
