@@ -33,13 +33,14 @@ export default function GameListItem({
 
     // For past games, calculate score
     // Check both possible field name variations from MHR
-    const homeScore = game.home_team_score ?? (game as any).game_home_score;
-    const visitorScore = game.visitor_team_score ?? (game as any).game_visitor_score;
+    const gameWithLegacyFields = game as Game & { game_home_score?: number; game_visitor_score?: number; _statSessionIsHomeGame?: boolean };
+    const homeScore = game.home_team_score ?? gameWithLegacyFields.game_home_score;
+    const visitorScore = game.visitor_team_score ?? gameWithLegacyFields.game_visitor_score;
     
     // If we have stat session metadata about which team is "us", use that
     // Otherwise fall back to the isHomeGame prop
-    const effectiveIsHomeGame = (game as any)._statSessionIsHomeGame !== undefined 
-        ? (game as any)._statSessionIsHomeGame 
+    const effectiveIsHomeGame = gameWithLegacyFields._statSessionIsHomeGame !== undefined 
+        ? gameWithLegacyFields._statSessionIsHomeGame 
         : isHomeGame;
     
     const ourScore = isPastGame && effectiveIsHomeGame ? homeScore : visitorScore;

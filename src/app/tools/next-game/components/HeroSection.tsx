@@ -4,7 +4,6 @@ import {
     heroSectionStyle,
     logoContainerStyle,
     teamNameStyle,
-    subtitleStyle,
     descriptionStyle,
 } from '../styles';
 

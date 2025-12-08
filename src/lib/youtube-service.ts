@@ -25,8 +25,8 @@ async function retryNavigation(
     
     // Set up response listener to detect 429 errors
     let rateLimited = false;
-    const responseHandler = (response: any) => {
-        if (response && response.status() === 429) {
+    const responseHandler = (response: { status?: () => number }) => {
+        if (response && response.status?.() === 429) {
             rateLimited = true;
         }
     };

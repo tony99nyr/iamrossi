@@ -339,7 +339,7 @@ export default async function RehabSummaryPage() {
                 
                 {entry.notes && (
                   <p style={{ margin: '0.5rem 0', fontSize: '0.875rem', fontStyle: 'italic', color: '#555' }}>
-                    "{entry.notes}"
+                    &quot;{entry.notes}&quot;
                   </p>
                 )}
                 

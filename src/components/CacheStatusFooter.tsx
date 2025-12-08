@@ -85,10 +85,20 @@ export default function CacheStatusFooter({
     return date.toLocaleString();
   };
 
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // Update current time periodically for status color calculation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+
   const getStatusColor = (timestamp: number | null, isRevalidating: boolean): string => {
     if (isRevalidating) return '#60a5fa'; // Blue for syncing
     if (!timestamp) return '#888'; // Gray for never
-    const diffMs = Date.now() - timestamp;
+    const diffMs = currentTime - timestamp;
     const diffHours = diffMs / 3600000;
     if (diffHours < 2) return '#4ade80'; // Green for recent (< 2 hours)
     if (diffHours < 24) return '#fbbf24'; // Yellow for old (< 24 hours)

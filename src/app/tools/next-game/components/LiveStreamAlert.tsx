@@ -70,39 +70,36 @@ function parseScheduledTime(publishDate?: string): Date | null {
 }
 
 export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = false }: LiveStreamAlertProps) {
-    const [currentTime, setCurrentTime] = useState(new Date());
     const [isScheduledTimePassed, setIsScheduledTimePassed] = useState(false);
+
+    // Check if scheduled time has passed for upcoming streams
+    const scheduledTime = liveStream?.publishDate ? parseScheduledTime(liveStream.publishDate) : null;
+    const isUpcoming = liveStream?.videoType === 'upcoming';
+
+    // Update current time every minute to check if scheduled time has passed
+    useEffect(() => {
+        // Check immediately
+        if (isUpcoming && scheduledTime) {
+            setIsScheduledTimePassed(new Date() >= scheduledTime);
+        }
+
+        // Then check every minute
+        const interval = setInterval(() => {
+            if (isUpcoming && scheduledTime) {
+                setIsScheduledTimePassed(new Date() >= scheduledTime);
+            }
+        }, 60000); // Update every minute
+
+        return () => clearInterval(interval);
+    }, [isUpcoming, scheduledTime]);
 
     // Handle standalone YouTube video (not matched to a game)
     if (isStandalone && liveStream) {
         const streamUrl = liveStream.url;
         const title = liveStream.title;
         const isLive = liveStream.videoType === 'live';
-        const isUpcoming = liveStream.videoType === 'upcoming';
 
         if (!streamUrl) return null;
-
-        // Check if scheduled time has passed for upcoming streams
-        const scheduledTime = parseScheduledTime(liveStream.publishDate);
-
-        // Update current time every minute to check if scheduled time has passed
-        useEffect(() => {
-            // Check immediately
-            if (isUpcoming && scheduledTime) {
-                setIsScheduledTimePassed(new Date() >= scheduledTime);
-            }
-
-            // Then check every minute
-            const interval = setInterval(() => {
-                const now = new Date();
-                setCurrentTime(now);
-                if (isUpcoming && scheduledTime) {
-                    setIsScheduledTimePassed(now >= scheduledTime);
-                }
-            }, 60000); // Update every minute
-
-            return () => clearInterval(interval);
-        }, [isUpcoming, scheduledTime]);
 
         // Determine display state - show as live if actually live OR if scheduled time has passed
         const displayAsLive = isLive || (isUpcoming && isScheduledTimePassed);
