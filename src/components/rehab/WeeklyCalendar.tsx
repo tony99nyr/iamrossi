@@ -1,6 +1,7 @@
 'use client';
 
 import { css, cx } from '@styled-system/css';
+import Link from 'next/link';
 import type { OuraScores, RehabEntry, Exercise } from '@/types';
 import { useSwipe } from '@/hooks/useSwipe';
 import CalendarHeader from './CalendarHeader';
@@ -226,8 +227,62 @@ export default function WeeklyCalendar({
                 <div className={css({
                     display: 'flex',
                     justifyContent: 'flex-end',
+                    alignItems: 'center',
+                    gap: '12px',
                     marginTop: '32px',
                 })}>
+                    <Link
+                        href="/tools/knee-rehab/ai"
+                        className={css({
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: 'full',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.15rem',
+                            textDecoration: 'none',
+                            color: '#ededed',
+                            opacity: 0.4,
+                            transition: 'all 0.2s ease',
+                            _hover: {
+                                opacity: 0.85,
+                                borderColor: 'rgba(255,255,255,0.35)',
+                                transform: 'translateY(-2px)',
+                            },
+                        })}
+                        aria-label="Open AI context"
+                        title="AI context"
+                    >
+                        🤖
+                    </Link>
+                    <Link
+                        href="/tools/knee-rehab/summary"
+                        className={css({
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: 'full',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.15rem',
+                            textDecoration: 'none',
+                            color: '#ededed',
+                            opacity: 0.4,
+                            transition: 'all 0.2s ease',
+                            _hover: {
+                                opacity: 0.85,
+                                borderColor: 'rgba(255,255,255,0.35)',
+                                transform: 'translateY(-2px)',
+                            },
+                        })}
+                        aria-label="View rehab summary"
+                        title="Stats summary"
+                    >
+                        📊
+                    </Link>
                     <button
                         onClick={() => onSettingsClick?.()}
                         className={css({
