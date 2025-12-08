@@ -43,8 +43,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Black vs Hurricanes',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         location: 'Raleigh Ice Rink',
       },
     ];
@@ -61,8 +61,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Jr Canes vs Opponent',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         location: 'Test Rink',
       },
     ];
@@ -77,14 +77,14 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Tier 1 Elite Tournament',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T18:00:00'), // 8 hours
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T18:00:00'), // 8 hours
         location: 'Tournament Venue',
       },
       {
         summary: 'Black vs Test Team',
-        start: new Date('2025-01-16T10:00:00'),
-        end: new Date('2025-01-16T11:00:00'), // 1 hour
+        start: new Date('2025-09-16T10:00:00'),
+        end: new Date('2025-09-16T11:00:00'), // 1 hour
         location: 'Test Rink',
       },
     ];
@@ -103,8 +103,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Opponent vs Black',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         location: 'Away Rink',
       },
     ];
@@ -119,15 +119,15 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Black vs Test Opponent',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         location: 'Test Rink',
       },
     ];
 
     const mhrSchedule = [
       {
-        game_date: '2025-01-15',
+        game_date: '2025-09-15',
         game_time: '10:00 AM',
         home_team_name: 'Carolina Junior Canes (Black) 10U AA',
         visitor_team_name: 'Test Opponent',
@@ -147,8 +147,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Black vs Opponent',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         // No location
       },
     ];
@@ -162,14 +162,14 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Tier 1 Elite Tournament - Placeholder',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         location: 'Test Rink',
       },
       {
         summary: 'Black vs Test Team',
-        start: new Date('2025-01-16T10:00:00'),
-        end: new Date('2025-01-16T11:00:00'),
+        start: new Date('2025-09-16T10:00:00'),
+        end: new Date('2025-09-16T11:00:00'),
         location: 'Test Rink',
       },
     ];
@@ -187,8 +187,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Black vs Opponent',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         location: 'Test Rink',
       },
     ];
@@ -204,8 +204,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Weekend Showcase',
-        start: new Date('2025-01-15T08:00:00'),
-        end: new Date('2025-01-17T18:00:00'), // 2+ days
+        start: new Date('2025-09-15T08:00:00'),
+        end: new Date('2025-09-17T18:00:00'), // 2+ days
         location: 'Showcase Arena',
       },
     ];
@@ -224,8 +224,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Team Practice',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         location: 'Arena',
       },
     ];
@@ -240,8 +240,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Opponent TBD',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-15T11:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-15T11:00:00'),
         location: 'Local Rink',
       },
     ];
@@ -258,8 +258,8 @@ describe('Transform Calendar Events', () => {
     const events = [
       {
         summary: 'Tournament TBD',
-        start: new Date('2025-01-15T10:00:00'),
-        end: new Date('2025-01-17T18:00:00'),
+        start: new Date('2025-09-15T10:00:00'),
+        end: new Date('2025-09-17T18:00:00'),
         location: 'Arena',
       },
     ];
@@ -268,8 +268,8 @@ describe('Transform Calendar Events', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].isPlaceholder).toBe(true);
-    expect(result[0].placeholderStartDate).toBe(new Date('2025-01-15T10:00:00').toISOString());
-    expect(result[0].placeholderEndDate).toBe(new Date('2025-01-17T18:00:00').toISOString());
-    expect(result[0].game_date_format).toBe('2025-01-15');
+    expect(result[0].placeholderStartDate).toBe(new Date('2025-09-15T10:00:00').toISOString());
+    expect(result[0].placeholderEndDate).toBe(new Date('2025-09-17T18:00:00').toISOString());
+    expect(result[0].game_date_format).toBe('2025-09-15');
   });
 });
