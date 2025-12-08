@@ -111,21 +111,22 @@ export default async function NextGamePage() {
 
     // Filter for past games from MHR (current season only: 2025-2026)
     const currentSeasonStart = new Date('2025-08-01'); // Season typically starts in August
+    const currentSeasonEnd = new Date('2026-03-01'); // Season ends March 1st, 2026
     const pastGames = (mhrSchedule as unknown as Game[]).filter((game: Game) => {
         const gameDate = new Date(game.game_date_format || game.game_date);
 
-        // Must be from current season (after Aug 1, 2024)
-        if (gameDate < currentSeasonStart) return false;
+        // Must be from current season (after Aug 1, 2025 and before March 1, 2026)
+        if (gameDate < currentSeasonStart || gameDate >= currentSeasonEnd) return false;
 
         // Must be in the past (before today)
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         return gameDate < today;
     }).sort((a: Game, b: Game) => {
-        // Sort descending (most recent first) - include time for same-day games
-        const dateTimeA = new Date(`${a.game_date_format || a.game_date}T${a.game_time_format || a.game_time || '00:00:00'}`);
-        const dateTimeB = new Date(`${b.game_date_format || b.game_date}T${b.game_time_format || b.game_time || '00:00:00'}`);
-        return dateTimeB.getTime() - dateTimeA.getTime();
+        // Sort descending (most recent first)
+        const dateA = new Date(a.game_date_format || a.game_date);
+        const dateB = new Date(b.game_date_format || b.game_date);
+        return dateB.getTime() - dateA.getTime();
     });
 
     // Check cache for enriched games (video-matched)
@@ -160,18 +161,34 @@ export default async function NextGamePage() {
         settings.teamName
     );
 
-    // Re-sort enriched past games to ensure correct order (most recent first, including time)
-    enrichedPastGames.sort((a: Game, b: Game) => {
-        const dateTimeA = new Date(`${a.game_date_format || a.game_date}T${a.game_time_format || a.game_time || '00:00:00'}`);
-        const dateTimeB = new Date(`${b.game_date_format || b.game_date}T${b.game_time_format || b.game_time || '00:00:00'}`);
-        return dateTimeB.getTime() - dateTimeA.getTime();
-    });
-
     // Enrich future games with upcoming/live video data
     const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos);
 
     // Check if there are any live games (games with live stream URLs)
     const liveGames = enrichedFutureGames.filter((game: Game) => (game as unknown as { liveStreamUrl?: string }).liveStreamUrl);
 
-    return <NextGameClient futureGames={enrichedFutureGames} pastGames={enrichedPastGames} settings={settings} syncStatus={syncStatus} calendarSyncStatus={calendarSyncStatus} liveGames={liveGames} />;
+    // Detect active live streams from YouTube videos (not just matched to games)
+    // Prioritize actually live streams over upcoming ones
+    const activeLiveStreams = youtubeVideos.filter(video => {
+        return video.videoType === 'live' || video.videoType === 'upcoming';
+    });
+
+    // Get the most recent active live stream (prioritize live over upcoming)
+    const activeLiveStream = activeLiveStreams
+        .sort((a, b) => {
+            // Sort live streams first, then upcoming
+            if (a.videoType === 'live' && b.videoType !== 'live') return -1;
+            if (a.videoType !== 'live' && b.videoType === 'live') return 1;
+            return 0;
+        })[0] || null;
+
+    return <NextGameClient 
+        futureGames={enrichedFutureGames} 
+        pastGames={enrichedPastGames} 
+        settings={settings} 
+        syncStatus={syncStatus} 
+        calendarSyncStatus={calendarSyncStatus} 
+        liveGames={liveGames}
+        activeLiveStream={activeLiveStream}
+    />;
 }
