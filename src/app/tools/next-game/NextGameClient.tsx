@@ -35,6 +35,8 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
     const [expandedGameId, setExpandedGameId] = useState<string | number | null>(
         futureGames.length > 0 ? (futureGames[0].game_nbr ?? null) : null
     );
+    // State for cache status modal
+    const [isCacheModalOpen, setIsCacheModalOpen] = useState(false);
 
     const handleGameClick = (gameId: string | number | undefined, event: React.MouseEvent<HTMLDivElement>) => {
         if (gameId === undefined) return;
@@ -80,6 +82,7 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 teamName="Junior Canes 10U Black"
                 mhrTeamId={settings.mhrTeamId}
                 mhrYear={settings.mhrYear}
+                onInfoClick={() => setIsCacheModalOpen(true)}
             />
             
             <SocialLinks />
@@ -106,6 +109,8 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
             <CacheStatusFooter 
                 initialYouTubeStatus={syncStatus}
                 initialCalendarStatus={calendarSyncStatus}
+                isOpen={isCacheModalOpen}
+                onClose={() => setIsCacheModalOpen(false)}
             />
             
             <SyncStatusIndicator initialStatus={syncStatus} />

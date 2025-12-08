@@ -41,6 +41,7 @@ export default function StatRecordingPage() {
     isRevalidating: false,
     lastError: null
   });
+  const [isCacheModalOpen, setIsCacheModalOpen] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -115,6 +116,7 @@ export default function StatRecordingPage() {
           mhrYear={settings.mhrYear}
           subtitle="Stat Tracker"
           description="Record live game statistics, track player performance, and manage game sessions. Start a new session or view history below."
+          onInfoClick={() => setIsCacheModalOpen(true)}
       />
 
       {view === 'setup' && (
@@ -150,6 +152,8 @@ export default function StatRecordingPage() {
       <CacheStatusFooter 
         initialYouTubeStatus={youtubeStatus}
         initialCalendarStatus={calendarStatus}
+        isOpen={isCacheModalOpen}
+        onClose={() => setIsCacheModalOpen(false)}
       />
       </div>
     </>

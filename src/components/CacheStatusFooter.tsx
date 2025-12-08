@@ -7,13 +7,16 @@ import type { SyncStatus, CalendarSyncStatus } from '@/lib/kv';
 interface CacheStatusFooterProps {
   initialYouTubeStatus: SyncStatus;
   initialCalendarStatus: CalendarSyncStatus;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
 export default function CacheStatusFooter({ 
   initialYouTubeStatus, 
-  initialCalendarStatus 
+  initialCalendarStatus,
+  isOpen,
+  onClose
 }: CacheStatusFooterProps) {
-  const [isOpen, setIsOpen] = useState(false);
   const [youtubeStatus, setYoutubeStatus] = useState<SyncStatus>(initialYouTubeStatus);
   const [calendarStatus, setCalendarStatus] = useState<CalendarSyncStatus>(initialCalendarStatus);
   const [enrichedGamesCache, setEnrichedGamesCache] = useState<{ lastUpdated: number | null }>({ lastUpdated: null });
@@ -94,53 +97,6 @@ export default function CacheStatusFooter({
 
   return (
     <>
-      {/* Info Icon Button */}
-      <div className={css({
-        marginTop: '3rem',
-        display: 'flex',
-        justifyContent: 'center',
-        width: '100%',
-      })}>
-        <button
-          onClick={() => setIsOpen(true)}
-          className={css({
-            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '50%',
-            width: '32px',
-            height: '32px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            color: 'rgba(255, 255, 255, 0.6)',
-            fontSize: '16px',
-            transition: 'all 0.2s ease',
-            _hover: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              borderColor: 'rgba(255, 255, 255, 0.2)',
-              color: 'rgba(255, 255, 255, 0.8)',
-            },
-          })}
-          title="Cache & Sync Status"
-        >
-          <svg 
-            width="16" 
-            height="16" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
-          </svg>
-        </button>
-      </div>
-
       {/* Modal */}
       {isOpen && (
         <div 
@@ -160,7 +116,7 @@ export default function CacheStatusFooter({
           })}
           onClick={(e) => {
             if (e.target === e.currentTarget) {
-              setIsOpen(false);
+              onClose();
             }
           }}
         >
@@ -178,7 +134,7 @@ export default function CacheStatusFooter({
           })}>
             {/* Close Button */}
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={onClose}
               className={css({
                 position: 'absolute',
                 top: '16px',
