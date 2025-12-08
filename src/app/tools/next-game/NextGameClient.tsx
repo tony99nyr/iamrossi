@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ThunderstormBackground } from '@/components/ThunderstormBackground';
 import { cx } from '@styled-system/css';
 import { Game } from '@/types';
-import type { SyncStatus, CalendarSyncStatus } from '@/lib/kv';
+import type { SyncStatus } from '@/lib/kv';
 
 import HeroSection from './components/HeroSection';
 import SocialLinks from './components/SocialLinks';
@@ -15,6 +15,8 @@ import CacheStatusFooter from '@/components/CacheStatusFooter';
 import LiveStreamAlert from './components/LiveStreamAlert';
 import { containerStyle } from './styles';
 import type { EnrichedGame } from '@/utils/videoMatcher';
+import type { YouTubeVideo } from '@/lib/youtube-service';
+import type { CalendarSyncStatus } from '@/lib/kv';
 
 interface NextGameClientProps {
     futureGames: Game[];
@@ -28,9 +30,10 @@ interface NextGameClientProps {
     syncStatus: SyncStatus;
     calendarSyncStatus: CalendarSyncStatus;
     liveGames: EnrichedGame[];
+    activeLiveStream: YouTubeVideo | null;
 }
 
-export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, calendarSyncStatus, liveGames }: NextGameClientProps) {
+export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, calendarSyncStatus, liveGames, activeLiveStream }: NextGameClientProps) {
     // State for accordion - first game expanded by default
     const [expandedGameId, setExpandedGameId] = useState<string | number | null>(
         futureGames.length > 0 ? (futureGames[0].game_nbr ?? null) : null
@@ -85,10 +88,18 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 onInfoClick={() => setIsCacheModalOpen(true)}
             />
             
+            {/* Active live stream alert - show above YouTube channel link if there's an active live/upcoming stream */}
+            {activeLiveStream && (
+                <LiveStreamAlert
+                    liveStream={activeLiveStream}
+                    isStandalone={true}
+                />
+            )}
+
             <SocialLinks />
 
-            {/* Live stream alert - show if any live games */}
-            {liveGames.length > 0 && (
+            {/* Live stream alert - show if any live games (matched to games) */}
+            {liveGames.length > 0 && !activeLiveStream && (
                 <LiveStreamAlert liveGame={liveGames[0]} />
             )}
 
