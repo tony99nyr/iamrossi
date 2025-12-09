@@ -28,6 +28,27 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
     // Debounce timer for auto-save
     const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Check for date in URL params on mount
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const dateParam = params.get('date');
+            if (dateParam) {
+                // Validate date format (YYYY-MM-DD)
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+                    setSelectedDate(dateParam);
+                    // Set week start to the week containing this date
+                    const date = new Date(`${dateParam}T00:00:00`);
+                    const day = date.getDay();
+                    const diff = date.getDate() - day;
+                    const weekStart = new Date(date);
+                    weekStart.setDate(diff);
+                    setCurrentWeekStart(weekStart);
+                }
+            }
+        }
+    }, []);
+
     // Check for existing auth cookie on mount
     useEffect(() => {
         const checkAuth = async () => {
