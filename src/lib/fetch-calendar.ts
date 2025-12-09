@@ -34,9 +34,9 @@ export async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
       if (event.type === 'VEVENT') {
         const summary = event.summary || '';
         
-        // Skip practice events - only include actual games
+        // Skip practice/film review events - only include actual games
         const lowerSummary = summary.toLowerCase();
-        if (lowerSummary.includes('practice')) {
+        if (lowerSummary.includes('practice') || lowerSummary.includes('film review')) {
           continue;
         }
         

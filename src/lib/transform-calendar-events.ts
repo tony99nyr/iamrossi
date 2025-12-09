@@ -106,10 +106,14 @@ export async function transformCalendarEvents(
             continue;
         }
 
-        // Skip practice events - only include actual games
+        // Skip practice/film review events - only include actual games
         const lowerSummary = event.summary.toLowerCase();
-        if (lowerSummary.includes('practice') || lowerSummary.includes('pd practice')) {
-            debugLog(`Skipping practice event: "${event.summary}"`);
+        const isPracticeLikeEvent =
+            lowerSummary.includes('practice') ||
+            lowerSummary.includes('pd practice') ||
+            lowerSummary.includes('film review');
+        if (isPracticeLikeEvent) {
+            debugLog(`Skipping practice/film review event: "${event.summary}"`);
             continue;
         }
 
