@@ -20,12 +20,12 @@
 - Memoize expensive calculations with `useMemo` only when necessary (don't over-optimize)
 
 ## Panda CSS
-- If 6 or less styles in a css() block do it inline rather than extracting
+- If 6 or less styles in a `css()` block do it inline rather than extracting the `css()` block into a variable
 - Ensure all classNames and css rules are static and deterministic
 - Use tokens from `panda.config.ts` for colors, spacing, animations
 - Prefer Panda patterns (`stack()`, `flex()`, etc.) for common layouts
 - Never use CSS Modules or inline styles - Panda CSS only
-- Use descriptive class names that document the element's purpose
+- Use descriptive string class names that document the element's purpose i.e. `<div className={cx('page-container', pageContainerStyles}>`
 
 ## Next.js
 - Prefer fetching data in RSC (page can still be static)

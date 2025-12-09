@@ -258,7 +258,7 @@ export default function WeeklyCalendar({
                         🤖
                     </Link>
                     <Link
-                        href="/knee-rehab/print"
+                        href="/tools/knee-rehab/print"
                         className={css({
                             width: '40px',
                             height: '40px',
