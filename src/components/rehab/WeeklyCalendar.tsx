@@ -258,6 +258,32 @@ export default function WeeklyCalendar({
                         🤖
                     </Link>
                     <Link
+                        href="/knee-rehab/print"
+                        className={css({
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: 'full',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.15rem',
+                            textDecoration: 'none',
+                            color: '#ededed',
+                            opacity: 0.4,
+                            transition: 'all 0.2s ease',
+                            _hover: {
+                                opacity: 0.85,
+                                borderColor: 'rgba(255,255,255,0.35)',
+                                transform: 'translateY(-2px)',
+                            },
+                        })}
+                        aria-label="Open printable report"
+                        title="Printable report"
+                    >
+                        🖨️
+                    </Link>
+                    <Link
                         href="/tools/knee-rehab/summary"
                         className={css({
                             width: '40px',
