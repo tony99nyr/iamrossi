@@ -1,7 +1,6 @@
 import { getExercises, getEntries } from '@/lib/kv';
-import type { RehabSettings } from '@/types';
 import type { Metadata } from 'next';
-import { createClient } from 'redis';
+import { getRehabSettingsWithDefaults } from '@/lib/rehab-settings';
 import MarkdownRenderer from './MarkdownRenderer';
 
 export const metadata: Metadata = {
@@ -22,48 +21,10 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const redis = createClient({
-  url: process.env.REDIS_URL
-});
-
-import { ROSSI_SHAKE, ROSSI_VITAMINS } from '@/data/rehab-defaults';
-
-async function getSettings(): Promise<RehabSettings> {
-  try {
-    if (!redis.isOpen) {
-      await redis.connect();
-    }
-    const data = await redis.get('rehab:settings');
-    if (!data) {
-      return {
-        vitamins: ROSSI_VITAMINS,
-        proteinShake: ROSSI_SHAKE,
-      };
-    }
-    const parsed = JSON.parse(data);
-    
-    // Merge defaults if data is missing
-    if (!parsed.vitamins || parsed.vitamins.length === 0) {
-      parsed.vitamins = ROSSI_VITAMINS;
-    }
-    if (!parsed.proteinShake || !parsed.proteinShake.ingredients || parsed.proteinShake.ingredients.length === 0) {
-      parsed.proteinShake = ROSSI_SHAKE;
-    }
-    
-    return parsed;
-  } catch (error) {
-    console.error('Error fetching settings:', error);
-    return {
-      vitamins: ROSSI_VITAMINS,
-      proteinShake: ROSSI_SHAKE,
-    };
-  }
-}
-
 export default async function AIContextPage() {
   const exercises = await getExercises();
   const entries = await getEntries();
-  const settings = await getSettings();
+  const settings = await getRehabSettingsWithDefaults();
 
   // Sort entries by date descending (newest first)
   const sortedEntries = entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
