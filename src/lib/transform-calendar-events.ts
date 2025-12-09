@@ -118,6 +118,7 @@ export async function transformCalendarEvents(
         const isPlaceholder = isPlaceholderEvent(event, event.summary);
 
         const { opponent, isHome } = parseEventSummary(event.summary, settings.identifiers);
+        const opponentOverride = getOpponentOverride(opponent);
 
         if (isPlaceholder) {
             // Create a placeholder entry
@@ -219,9 +220,9 @@ export async function transformCalendarEvents(
         
         // Normalize opponent name and fix common typos before searching
         // Fix "Pheonix" -> "Phoenix" typo
-        let normalizedOpponent = opponent;
-        if (/\bpheonix\b/i.test(opponent)) {
-            normalizedOpponent = opponent.replace(/\bpheonix\b/gi, 'Phoenix');
+        let normalizedOpponent = opponentOverride?.normalizedName || opponent;
+        if (/\bpheonix\b/i.test(normalizedOpponent)) {
+            normalizedOpponent = normalizedOpponent.replace(/\bpheonix\b/gi, 'Phoenix');
             debugLog(`[MHR] Fixed typo: "${opponent}" -> "${normalizedOpponent}"`);
         }
         
@@ -404,6 +405,41 @@ export async function transformCalendarEvents(
                     debugLog(`[MHR] Updated team map cache for "${cacheKey}" with correct team ID 4576`);
                 }
             }
+        } else if (opponentOverride?.teamId) {
+            opponentTeamId = opponentOverride.teamId;
+            if (!mhrData || mhrData.mhrId !== opponentOverride.teamId) {
+                debugLog(`[MHR] Applying override for ${opponentOverride.normalizedName} (team ID ${opponentOverride.teamId})`);
+                try {
+                    const scrapedDetails = await scrapeTeamDetails(opponentOverride.teamId, effectiveYear);
+                    const { getTeamMap, setTeamMap } = await import('./kv');
+                    const teamMap = await getTeamMap();
+                    const cacheKey = normalizedOpponent;
+                    if (cacheKey) {
+                        const overrideTeamData: MHRTeamData = {
+                            name: scrapedDetails.name || opponentOverride.normalizedName,
+                            mhrId: opponentOverride.teamId,
+                            record: scrapedDetails.record,
+                            rating: scrapedDetails.rating,
+                            logo: scrapedDetails.logo,
+                            lastUpdated: Date.now()
+                        };
+                        teamMap[cacheKey] = overrideTeamData;
+                        await setTeamMap(teamMap);
+                        mhrData = overrideTeamData;
+                        debugLog(`[MHR] Cached override data for "${cacheKey}" with team ID ${opponentOverride.teamId}`);
+                    }
+                } catch (error) {
+                    debugLog(`[MHR] Error applying override for ${opponentOverride.normalizedName}:`, error);
+                    mhrData = {
+                        name: opponentOverride.normalizedName,
+                        mhrId: opponentOverride.teamId,
+                        record: mhrData?.record,
+                        rating: mhrData?.rating,
+                        logo: mhrData?.logo,
+                        lastUpdated: Date.now()
+                    };
+                }
+            }
         } else if (matchedGame) {
             // If matched game has opponent_team_id, use it
             if (matchedGame.opponent_team_id) {
@@ -461,7 +497,15 @@ export async function transformCalendarEvents(
 
 function parseEventSummary(summary: string, identifiers: string[]): { opponent: string | null, isHome: boolean } {
     // Normalize summary
-    const cleanSummary = summary.trim();
+    let cleanSummary = summary.trim();
+    let explicitHomeAway: 'home' | 'away' | null = null;
+    cleanSummary = cleanSummary
+        .replace(/\(\s*(home|away)\s*\)/gi, (_, match: string) => {
+            explicitHomeAway = match.toLowerCase() as 'home' | 'away';
+            return '';
+        })
+        .replace(/\s+/g, ' ')
+        .trim();
     
     // Check for "vs" (Home) or "@" (Away)
     const vsMatch = cleanSummary.match(/\s(vs\.?|versus)\s/i);
@@ -535,6 +579,9 @@ function parseEventSummary(summary: string, identifiers: string[]): { opponent: 
     }
 
     if (opponent) {
+        if (explicitHomeAway) {
+            return { opponent: opponent.trim(), isHome: explicitHomeAway === 'home' };
+        }
         return { opponent: opponent.trim(), isHome };
     }
 
@@ -559,4 +606,34 @@ function getFirstMatchingIdentifier(name: string, identifiers: string[]): number
         }
     }
     return identifiers.length;
+}
+
+interface OpponentOverrideResult {
+    normalizedName: string;
+    teamId?: string;
+}
+
+function getOpponentOverride(opponent: string | null): OpponentOverrideResult | null {
+    if (!opponent) {
+        return null;
+    }
+
+    const normalized = opponent.toLowerCase();
+    const collapsed = normalized.replace(/[^a-z0-9]/g, '');
+
+    if (collapsed.includes('cph')) {
+        return {
+            normalizedName: 'Carolina Premier',
+            teamId: '27724'
+        };
+    }
+
+    if (collapsed.includes('mercerchiefs')) {
+        return {
+            normalizedName: 'Mercer Chiefs',
+            teamId: '1191'
+        };
+    }
+
+    return null;
 }
