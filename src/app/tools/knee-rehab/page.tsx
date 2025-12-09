@@ -25,9 +25,26 @@ export const metadata: Metadata = {
     }
 };
 
-export default async function KneeRehabPage() {
+interface KneeRehabPageProps {
+    searchParams?: {
+        date?: string;
+    };
+}
+
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+export default async function KneeRehabPage({ searchParams }: KneeRehabPageProps) {
     const exercises = await getExercises();
     const entries = await getEntries();
 
-    return <KneeRehabClient initialExercises={exercises} initialEntries={entries} />;
+    const urlDate = searchParams?.date;
+    const initialSelectedDate = urlDate && DATE_REGEX.test(urlDate) ? urlDate : null;
+
+    return (
+        <KneeRehabClient
+            initialExercises={exercises}
+            initialEntries={entries}
+            initialSelectedDate={initialSelectedDate}
+        />
+    );
 }

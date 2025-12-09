@@ -12,11 +12,13 @@ import { useRehabState } from '@/hooks/useRehabState';
 interface KneeRehabClientProps {
     initialExercises: Exercise[];
     initialEntries: RehabEntry[];
+    initialSelectedDate?: string | null;
 }
 
 export default function KneeRehabClient({ 
     initialExercises, 
-    initialEntries 
+    initialEntries,
+    initialSelectedDate = null,
 }: KneeRehabClientProps) {
     const {
         exercises,
@@ -50,7 +52,7 @@ export default function KneeRehabClient({
         handleUpdateExerciseDefinition,
         handleDeleteExercise,
         handleGoToToday,
-    } = useRehabState({ initialExercises, initialEntries });
+    } = useRehabState({ initialExercises, initialEntries, initialSelectedDate });
 
     const [settingsTab, setSettingsTab] = useState<'vitamins' | 'protein' | 'exercises'>('vitamins');
 

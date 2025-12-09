@@ -5,13 +5,28 @@ import { ROSSI_SHAKE, ROSSI_VITAMINS } from '@/data/rehab-defaults';
 interface UseRehabStateProps {
     initialExercises: Exercise[];
     initialEntries: RehabEntry[];
+    initialSelectedDate?: string | null;
 }
 
-export function useRehabState({ initialExercises, initialEntries }: UseRehabStateProps) {
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+const getWeekStartForDate = (dateString?: string | null): Date => {
+    const baseDate = dateString ? new Date(`${dateString}T00:00:00`) : new Date();
+    const weekStart = new Date(baseDate);
+    const day = weekStart.getDay();
+    weekStart.setDate(weekStart.getDate() - day);
+    weekStart.setHours(0, 0, 0, 0);
+    return weekStart;
+};
+
+export function useRehabState({ initialExercises, initialEntries, initialSelectedDate = null }: UseRehabStateProps) {
     const [exercises, setExercises] = useState<Exercise[]>(initialExercises);
     const [entries, setEntries] = useState<RehabEntry[]>(initialEntries);
-    const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
-    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const validatedInitialDate = initialSelectedDate && DATE_REGEX.test(initialSelectedDate)
+        ? initialSelectedDate
+        : null;
+    const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getWeekStartForDate(validatedInitialDate));
+    const [selectedDate, setSelectedDate] = useState<string | null>(validatedInitialDate);
     const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false);
 
     const [settings, setSettings] = useState<RehabSettings>({ vitamins: ROSSI_VITAMINS, proteinShake: ROSSI_SHAKE });
@@ -29,26 +44,6 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
     const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     // Check for date in URL params on mount
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const params = new URLSearchParams(window.location.search);
-            const dateParam = params.get('date');
-            if (dateParam) {
-                // Validate date format (YYYY-MM-DD)
-                if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
-                    setSelectedDate(dateParam);
-                    // Set week start to the week containing this date
-                    const date = new Date(`${dateParam}T00:00:00`);
-                    const day = date.getDay();
-                    const diff = date.getDate() - day;
-                    const weekStart = new Date(date);
-                    weekStart.setDate(diff);
-                    setCurrentWeekStart(weekStart);
-                }
-            }
-        }
-    }, []);
-
     // Check for existing auth cookie on mount
     useEffect(() => {
         const checkAuth = async () => {
@@ -691,7 +686,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
 
     const handleGoToToday = useCallback(() => {
         const today = new Date();
-        setCurrentWeekStart(today);
+        setCurrentWeekStart(getWeekStartForDate(today.toISOString().slice(0, 10)));
         setSelectedDate(null);
         
         // Scroll to today's card after a brief delay to allow rendering
