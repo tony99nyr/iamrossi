@@ -43,10 +43,21 @@ export async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
         // Filter for game events:
         // 1. Has separator pattern (vs, @, versus, or hyphen) - traditional format
         // 2. OR has start time and location - likely a game even without separator
+        // 3. OR is a multi-day event (>24 hours) - likely a tournament/showcase
+        // 4. OR contains placeholder keywords (showcase, tournament, playoffs, TBD)
         const hasSeparator = /\b(vs\.?|@|versus)\b|(?:\s+(?:-|–|—)\s+)/i.test(summary);
         const hasTimeAndLocation = event.start && event.location;
         
-        if ((hasSeparator || hasTimeAndLocation) && event.start) {
+        // Check if it's a multi-day event
+        const startDate = event.start ? new Date(event.start) : null;
+        const endDate = event.end ? new Date(event.end) : startDate;
+        const isMultiDay = startDate && endDate && (endDate.getTime() - startDate.getTime()) > 24 * 60 * 60 * 1000;
+        
+        // Check for placeholder keywords (but not if it has vs/@ indicating a specific game)
+        const hasVersusOrAt = /\s(vs\.?|versus|@|at)\s/i.test(summary);
+        const hasPlaceholderKeywords = !hasVersusOrAt && /(showcase|tournament|playoffs|tbd|to be determined|placeholder|schedule tbd)/i.test(summary);
+        
+        if ((hasSeparator || hasTimeAndLocation || isMultiDay || hasPlaceholderKeywords) && event.start) {
           calendarEvents.push({
             summary: summary,
             start: new Date(event.start),
