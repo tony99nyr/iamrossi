@@ -2,7 +2,7 @@
 
 import { css, cx } from '@styled-system/css';
 import Link from 'next/link';
-import type { OuraScores, RehabEntry, Exercise } from '@/types';
+import type { OuraScores, RehabEntry, Exercise, GoogleFitHeartRate } from '@/types';
 import { useSwipe } from '@/hooks/useSwipe';
 import CalendarHeader from './CalendarHeader';
 import DayCard from './DayCard';
@@ -18,6 +18,7 @@ interface WeeklyCalendarProps {
     onSettingsClick?: (tab?: 'vitamins' | 'protein' | 'exercises') => void;
     onGoToToday?: () => void;
     ouraScores?: Record<string, OuraScores>;
+    heartRates?: Record<string, GoogleFitHeartRate>;
 }
 
 function getWeekDates(date: Date): Date[] {
@@ -68,6 +69,7 @@ export default function WeeklyCalendar({
     onSettingsClick,
     onGoToToday,
     ouraScores = {},
+    heartRates = {},
 }: WeeklyCalendarProps) {
     const weekDates = getWeekDates(currentDate);
     const today = formatDate(new Date());
@@ -129,6 +131,7 @@ export default function WeeklyCalendar({
                             isSelected={isSelected}
                             isToday={isToday}
                             ouraScores={ouraScores[dateStr]}
+                            heartRate={heartRates[dateStr]}
                             onSelect={() => onDateSelect(dateStr)}
                         />
                     );
@@ -219,6 +222,16 @@ export default function WeeklyCalendar({
                 >
                     <span className={css({ fontSize: '16px' })}>🥤</span>
                     <span>Protein shake</span>
+                </div>
+                <div className={css({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    color: '#999',
+                })}>
+                    <span className={css({ fontSize: '12px' })}>❤️</span>
+                    <span>HR Avg/Max</span>
                 </div>
             </div>
 

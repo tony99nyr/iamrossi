@@ -28,6 +28,7 @@ export default function KneeRehabClient({
         showSettingsModal,
         setShowSettingsModal,
         ouraScores,
+        heartRates,
         showPinModal,
         selectedEntry,
         requireAuth,
@@ -93,6 +94,7 @@ export default function KneeRehabClient({
                         onSettingsClick={handleOpenSettings}
                         onGoToToday={handleGoToToday}
                         ouraScores={ouraScores}
+                        heartRates={heartRates}
                     />
                 </div>
 
@@ -123,6 +125,7 @@ export default function KneeRehabClient({
                             onCreateExercise={handleCreateExercise}
                             onBack={handleBackToCalendar}
                             ouraScores={selectedDate ? ouraScores[selectedDate] : undefined}
+                            heartRate={selectedDate ? heartRates[selectedDate] : undefined}
                         />
                     </div>
                 )}

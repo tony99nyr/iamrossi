@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Exercise, RehabEntry, ExerciseEntry, RehabSettings, OuraScores } from '@/types';
+import type { Exercise, RehabEntry, ExerciseEntry, RehabSettings, OuraScores, GoogleFitHeartRate } from '@/types';
 import { ROSSI_SHAKE, ROSSI_VITAMINS } from '@/data/rehab-defaults';
 
 interface UseRehabStateProps {
@@ -19,6 +19,9 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
     
     // Oura integration state
     const [ouraScores, setOuraScores] = useState<Record<string, OuraScores>>({});
+    
+    // Google Fit heart rate integration state
+    const [heartRates, setHeartRates] = useState<Record<string, GoogleFitHeartRate>>({});
     
     // PIN authentication state
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -153,6 +156,56 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
             }
         };
         fetchOuraScores();
+    }, [currentWeekStart]);
+
+    // Fetch Google Fit heart rate data for the current week when week changes
+    useEffect(() => {
+        const fetchHeartRates = async () => {
+            try {
+                // Check if Google Fit is configured
+                const statusResponse = await fetch('/api/google-fit/status');
+                if (!statusResponse.ok) return;
+                
+                const status = await statusResponse.json();
+                if (!status.configured) return;
+
+                // Get all dates in current week
+                const weekDates = getWeekDates(currentWeekStart);
+                const rates: Record<string, GoogleFitHeartRate> = {};
+                
+                // Only fetch for past and current dates, not future
+                const today = new Date();
+                const todayStr = formatDate(today);
+
+                // Fetch heart rate for each day in parallel (only past/current dates, skip rest days)
+                await Promise.all(
+                    weekDates
+                        .filter(date => {
+                            const dateStr = formatDate(date);
+                            // Skip future dates and rest days
+                            const entry = entries.find(e => e.date === dateStr);
+                            return dateStr <= todayStr && !entry?.isRestDay;
+                        })
+                        .map(async (date) => {
+                            const dateStr = formatDate(date);
+                            try {
+                                const response = await fetch(`/api/google-fit/heart-rate?date=${dateStr}`);
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    rates[dateStr] = data;
+                                }
+                            } catch (error) {
+                                console.error(`Failed to fetch Google Fit heart rate for ${dateStr}:`, error);
+                            }
+                        })
+                );
+
+                setHeartRates(rates);
+            } catch (error) {
+                console.error('Failed to fetch Google Fit heart rate:', error);
+            }
+        };
+        fetchHeartRates();
     }, [currentWeekStart]);
 
     const selectedEntry = entries.find(e => e.date === selectedDate);
@@ -714,6 +767,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
         showSettingsModal,
         setShowSettingsModal,
         ouraScores,
+        heartRates,
         isAuthenticated,
         showPinModal,
         setShowPinModal,

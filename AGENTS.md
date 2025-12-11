@@ -1,3 +1,15 @@
+## ⚠️ IMPORTANT: Validation Before Completion
+
+**ALWAYS run `pnpm validate` before declaring any task complete.** This command runs:
+- Type checking (`pnpm type:check`)
+- Tests (`pnpm test`)
+- Linting (`pnpm lint`)
+- Build verification (`pnpm build`)
+
+This ensures code quality, catches errors early, and prevents breaking changes from being committed.
+
+---
+
 ## TypeScript
 - Only create an abstraction if it's actually needed
 - Prefer clear function/variable names over inline comments
@@ -8,6 +20,7 @@
 - Don't cast to `any` - use proper types from `@/types` or define new ones there
 - **Import shared types from `@/types/index.ts`** - never duplicate type definitions across files
 - Use strict TypeScript mode (already enabled) - no implicit any, strict null checks, etc.
+- **After making TypeScript changes, run `pnpm validate` to catch type errors**
 
 ## React
 - Avoid massive JSX blocks and compose smaller components
@@ -36,10 +49,12 @@
   - Lazy load images below the fold (default behavior)
 - Be mindful of serialized prop size for RSC → client components
 - API Routes:
-  - Always validate request bodies
+  - Always validate request bodies using Zod schemas
   - Return consistent error format: `{ error: string }`
-  - Use appropriate HTTP status codes
-  - Verify authentication on protected routes
+  - Use appropriate HTTP status codes (400, 401, 403, 404, 500, etc.)
+  - Verify authentication on protected routes (including sensitive read operations)
+  - Validate query parameters (dates, IDs, etc.)
+  - **After creating/modifying API routes, run `pnpm validate` to ensure everything works**
 
 ## Data Persistence & Redis
 - **Infrastructure**: Single Redis instance (Vercel KV).
@@ -47,6 +62,11 @@
   - **Never** directly access the Redis client in components or API routes.
   - **Never** hardcode Redis keys. Use `KV_KEYS` constant in `src/lib/kv.ts`.
   - Connection handling is automatic (includes retry logic).
+- **Common Redis Keys** (for reference):
+  - `rehab:exercises`, `rehab:entries`, `rehab:settings` - Rehab tool data
+  - `oura:scores:{date}` - Cached Oura Ring scores
+  - `google-fit:heart-rate:{date}` - Cached Google Fit heart rate data
+  - `admin:settings`, `admin:schedule`, `admin:mhr-schedule` - Admin data
 - **Adding New Data**:
   1. Define the data type in `@/types`.
   2. Add a new key to `KV_KEYS` in `src/lib/kv.ts`.
@@ -75,9 +95,25 @@
 - **Authentication**:
   - Admin routes: Use `verifyAdminAuth()` from `src/lib/auth.ts`
   - Rehab tool: Use PIN verification with rate limiting
-  - Always check auth on write operations
+  - **ALL API endpoints that handle sensitive data MUST require authentication** (including read operations for health data, personal info, etc.)
+  - Use `verifyAuthToken()` from `src/lib/auth.ts` for protected endpoints
+  - Always check auth on write operations AND sensitive read operations
 - **Rate Limiting**: Already implemented for PIN verification (in-memory)
-- **Validation**: Always validate and sanitize user input before processing
+- **Input Validation**:
+  - Always validate and sanitize user input before processing
+  - Use Zod schemas for request body validation (see `src/lib/validation.ts`)
+  - For date parameters: validate format, calendar validity, and prevent future dates where appropriate
+  - Validate all query parameters and request bodies
+- **Error Handling**:
+  - Return generic error messages to clients (don't expose internal implementation details)
+  - Log detailed errors server-side only using `console.error()`
+  - Use appropriate HTTP status codes (400 for validation errors, 401 for auth, 500 for server errors)
+- **API Endpoint Security Checklist**:
+  - ✅ Authentication required for sensitive data (read and write)
+  - ✅ Input validation on all parameters
+  - ✅ Generic error messages (no internal details leaked)
+  - ✅ Proper HTTP status codes
+  - ✅ Rate limiting where appropriate
 
 ## Performance
 - Use `async`/`await` consistently (no mixing with Promise chains)
@@ -90,13 +126,17 @@
 
 ## Error Handling
 - **API Routes**: Always wrap in try-catch and return proper error responses
+  - Return generic error messages to clients: `{ error: 'User-friendly message' }`
+  - Log detailed errors server-side: `console.error('Error details:', errorMessage)`
+  - Never expose stack traces, internal paths, or implementation details to clients
 - **Client Components**: Use error boundaries (already implemented)
 - **Redis**: Retry logic is built-in (3 attempts)
 - **Scraping**: Handle timeouts and failures gracefully
 - Log errors with context (what failed, why, relevant data)
 
 ## Testing
-- **Run `pnpm validate` before declaring a task complete**. This script runs `pnpm type:check`, `pnpm test`, `pnpm lint`, and `pnpm build` to keep the repo clean.
+- **CRITICAL: Run `pnpm validate` before declaring any task complete**. This script runs `pnpm type:check`, `pnpm test`, `pnpm lint`, and `pnpm build` to ensure code quality and catch issues early.
+- **Always run `pnpm validate` after making changes** - don't skip this step!
 - **Run tests before committing**: `pnpm test`
 - **Watch mode during development**: `pnpm test:watch`
 - **Coverage reports**: `pnpm test:coverage` (target: 85%+ for critical paths)
@@ -104,13 +144,20 @@
 - Use Playwright for browser automation (not Puppeteer)
 - Ensure serverless compatibility (no file system dependencies)
 - Test error states and edge cases
+- **Test Safety**: All tests use in-memory mocks or localhost Redis - never touch production data (see `tests/setup.ts` and `tests/mocks/redis.mock.ts`)
 
 ### When to Add Tests
+- **Adding new API routes** (REQUIRED) - Test authentication, validation, error handling, and success cases
 - Adding new authentication mechanisms
-- Adding new API routes (especially admin routes)
 - Adding data transformation logic
 - Adding critical business logic
 - Fixing bugs (add regression test)
+- **New API endpoints must include tests for**:
+  - Authentication (both authenticated and unauthenticated cases)
+  - Input validation (valid and invalid inputs)
+  - Error handling (service errors, validation errors)
+  - Success cases (with and without data)
+  - Edge cases (boundary conditions, empty data, etc.)
 
 ### Testing Stack
 - **Framework**: Vitest (fast, modern, TypeScript-first)
@@ -126,6 +173,3 @@ tests/
 ├── integration/      # End-to-end flow tests
 └── mocks/            # Shared mocks
 ```
-
-See `TESTING.md` for complete testing documentation.
-

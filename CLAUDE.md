@@ -29,6 +29,7 @@
 ## Build & Run Commands
 - **Dev Server**: `pnpm dev` (Runs on localhost:3000)
 - **Build**: `pnpm build`
+- **Validate**: `pnpm validate` ⚠️ **Run this before completing any task** - Runs type check, tests, lint, and build
 - **Test**: `pnpm test` (Run all tests)
 - **Test Watch**: `pnpm test:watch` (Run tests in watch mode)
 - **Test Coverage**: `pnpm test:coverage` (Generate coverage report)
@@ -54,8 +55,23 @@ Displays the upcoming hockey schedule and past game results.
     - Clickable past games (intended to link to MHR game previews).
 
 ### 2. Knee Rehab (`/tools/knee-rehab`)
-*Simple tracking tool for knee rehabilitation exercises.*
-- **Structure**: Likely a client-side form or list to track reps/sets.
+*Comprehensive tracking tool for knee rehabilitation exercises and daily wellness.*
+- **Features**:
+  - Exercise tracking (reps, sets, weight, time, pain/difficulty levels)
+  - Daily entries with rest day marking
+  - Vitamins and protein shake tracking
+  - Notes and observations
+  - Integration with Oura Ring scores (sleep, readiness, activity)
+  - Integration with Google Fit heart rate data (avg/max BPM)
+  - Weekly calendar view with exercise history
+- **Data Storage**: Redis (`rehab:exercises`, `rehab:entries`, `rehab:settings`)
+- **Authentication**: PIN-based with rate limiting (30-day session cookie)
+- **Key Components**:
+  - `KneeRehabClient.tsx`: Main client component with state management
+  - `WeeklyCalendar.tsx`: Week view with day cards
+  - `DayView.tsx`: Detailed day view with exercise list
+  - `DayCard.tsx`: Compact day card for calendar view
+  - `ExerciseCard.tsx`: Individual exercise display/editing
 
 ### 3. Stat Recording (`/tools/stat-recording`)
 *Tool for recording hockey player statistics.*
@@ -65,9 +81,11 @@ Displays the upcoming hockey schedule and past game results.
 
 ### Data Storage Strategy
 All persistent data is stored in Redis (Vercel KV):
-- **Rehab Tool**: `rehab:exercises` and `rehab:entries`
+- **Rehab Tool**: `rehab:exercises`, `rehab:entries`, `rehab:settings`
 - **Admin Settings**: `admin:settings`
 - **Schedule Data**: `admin:schedule` and `admin:mhr-schedule`
+- **Oura Integration**: Cached scores in `oura:scores:{date}`
+- **Google Fit Integration**: Cached heart rate data in `google-fit:heart-rate:{date}`
 
 **Type Definitions**: Shared types are centralized in `src/types/index.ts` and imported throughout the application.
 
@@ -80,9 +98,14 @@ All persistent data is stored in Redis (Vercel KV):
 
 2. **Rehab Tool** (`/tools/knee-rehab`):
    - Protected by `WORKOUT_ADMIN_PIN` environment variable
-   - PIN verification via `/api/rehab/verify-pin` (rate-limited)
+   - PIN verification via `/api/rehab/verify-pin` (rate-limited: 3 attempts, 5-minute cooldown)
    - Session cookie stored for 30 days
    - Write operations require authentication, read operations are public
+
+3. **Health Data APIs** (`/api/oura/*`, `/api/google-fit/*`):
+   - Protected by `verifyAuthToken()` from `src/lib/auth.ts`
+   - All endpoints require authentication (including read operations)
+   - Sensitive health data (heart rate, sleep scores) must be protected
 
 ### Error Handling
 - **Error Boundaries**: Implemented at root (`/app/error.tsx`) and tools level (`/app/tools/error.tsx`)
@@ -98,21 +121,43 @@ All persistent data is stored in Redis (Vercel KV):
   3. Fallback to page scraping if API fails
   4. Results cached in Redis
 
+### Health Data Integrations
+
+#### Oura Ring Integration
+- **Service**: `src/lib/oura-service.ts`
+- **API**: Oura Ring API v2 (Personal Access Token)
+- **Endpoints**: `/api/oura/scores`, `/api/oura/status`
+- **Data**: Sleep, Readiness, and Activity scores
+- **Caching**: Daily scores cached in Redis (24 hours for past days, 15 minutes for today)
+- **Authentication**: Required for all endpoints
+
+#### Google Fit Integration
+- **Service**: `src/lib/google-fit-service.ts`
+- **API**: Google Fit API v1 (OAuth2 refresh token)
+- **Endpoints**: `/api/google-fit/heart-rate`, `/api/google-fit/status`
+- **Data**: Heart rate (avg/max BPM) from workout sessions
+- **Caching**: Daily heart rate data cached in Redis (24 hours for past days, 15 minutes for today)
+- **Authentication**: Required for all endpoints
+- **Credentials**: Uses same OAuth2 credentials as Google Drive (`GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`)
+
 ## Environment Variables
 Required environment variables (see `.env.example`):
 - `ADMIN_SECRET`: Admin dashboard authentication token
 - `WORKOUT_ADMIN_PIN`: Rehab tool PIN code
 - `REDIS_URL`: Redis connection string
 - `HOCKEY_CALENDAR_SECRET_ADDRESS`: Google Calendar iCal URL
-- `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET`: (Optional) Oura Ring API credentials
+- `OURA_PAT`: (Optional) Oura Ring API Personal Access Token
+- `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` / `GOOGLE_DRIVE_REFRESH_TOKEN`: (Optional) Google Fit API credentials (shared with Google Drive)
 
 ## Maintenance & Best Practices
 
 ### Code Quality
-- **Console Logs**: There are ~54 console.log statements throughout the codebase. Most are in API routes for debugging. Consider:
+- **Validation**: Always run `pnpm validate` before completing tasks to catch type errors, test failures, linting issues, and build problems
+- **Console Logs**: There are console.log statements throughout the codebase. Most are in API routes for debugging. Consider:
   - Removing debug logs before production deployment
   - Using a proper logging library (e.g., Winston, Pino) for structured logging
   - Keeping only essential error logs
+  - **Important**: Error logs should include detailed information server-side, but return generic messages to clients
 
 - **Image Optimization**: Some components use `<img>` tags instead of `next/image`:
   - `GameCard.tsx`: Team logos should use `next/image` for optimization
@@ -169,14 +214,23 @@ Required environment variables (see `.env.example`):
     - Use `NextRequest` and `NextResponse` from `next/server`
     - Validate request bodies before processing
     - Return consistent error response format: `{ error: string }`
-10. **Testing** (see TESTING.md for details):
+10. **Testing**:
+    - **CRITICAL**: Run `pnpm validate` before declaring any task complete
     - Run `pnpm test` before committing changes
     - Add tests for new authentication mechanisms
-    - Add tests for new API routes (especially admin routes)
+    - Add tests for new API routes (REQUIRED - test auth, validation, error handling, success cases)
     - Add tests for data transformation logic
     - Tests use Vitest with mocked Redis (no actual Redis connection needed)
+    - All tests use in-memory mocks or localhost Redis - never touch production data
     - Integration tests validate critical user flows
-11. **Development Workflow**:
+11. **Security**:
+    - **ALL API endpoints handling sensitive data MUST require authentication** (including read operations)
+    - Use `verifyAuthToken()` for protected endpoints
+    - Validate all input using Zod schemas (see `src/lib/validation.ts`)
+    - Return generic error messages to clients (log details server-side only)
+    - Validate date parameters (format, calendar validity, prevent future dates where appropriate)
+12. **Development Workflow**:
+    - **ALWAYS run `pnpm validate` before completing tasks**
     - Ensure tests pass before committing
     - Run in WSL2 environment without GUI browser access
     - Use Playwright for browser automation needs

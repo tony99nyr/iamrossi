@@ -1,6 +1,6 @@
 import { css, cx } from '@styled-system/css';
 import OuraDayScores from '@/components/oura/OuraDayScores';
-import type { OuraScores, RehabEntry, Exercise } from '@/types';
+import type { OuraScores, RehabEntry, Exercise, GoogleFitHeartRate } from '@/types';
 
 interface DayCardProps {
     date: Date;
@@ -9,6 +9,7 @@ interface DayCardProps {
     isSelected: boolean;
     isToday: boolean;
     ouraScores?: OuraScores;
+    heartRate?: GoogleFitHeartRate;
     onSelect: () => void;
 }
 
@@ -34,6 +35,7 @@ export default function DayCard({
     isSelected,
     isToday,
     ouraScores,
+    heartRate,
     onSelect,
 }: DayCardProps) {
     const dateStr = formatDate(date);
@@ -268,24 +270,56 @@ export default function DayCard({
                 </div>
             )}
 
-            {/* Daily Tracking Icons */}
-            {(entry?.vitaminsTaken || entry?.proteinShake) && (
-                <div className={cx('tracking-icons', css({
-                    display: 'flex',
-                    gap: '6px',
-                    marginTop: 'auto',
-                    md: {
-                        gap: '8px',
-                    }
-                }))}>
-                    {entry.vitaminsTaken && (
-                        <span className={css({ fontSize: '16px', md: { fontSize: '20px' } })} title="Vitamins">💊</span>
-                    )}
-                    {entry.proteinShake && (
-                        <span className={css({ fontSize: '16px', md: { fontSize: '20px' } })} title="Protein">🥤</span>
-                    )}
-                </div>
-            )}
+            {/* Daily Tracking Icons & Heart Rate */}
+            <div className={cx('tracking-row', css({
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: 'auto',
+                gap: '8px',
+            }))}>
+                {/* Tracking Icons */}
+                {(entry?.vitaminsTaken || entry?.proteinShake) && (
+                    <div className={cx('tracking-icons', css({
+                        display: 'flex',
+                        gap: '6px',
+                        md: {
+                            gap: '8px',
+                        }
+                    }))}>
+                        {entry.vitaminsTaken && (
+                            <span className={css({ fontSize: '16px', md: { fontSize: '20px' } })} title="Vitamins">💊</span>
+                        )}
+                        {entry.proteinShake && (
+                            <span className={css({ fontSize: '16px', md: { fontSize: '20px' } })} title="Protein">🥤</span>
+                        )}
+                    </div>
+                )}
+                
+                {/* Heart Rate Display - Right aligned (skip on rest days) */}
+                {!entry?.isRestDay && heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined) && (
+                    <div className={cx('heart-rate-display', css({
+                        fontSize: '11px',
+                        color: '#999',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        md: {
+                            fontSize: '12px',
+                        }
+                    }))}>
+                        <span className={css({ fontSize: '10px', md: { fontSize: '11px' } })}>❤️</span>
+                        {heartRate.avgBpm !== undefined && heartRate.maxBpm !== undefined ? (
+                            <span>{Math.round(heartRate.avgBpm)}/{Math.round(heartRate.maxBpm)}</span>
+                        ) : heartRate.avgBpm !== undefined ? (
+                            <span>{Math.round(heartRate.avgBpm)}</span>
+                        ) : (
+                            <span>{Math.round(heartRate.maxBpm!)}</span>
+                        )}
+                    </div>
+                )}
+            </div>
         </button>
     );
 }

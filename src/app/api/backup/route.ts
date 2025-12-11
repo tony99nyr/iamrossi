@@ -30,9 +30,7 @@ export async function GET(request: NextRequest) {
     let driveResult = null;
     let driveError = null;
     
-    if (process.env.GOOGLE_DRIVE_CREDENTIALS || 
-        process.env.GOOGLE_REFRESH_TOKEN || 
-        process.env.GOOGLE_DRIVE_REFRESH_TOKEN) {
+    if (process.env.GOOGLE_DRIVE_REFRESH_TOKEN) {
       try {
         driveResult = await uploadToGoogleDrive(backupData);
         console.log('✅ Google Drive upload successful:', driveResult);
@@ -41,14 +39,13 @@ export async function GET(request: NextRequest) {
         console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
         console.error('Stack:', error instanceof Error ? error.stack : 'No stack trace');
         driveError = error instanceof Error ? error.message : 'Unknown error';
-        // Continue even if Google Drive upload fails
       }
     } else {
-      console.warn('⚠️  GOOGLE_DRIVE_CREDENTIALS not configured, skipping Google Drive upload');
+      console.warn('⚠️  GOOGLE_DRIVE_REFRESH_TOKEN not configured, skipping Google Drive upload');
     }
 
-    return NextResponse.json({
-      success: true,
+    const responsePayload = {
+      success: !driveError,
       timestamp: new Date().toISOString(),
       stats: {
         keys: Object.keys(allData).length,
@@ -61,7 +58,13 @@ export async function GET(request: NextRequest) {
         link: driveResult?.webViewLink,
         error: driveError
       }
-    });
+    };
+
+    if (driveError) {
+      return NextResponse.json(responsePayload, { status: 500 });
+    }
+
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error('Backup error:', error);
     return NextResponse.json(
@@ -75,9 +78,9 @@ async function uploadToGoogleDrive(backupData: Record<string, unknown>) {
   let auth;
   
   // Check for OAuth credentials (preferred for personal accounts)
-  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_DRIVE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_DRIVE_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN || process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+  const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
 
   if (refreshToken && clientId && clientSecret) {
     const { google } = await import('googleapis');
@@ -94,28 +97,7 @@ async function uploadToGoogleDrive(backupData: Record<string, unknown>) {
     auth = oauth2Client;
     console.log('Using OAuth 2.0 authentication');
   } 
-  // Fallback to Service Account (works for Workspace/Shared Drives)
-  else if (process.env.GOOGLE_DRIVE_CREDENTIALS) {
-    // Parse service account credentials
-    // Handle both single-quoted (fixed) and double-quoted formats
-    let credentials;
-    try {
-        const rawCreds = process.env.GOOGLE_DRIVE_CREDENTIALS;
-        // If it was fixed to be single quoted in .env, dotenv might have loaded it correctly now
-        // But if it still has issues, we try to parse carefully
-        credentials = JSON.parse(rawCreds);
-    } catch (e) {
-        console.error('Error parsing GOOGLE_DRIVE_CREDENTIALS:', e);
-        throw new Error('Invalid GOOGLE_DRIVE_CREDENTIALS format');
-    }
-    
-    const { google } = await import('googleapis');
-    auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/drive.file'],
-    });
-    console.log('Using Service Account authentication');
-  } else {
+  else {
     throw new Error('No valid Google Drive credentials found');
   }
 

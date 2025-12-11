@@ -5,7 +5,7 @@ import { useState } from 'react';
 import SmartAutocomplete from './SmartAutocomplete';
 import ExerciseCard from './ExerciseCard';
 import OuraDayScoresLarge from '@/components/oura/OuraDayScoresLarge';
-import type { Exercise, ExerciseEntry, RehabEntry, OuraScores } from '@/types';
+import type { Exercise, ExerciseEntry, RehabEntry, OuraScores, GoogleFitHeartRate } from '@/types';
 
 interface DayViewProps {
     date: string;
@@ -24,6 +24,7 @@ interface DayViewProps {
     onCreateExercise: (title: string, description: string) => Promise<Exercise>;
     onBack?: () => void;
     ouraScores?: OuraScores;
+    heartRate?: GoogleFitHeartRate;
 }
 
 function formatDateHeader(dateStr: string): string {
@@ -57,6 +58,7 @@ export default function DayView({
     onCreateExercise,
     onBack,
     ouraScores,
+    heartRate,
 }: DayViewProps) {
     const [exerciseToDelete, setExerciseToDelete] = useState<{id: string, title: string} | null>(null);
 
@@ -155,35 +157,88 @@ export default function DayView({
                 </h2>
             </div>
 
-            {/* Oura Scores & Daily Tracking - Combined Grid */}
-            <div className={cx('tracking-section', css({
+            {/* Oura Scores & Heart Rate Row */}
+            {(ouraScores || (!entry?.isRestDay && heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined))) && (
+                <div className={cx('tracking-section', css({
+                    marginBottom: '16px',
+                    display: 'grid',
+                    gridTemplateColumns: ouraScores && heartRate && !entry?.isRestDay ? 'repeat(4, 1fr)' : ouraScores ? 'repeat(3, 1fr)' : '1fr',
+                    gap: '12px',
+                    alignItems: 'start',
+                    _xlg: {
+                        maxWidth: ouraScores && heartRate && !entry?.isRestDay ? '800px' : ouraScores ? '600px' : '200px',
+                        margin: '0 auto 16px auto',
+                        gap: '16px',
+                    }
+                }))}>
+                    {/* Oura Scores */}
+                    {ouraScores && (
+                        <>
+                            <div className={css({ display: 'flex', justifyContent: 'center' })}>
+                                <OuraDayScoresLarge scores={{ readinessScore: ouraScores.readinessScore }} />
+                            </div>
+                            <div className={css({ display: 'flex', justifyContent: 'center' })}>
+                                <OuraDayScoresLarge scores={{ sleepScore: ouraScores.sleepScore }} />
+                            </div>
+                            <div className={css({ display: 'flex', justifyContent: 'center' })}>
+                                <OuraDayScoresLarge scores={{ activityScore: ouraScores.activityScore }} />
+                            </div>
+                        </>
+                    )}
+
+                    {/* Heart Rate Display (skip on rest days) */}
+                    {!entry?.isRestDay && heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined) && (
+                        <div className={css({ 
+                            display: 'flex', 
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '6px',
+                            backgroundColor: '#1a1a1a',
+                            border: '1px solid #333',
+                            borderRadius: '8px',
+                        })}>
+                            <div className={css({ fontSize: '16px', marginBottom: '2px' })}>❤️</div>
+                            {heartRate.avgBpm !== undefined && (
+                                <div className={css({ 
+                                    fontSize: '10px', 
+                                    color: '#999',
+                                    lineHeight: '1.2',
+                                })}>
+                                    Avg: <span className={css({ 
+                                        fontSize: '12px', 
+                                        fontWeight: '600', 
+                                        color: '#ef4444',
+                                    })}>{Math.round(heartRate.avgBpm)}</span>
+                                </div>
+                            )}
+                            {heartRate.maxBpm !== undefined && (
+                                <div className={css({ 
+                                    fontSize: '10px', 
+                                    color: '#999',
+                                    lineHeight: '1.2',
+                                    marginTop: '1px',
+                                })}>
+                                    Max: {Math.round(heartRate.maxBpm)}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Tracking Buttons Row - Always 3 columns */}
+            <div className={cx('tracking-buttons', css({
                 marginBottom: '24px',
                 display: 'grid',
                 gridTemplateColumns: 'repeat(3, 1fr)',
                 gap: '12px',
-                alignItems: 'start',
                 _xlg: {
                     maxWidth: '600px',
                     margin: '0 auto 24px auto',
                     gap: '16px',
                 }
             }))}>
-                {/* Oura Scores Row */}
-                {ouraScores && (
-                    <>
-                        <div className={css({ display: 'flex', justifyContent: 'center' })}>
-                            <OuraDayScoresLarge scores={{ readinessScore: ouraScores.readinessScore }} />
-                        </div>
-                        <div className={css({ display: 'flex', justifyContent: 'center' })}>
-                            <OuraDayScoresLarge scores={{ sleepScore: ouraScores.sleepScore }} />
-                        </div>
-                        <div className={css({ display: 'flex', justifyContent: 'center' })}>
-                            <OuraDayScoresLarge scores={{ activityScore: ouraScores.activityScore }} />
-                        </div>
-                    </>
-                )}
-
-                {/* Tracking Buttons Row */}
                 <button
                     onClick={onToggleRestDay}
                     className={cx('rest-day-toggle', css({

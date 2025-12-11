@@ -78,6 +78,17 @@ export interface OuraTokens {
   expiresAt: number;          // Unix timestamp
 }
 
+// ============================================================================
+// Google Fit Integration Types
+// ============================================================================
+
+export interface GoogleFitHeartRate {
+  date: string;
+  avgBpm?: number;
+  maxBpm?: number;
+  sampleCount?: number;
+  lastSynced?: string;
+}
 
 // ============================================================================
 // Admin/Settings Types

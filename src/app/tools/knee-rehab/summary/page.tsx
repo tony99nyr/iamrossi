@@ -3,7 +3,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { css, cx } from '@styled-system/css';
 import { getEntries, getExercises } from '@/lib/kv';
-import type { ExerciseEntry, RehabEntry } from '@/types';
+import { getDailyHeartRate, isGoogleFitConfigured } from '@/lib/google-fit-service';
+import type { ExerciseEntry, RehabEntry, GoogleFitHeartRate } from '@/types';
 
 const LOOKBACK_DAYS = 30;
 const TREND_WINDOW_DAYS = 30;
@@ -129,6 +130,46 @@ export default async function RehabSummaryPage() {
     ...entry,
     dateObj: new Date(`${entry.date}T00:00:00`),
   }));
+
+  // Create a map of dates to entries for quick lookup
+  const entriesByDateMap = new Map<string, EntryWithDate>();
+  entriesWithDate.forEach(entry => {
+    entriesByDateMap.set(entry.date, entry);
+  });
+
+  // Fetch heart rate data for all dates in the lookback window (skip rest days)
+  const heartRatesByDate: Record<string, GoogleFitHeartRate> = {};
+  if (isGoogleFitConfigured()) {
+    const now = new Date();
+    const lookbackStart = new Date(now);
+    lookbackStart.setDate(now.getDate() - LOOKBACK_DAYS);
+    
+    const datesToFetch: string[] = [];
+    for (let i = 0; i < LOOKBACK_DAYS; i += 1) {
+      const date = new Date(lookbackStart);
+      date.setDate(lookbackStart.getDate() + i);
+      datesToFetch.push(toYMD(date));
+    }
+    
+    // Fetch heart rate data in parallel (skip rest days)
+    await Promise.all(
+      datesToFetch
+        .filter(date => {
+          const entry = entriesByDateMap.get(date);
+          return !entry?.isRestDay;
+        })
+        .map(async (date) => {
+          try {
+            const hr = await getDailyHeartRate(date);
+            if (hr.avgBpm !== undefined || hr.maxBpm !== undefined) {
+              heartRatesByDate[date] = hr;
+            }
+          } catch (error) {
+            console.error(`Failed to fetch heart rate for ${date}:`, error);
+          }
+        })
+    );
+  }
 
   const now = new Date();
   const todayStr = toYMD(now);
@@ -328,6 +369,32 @@ export default async function RehabSummaryPage() {
     trainingConsistency * 0.5 + effortLoad * 0.3 + ((vitaminConsistency + shakeConsistency) / 2) * 0.2
   );
 
+  // Heart rate metrics
+  const workoutDaysWithHR = workoutEntries.filter(entry => {
+    const hr = heartRatesByDate[entry.date];
+    return hr?.maxBpm !== undefined;
+  });
+  const avgWorkoutHR = workoutDaysWithHR.length > 0
+    ? average(workoutDaysWithHR.map(entry => heartRatesByDate[entry.date].maxBpm!).filter((bpm): bpm is number => bpm !== undefined))
+    : null;
+  const peakHR = windowEntries
+    .map(entry => heartRatesByDate[entry.date]?.maxBpm)
+    .filter((bpm): bpm is number => bpm !== undefined)
+    .reduce((max, bpm) => Math.max(max, bpm), 0) || null;
+  const hrConsistency = workoutEntries.length > 0
+    ? (workoutDaysWithHR.length / workoutEntries.length) * 100
+    : 0;
+  const athleticZoneDays = workoutDaysWithHR.filter(entry => {
+    const hr = heartRatesByDate[entry.date];
+    return hr?.maxBpm !== undefined && hr.maxBpm >= 150;
+  }).length;
+  
+  // Effort efficiency: days with high HR but low exercise count
+  const highEffortLowExerciseDays = workoutEntries.filter(entry => {
+    const hr = heartRatesByDate[entry.date];
+    return hr?.maxBpm !== undefined && hr.maxBpm >= 150 && entry.exercises.length <= 3;
+  }).length;
+
   // Streaks
   const loggedDateSet = new Set(windowEntries.map(entry => entry.date));
   let currentStreak = 0;
@@ -472,24 +539,20 @@ export default async function RehabSummaryPage() {
   // Intensity heatmap data for 30-day window (including today)
   const heatmapStartDate = new Date(now);
   heatmapStartDate.setDate(now.getDate() - (TREND_WINDOW_DAYS - 1));
-  
-  const entriesByDate = new Map<string, EntryWithDate>();
-  windowEntries.forEach(entry => {
-    entriesByDate.set(entry.date, entry);
-  });
 
   const heatmapData: Array<{
     date: Date;
     dateStr: string;
     intensity: number;
     entry: EntryWithDate | null;
+    heartRate?: GoogleFitHeartRate;
   }> = [];
 
   for (let i = 0; i < TREND_WINDOW_DAYS; i += 1) {
     const currentDate = new Date(heatmapStartDate);
     currentDate.setDate(heatmapStartDate.getDate() + i);
     const dateStr = toYMD(currentDate);
-    const entry = entriesByDate.get(dateStr) ?? null;
+    const entry = entriesByDateMap.get(dateStr) ?? null;
 
     let intensity = 0;
     if (entry) {
@@ -511,8 +574,30 @@ export default async function RehabSummaryPage() {
         const setsScore = Math.min(totalSets / 30, 1);
         const timeScore = Math.min(totalMinutes / 60, 1);
         
-        // Weighted combination
-        intensity = (exerciseScore * 0.4 + setsScore * 0.4 + timeScore * 0.2);
+        // Heart rate intensity score
+        const hr = heartRatesByDate[dateStr];
+        let hrScore = 0;
+        if (hr?.maxBpm !== undefined) {
+          // HR zones: Resting (< 100): 0.1, Light (100-130): 0.3, Moderate (130-150): 0.6, Athletic (150-170): 0.9, Peak (> 170): 1.0
+          if (hr.maxBpm < 100) {
+            hrScore = 0.1;
+          } else if (hr.maxBpm < 130) {
+            hrScore = 0.3;
+          } else if (hr.maxBpm < 150) {
+            hrScore = 0.6;
+          } else if (hr.maxBpm < 170) {
+            hrScore = 0.9;
+          } else {
+            hrScore = 1.0;
+          }
+        }
+        
+        // Weighted combination - include HR if available, otherwise fall back to exercise-only
+        if (hrScore > 0) {
+          intensity = (exerciseScore * 0.3 + setsScore * 0.3 + timeScore * 0.15 + hrScore * 0.25);
+        } else {
+          intensity = (exerciseScore * 0.4 + setsScore * 0.4 + timeScore * 0.2);
+        }
       }
     }
 
@@ -521,6 +606,7 @@ export default async function RehabSummaryPage() {
       dateStr,
       intensity,
       entry,
+      heartRate: heartRatesByDate[dateStr],
     });
   }
 
@@ -530,6 +616,7 @@ export default async function RehabSummaryPage() {
     dateStr: string;
     intensity: number;
     entry: EntryWithDate | null;
+    heartRate?: GoogleFitHeartRate;
   }> = [];
   
   // Find the first Sunday before or on the start date
@@ -645,6 +732,43 @@ export default async function RehabSummaryPage() {
             </div>
             <p className={cx('rehab-summary-stat-description', statDescription)}>Individual exercises logged</p>
           </div>
+
+          {avgWorkoutHR !== null && (
+            <div className={cx('rehab-summary-stat-avg-workout-hr', statCard)}>
+              <p className={cx('rehab-summary-stat-label', statLabel)}>Avg workout HR</p>
+              <div className={cx('rehab-summary-stat-value-row', statValueRow)}>
+                <span className={cx('rehab-summary-stat-value', statValue)}>{Math.round(avgWorkoutHR)}</span>
+                <span className={cx('rehab-summary-stat-delta-neutral', statDeltaNeutral)}>bpm</span>
+              </div>
+              <p className={cx('rehab-summary-stat-description', statDescription)}>
+                {workoutDaysWithHR.length} workout{workoutDaysWithHR.length !== 1 ? 's' : ''} with HR data
+              </p>
+            </div>
+          )}
+
+          {peakHR !== null && (
+            <div className={cx('rehab-summary-stat-peak-hr', statCard)}>
+              <p className={cx('rehab-summary-stat-label', statLabel)}>Peak HR</p>
+              <div className={cx('rehab-summary-stat-value-row', statValueRow)}>
+                <span className={cx('rehab-summary-stat-value', statValue)}>{peakHR}</span>
+                <span className={cx('rehab-summary-stat-delta-neutral', statDeltaNeutral)}>bpm</span>
+              </div>
+              <p className={cx('rehab-summary-stat-description', statDescription)}>Highest in {LOOKBACK_DAYS}-day window</p>
+            </div>
+          )}
+
+          {workoutEntries.length > 0 && (
+            <div className={cx('rehab-summary-stat-hr-consistency', statCard)}>
+              <p className={cx('rehab-summary-stat-label', statLabel)}>HR consistency</p>
+              <div className={cx('rehab-summary-stat-value-row', statValueRow)}>
+                <span className={cx('rehab-summary-stat-value', statValue)}>{hrConsistency.toFixed(0)}%</span>
+                <span className={cx('rehab-summary-stat-delta-neutral', statDeltaNeutral)}>
+                  {workoutDaysWithHR.length} / {workoutEntries.length}
+                </span>
+              </div>
+              <p className={cx('rehab-summary-stat-description', statDescription)}>Workouts with HR data</p>
+            </div>
+          )}
         </div>
       </section>
 
@@ -717,6 +841,118 @@ export default async function RehabSummaryPage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className={cx('rehab-summary-section-heart-rate-analytics', sectionBlock)}>
+        <div className={cx('rehab-summary-section-header', sectionHeader)}>
+          <h2>Heart Rate Analytics</h2>
+          <span>Effort & consistency metrics</span>
+        </div>
+        <div className={cx('rehab-summary-hr-grid', hrGrid)}>
+          <div className={cx('rehab-summary-hr-stats-column', hrStatsColumn)}>
+            {avgWorkoutHR !== null && (
+              <div className={cx('rehab-summary-stat-avg-workout-hr', statCard)}>
+                <p className={cx('rehab-summary-stat-label', statLabel)}>Average workout HR</p>
+                <div className={cx('rehab-summary-stat-value-row', statValueRow)}>
+                  <span className={cx('rehab-summary-stat-value', statValue)}>{Math.round(avgWorkoutHR)}</span>
+                  <span className={cx('rehab-summary-stat-delta-neutral', statDeltaNeutral)}>bpm</span>
+                </div>
+                <p className={cx('rehab-summary-stat-description', statDescription)}>
+                  Across {workoutDaysWithHR.length} workout{workoutDaysWithHR.length !== 1 ? 's' : ''} with HR data
+                </p>
+              </div>
+            )}
+
+            {peakHR !== null && (
+              <div className={cx('rehab-summary-stat-peak-hr', statCard)}>
+                <p className={cx('rehab-summary-stat-label', statLabel)}>Peak HR achieved</p>
+                <div className={cx('rehab-summary-stat-value-row', statValueRow)}>
+                  <span className={cx('rehab-summary-stat-value', statValue)}>{peakHR}</span>
+                  <span className={cx('rehab-summary-stat-delta-neutral', statDeltaNeutral)}>bpm</span>
+                </div>
+                <p className={cx('rehab-summary-stat-description', statDescription)}>
+                  Highest max HR in {LOOKBACK_DAYS}-day window
+                </p>
+              </div>
+            )}
+
+            {workoutEntries.length > 0 && (
+              <div className={cx('rehab-summary-stat-hr-consistency', statCard)}>
+                <p className={cx('rehab-summary-stat-label', statLabel)}>HR consistency</p>
+                <div className={cx('rehab-summary-stat-value-row', statValueRow)}>
+                  <span className={cx('rehab-summary-stat-value', statValue)}>{hrConsistency.toFixed(0)}%</span>
+                  <span className={cx('rehab-summary-stat-delta-neutral', statDeltaNeutral)}>
+                    {workoutDaysWithHR.length} / {workoutEntries.length}
+                  </span>
+                </div>
+                <p className={cx('rehab-summary-stat-description', statDescription)}>
+                  Percentage of workout days with HR data
+                </p>
+              </div>
+            )}
+
+            {athleticZoneDays > 0 && (
+              <div className={cx('rehab-summary-stat-athletic-zone-days', statCard)}>
+                <p className={cx('rehab-summary-stat-label', statLabel)}>Athletic zone days</p>
+                <div className={cx('rehab-summary-stat-value-row', statValueRow)}>
+                  <span className={cx('rehab-summary-stat-value', statValue)}>{athleticZoneDays}</span>
+                  <span className={cx('rehab-summary-stat-delta-positive', statDeltaPositive)}>≥ 150 bpm</span>
+                </div>
+                <p className={cx('rehab-summary-stat-description', statDescription)}>
+                  Workouts reaching athletic heart rate zone
+                </p>
+              </div>
+            )}
+
+            {highEffortLowExerciseDays > 0 && (
+              <div className={cx('rehab-summary-stat-effort-efficiency', statCard)}>
+                <p className={cx('rehab-summary-stat-label', statLabel)}>High effort, low count</p>
+                <div className={cx('rehab-summary-stat-value-row', statValueRow)}>
+                  <span className={cx('rehab-summary-stat-value', statValue)}>{highEffortLowExerciseDays}</span>
+                  <span className={cx('rehab-summary-stat-delta-positive', statDeltaPositive)}>days</span>
+                </div>
+                <p className={cx('rehab-summary-stat-description', statDescription)}>
+                  ≤3 exercises but HR ≥ 150 bpm (high intensity workouts)
+                </p>
+              </div>
+            )}
+          </div>
+
+          {workoutDaysWithHR.length > 0 && (
+            <div className={cx('rehab-summary-hr-timeline-card', timelineCard)}>
+              <p className={cx('rehab-summary-stat-label', statLabel)}>HR trend</p>
+              {workoutDaysWithHR.length === 0 ? (
+                <p className={cx('rehab-summary-stat-description', statDescription)}>No HR data available.</p>
+              ) : (
+                <div className={cx('rehab-summary-pain-timeline-list', timelineList)}>
+                  {workoutDaysWithHR
+                    .slice()
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                    .slice(0, 12)
+                    .map(entry => {
+                      const hr = heartRatesByDate[entry.date];
+                      const maxHR = hr?.maxBpm ?? 0;
+                      const dateObj = new Date(`${entry.date}T00:00:00`);
+                      return (
+                        <div key={entry.date} className={cx('rehab-summary-pain-timeline-row', timelineRow)}>
+                          <span className="rehab-summary-pain-timeline-date">{formatDisplayDate(dateObj)}</span>
+                          <div
+                            className={cx('rehab-summary-pain-timeline-bar', timelineBar)}
+                            style={{ '--fill': `${((maxHR - 60) / (180 - 60)) * 100}%` } as CSSProperties}
+                          >
+                            <span className={cx('rehab-summary-pain-timeline-bar-glow', timelineBarGlow)} />
+                          </div>
+                          <span className={cx('rehab-summary-pain-timeline-value', timelineValue)}>
+                            {maxHR !== 0 ? `${Math.round(maxHR)} bpm` : '—'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </section>
 
       <section className={cx('rehab-summary-section-strength-progress', sectionBlock)}>
@@ -804,6 +1040,7 @@ export default async function RehabSummaryPage() {
           <div className={cx('rehab-summary-heatmap-section', heatmapSection)}>
             <div className={cx('rehab-summary-section-header', sectionHeader)}>
               <h2>Activity Heatmap</h2>
+              <span>Exercise + Heart Rate intensity</span>
               <span>30-day intensity overview</span>
             </div>
             {!hasData ? (
@@ -840,6 +1077,7 @@ export default async function RehabSummaryPage() {
                             ? `rgba(${greenR}, ${greenG}, ${greenB}, ${opacity})`
                             : 'transparent',
                         } as CSSProperties}
+                        title={day.heartRate?.maxBpm ? `Max HR: ${Math.round(day.heartRate.maxBpm)} bpm${day.heartRate.avgBpm ? `, Avg: ${Math.round(day.heartRate.avgBpm)} bpm` : ''}` : undefined}
                       >
                         <div className={cx('rehab-summary-heatmap-cell-content', heatmapCellContent)}>
                           <span className={cx('rehab-summary-heatmap-cell-day-name', heatmapCellDayName)}>{dayName}</span>
@@ -857,6 +1095,9 @@ export default async function RehabSummaryPage() {
                   <span className={cx('rehab-summary-heatmap-legend-label', heatmapLegendLabel)}>Less</span>
                   <div className={cx('rehab-summary-heatmap-legend-gradient', heatmapLegendGradient)} />
                   <span className={cx('rehab-summary-heatmap-legend-label', heatmapLegendLabel)}>More</span>
+                  <span className={cx('rehab-summary-heatmap-legend-note', css({ fontSize: '0.7rem', color: '#94a3b8', marginLeft: '0.5rem' }))}>
+                    (Exercise + HR intensity)
+                  </span>
                 </div>
               </div>
             )}
@@ -1066,6 +1307,18 @@ const statDescription = css({
 const painGrid = css({
   display: 'grid',
   gridTemplateColumns: { base: '1fr', lg: '420px 1fr' },
+  gap: '1rem',
+});
+
+const hrGrid = css({
+  display: 'grid',
+  gridTemplateColumns: { base: '1fr', lg: '420px 1fr' },
+  gap: '1rem',
+});
+
+const hrStatsColumn = css({
+  display: 'flex',
+  flexDirection: 'column',
   gap: '1rem',
 });
 

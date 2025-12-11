@@ -1,5 +1,13 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Documentation for AI Agents
+
+**Important**: Before making any changes, please read:
+- [`AGENTS.md`](./AGENTS.md) - Coding standards, security practices, and development guidelines
+- [`CLAUDE.md`](./CLAUDE.md) - Project overview, architecture, and operational constraints
+
+These files contain critical information about code style, security requirements, testing, and project structure.
+
 ## Getting Started
 
 First, run the development server:

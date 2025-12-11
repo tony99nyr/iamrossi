@@ -13,9 +13,12 @@ vi.mock('googleapis', () => ({
   google: {
     auth: {
       GoogleAuth: vi.fn().mockImplementation(function() { return {}; }),
-      OAuth2: vi.fn().mockImplementation(() => ({
-        setCredentials: vi.fn(),
-      })),
+      // Use a function implementation so "new OAuth2()" works in tests
+      OAuth2: vi.fn().mockImplementation(function() {
+        return {
+          setCredentials: vi.fn(),
+        };
+      }),
     },
     drive: vi.fn().mockReturnValue({
       files: {
@@ -191,6 +194,10 @@ describe('/api/backup', () => {
 
     it('should skip Google Drive upload if credentials not configured', async () => {
       delete process.env.GOOGLE_DRIVE_CREDENTIALS;
+    delete process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+    delete process.env.GOOGLE_DRIVE_CLIENT_ID;
+    delete process.env.GOOGLE_DRIVE_CLIENT_SECRET;
+    delete process.env.GOOGLE_DRIVE_FOLDER_ID;
 
       const { google } = await import('googleapis');
       const mockCreate = vi.fn();

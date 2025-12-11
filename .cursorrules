@@ -1,0 +1,29 @@
+# Cursor Rules for iamrossi Project
+
+## Required Reading
+**Before starting any task, you MUST read and follow the guidelines in:**
+1. `AGENTS.md` - Coding standards, security practices, and development guidelines
+2. `CLAUDE.md` - Project overview, architecture, tools, and operational constraints
+
+These files contain critical information about:
+- Code style and TypeScript practices
+- Security requirements (authentication, validation, error handling)
+- Testing requirements and safety guarantees
+- Redis/data persistence patterns
+- API route patterns
+- Build and validation commands
+
+## Critical Requirements
+- **ALWAYS run `pnpm validate` before declaring any task complete**
+- **ALL API endpoints handling sensitive data MUST require authentication**
+- **Tests MUST use mocks or localhost Redis - never touch production data**
+- **Follow all security guidelines in AGENTS.md**
+
+## Quick Reference
+- Validation: `pnpm validate` (runs type check, tests, lint, build)
+- Testing: `pnpm test` (uses mocked Redis, safe for production)
+- Type checking: `pnpm type:check`
+- Linting: `pnpm lint`
+
+Refer to AGENTS.md and CLAUDE.md for complete guidelines.
+
