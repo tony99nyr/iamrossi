@@ -63,23 +63,10 @@ describe('/api/google-fit', () => {
       lastSynced: '2024-01-15T12:00:00.000Z',
     };
 
-    it('should return 401 without authentication', async () => {
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15');
-      const response = await getHeartRate(request);
-      const data = await response.json();
-
-      expect(response.status).toBe(401);
-      expect(data.error).toBe('Unauthorized');
-    });
-
     it('should return 503 when Google Fit is not configured', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(false);
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15');
 
       const response = await getHeartRate(request);
       const data = await response.json();
@@ -91,11 +78,7 @@ describe('/api/google-fit', () => {
     it('should return 400 when date parameter is missing', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate');
 
       const response = await getHeartRate(request);
       const data = await response.json();
@@ -107,11 +90,7 @@ describe('/api/google-fit', () => {
     it('should return 400 for invalid date format', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=invalid', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=invalid');
 
       const response = await getHeartRate(request);
       const data = await response.json();
@@ -123,11 +102,7 @@ describe('/api/google-fit', () => {
     it('should return 400 for invalid calendar date', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-13-45', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-13-45');
 
       const response = await getHeartRate(request);
       const data = await response.json();
@@ -144,11 +119,7 @@ describe('/api/google-fit', () => {
       futureDate.setFullYear(futureDate.getFullYear() + 1);
       const futureDateStr = futureDate.toISOString().split('T')[0];
 
-      const request = new NextRequest(`http://localhost:3000/api/google-fit/heart-rate?date=${futureDateStr}`, {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest(`http://localhost:3000/api/google-fit/heart-rate?date=${futureDateStr}`);
 
       const response = await getHeartRate(request);
       const data = await response.json();
@@ -157,15 +128,11 @@ describe('/api/google-fit', () => {
       expect(data.error).toBe('Future dates not allowed');
     });
 
-    it('should return heart rate data with valid date and authentication', async () => {
+    it('should return heart rate data with valid date (public endpoint, no auth required)', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
       vi.mocked(googleFitService.getDailyHeartRate).mockResolvedValue(mockHeartRate);
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15');
 
       const response = await getHeartRate(request);
       const data = await response.json();
@@ -173,23 +140,6 @@ describe('/api/google-fit', () => {
       expect(response.status).toBe(200);
       expect(data).toEqual(mockHeartRate);
       expect(googleFitService.getDailyHeartRate).toHaveBeenCalledWith('2024-01-15');
-    });
-
-    it('should return heart rate data with Bearer token authentication', async () => {
-      vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
-      vi.mocked(googleFitService.getDailyHeartRate).mockResolvedValue(mockHeartRate);
-
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15', {
-        headers: {
-          authorization: 'Bearer test-token',
-        },
-      });
-
-      const response = await getHeartRate(request);
-      const data = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(data).toEqual(mockHeartRate);
     });
 
     it('should return empty heart rate data when no workouts exist', async () => {
@@ -200,11 +150,7 @@ describe('/api/google-fit', () => {
       };
       vi.mocked(googleFitService.getDailyHeartRate).mockResolvedValue(emptyHeartRate);
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15');
 
       const response = await getHeartRate(request);
       const data = await response.json();
@@ -215,23 +161,18 @@ describe('/api/google-fit', () => {
       expect(data.maxBpm).toBeUndefined();
     });
 
-    it('should return 500 and generic error message when service throws', async () => {
+    it('should return 500 and error message when service throws', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
       vi.mocked(googleFitService.getDailyHeartRate).mockRejectedValue(new Error('Google Fit API error'));
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest('http://localhost:3000/api/google-fit/heart-rate?date=2024-01-15');
 
       const response = await getHeartRate(request);
       const data = await response.json();
 
       expect(response.status).toBe(500);
       expect(data.error).toBe('Failed to fetch Google Fit heart rate data');
-      // Should not expose internal error details
-      expect(data.details).toBeUndefined();
+      expect(data.details).toBe('Google Fit API error');
     });
 
     it('should accept today\'s date', async () => {
@@ -245,11 +186,7 @@ describe('/api/google-fit', () => {
         date: todayStr,
       });
 
-      const request = new NextRequest(`http://localhost:3000/api/google-fit/heart-rate?date=${todayStr}`, {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
+      const request = new NextRequest(`http://localhost:3000/api/google-fit/heart-rate?date=${todayStr}`);
 
       const response = await getHeartRate(request);
       const data = await response.json();

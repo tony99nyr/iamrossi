@@ -103,35 +103,94 @@ export default function SyncStatusIndicator({ initialStatus, initialCalendarStat
                 boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5)',
                 backdropFilter: 'blur(10px)',
                 display: 'flex',
-                alignItems: 'center',
+                flexDirection: 'column',
                 gap: '12px',
                 animation: 'slideInUp 0.3s ease-out',
+                minWidth: '280px',
             }))}>
                 {isRevalidating ? (
                     <>
-                        {/* Spinner */}
-                        <div className={css({
-                            width: '20px',
-                            height: '20px',
-                            border: '2px solid #333',
-                            borderTopColor: '#2563eb',
-                            borderRadius: '50%',
-                            animation: 'spin 0.8s linear infinite',
-                        })} />
-                        <span className={css({
-                            color: '#ededed',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                        })}>
-                            {syncStatus.isRevalidating && calendarSyncStatus.isRevalidating 
-                                ? 'Syncing schedule and videos...'
-                                : syncStatus.isRevalidating 
-                                ? 'Syncing videos...'
-                                : 'Syncing schedule...'}
-                        </span>
+                        {/* Show both syncs separately when both are active */}
+                        {syncStatus.isRevalidating && calendarSyncStatus.isRevalidating ? (
+                            <>
+                                <div className={css({
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                })}>
+                                    <div className={css({
+                                        width: '16px',
+                                        height: '16px',
+                                        border: '2px solid #333',
+                                        borderTopColor: '#2563eb',
+                                        borderRadius: '50%',
+                                        animation: 'spin 0.8s linear infinite',
+                                    })} />
+                                    <span className={css({
+                                        color: '#ededed',
+                                        fontSize: '14px',
+                                        fontWeight: '500',
+                                    })}>
+                                        Syncing schedule...
+                                    </span>
+                                </div>
+                                <div className={css({
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                })}>
+                                    <div className={css({
+                                        width: '16px',
+                                        height: '16px',
+                                        border: '2px solid #333',
+                                        borderTopColor: '#2563eb',
+                                        borderRadius: '50%',
+                                        animation: 'spin 0.8s linear infinite',
+                                    })} />
+                                    <span className={css({
+                                        color: '#ededed',
+                                        fontSize: '14px',
+                                        fontWeight: '500',
+                                    })}>
+                                        Syncing videos...
+                                    </span>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {/* Single sync indicator */}
+                                <div className={css({
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                })}>
+                                    <div className={css({
+                                        width: '20px',
+                                        height: '20px',
+                                        border: '2px solid #333',
+                                        borderTopColor: '#2563eb',
+                                        borderRadius: '50%',
+                                        animation: 'spin 0.8s linear infinite',
+                                    })} />
+                                    <span className={css({
+                                        color: '#ededed',
+                                        fontSize: '14px',
+                                        fontWeight: '500',
+                                    })}>
+                                        {syncStatus.isRevalidating 
+                                            ? 'Syncing videos...'
+                                            : 'Syncing schedule...'}
+                                    </span>
+                                </div>
+                            </>
+                        )}
                     </>
                 ) : showRefresh ? (
-                    <>
+                    <div className={css({
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                    })}>
                         <span className={css({
                             color: '#4ade80',
                             fontSize: '20px',
@@ -168,7 +227,7 @@ export default function SyncStatusIndicator({ initialStatus, initialCalendarStat
                         >
                             Refresh
                         </button>
-                    </>
+                    </div>
                 ) : null}
             </div>
         </>

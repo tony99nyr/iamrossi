@@ -8,6 +8,7 @@ import GameSetup from '@/components/stats/GameSetup';
 import SessionHistory from '@/components/stats/SessionHistory';
 import HeroSection from '../next-game/components/HeroSection';
 import CacheStatusFooter from '@/components/CacheStatusFooter';
+import SyncStatusIndicator from '@/components/SyncStatusIndicator';
 import { ThunderstormBackground } from '@/components/ThunderstormBackground';
 import type { SyncStatus, CalendarSyncStatus } from '@/lib/kv';
 
@@ -154,6 +155,11 @@ export default function StatRecordingPage() {
         initialCalendarStatus={calendarStatus}
         isOpen={isCacheModalOpen}
         onClose={() => setIsCacheModalOpen(false)}
+      />
+      
+      <SyncStatusIndicator 
+        initialStatus={youtubeStatus} 
+        initialCalendarStatus={calendarStatus} 
       />
       </div>
     </>

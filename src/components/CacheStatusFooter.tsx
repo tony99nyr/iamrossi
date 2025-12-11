@@ -21,25 +21,11 @@ export default function CacheStatusFooter({
   const [calendarStatus, setCalendarStatus] = useState<CalendarSyncStatus>(initialCalendarStatus);
   const [enrichedGamesCache, setEnrichedGamesCache] = useState<{ lastUpdated: number | null }>({ lastUpdated: null });
 
-  // Fetch cache info on mount
-  useEffect(() => {
-    const fetchCacheInfo = async () => {
-      try {
-        // Fetch enriched games cache info
-        const response = await fetch('/api/admin/cache-info');
-        if (response.ok) {
-          const data = await response.json();
-          setEnrichedGamesCache({ lastUpdated: data.enrichedGamesLastUpdated });
-        }
-      } catch (error) {
-        console.error('Failed to fetch cache info:', error);
-      }
-    };
+  const isRevalidating = youtubeStatus.isRevalidating || calendarStatus.isRevalidating;
 
-    fetchCacheInfo();
-    
-    // Poll for status updates every 30 seconds
-    const pollInterval = setInterval(async () => {
+  // Fetch cache info and poll for status updates
+  useEffect(() => {
+    const pollStatus = async () => {
       try {
         // Fetch YouTube sync status
         const youtubeResponse = await fetch('/api/admin/sync-youtube');
@@ -64,10 +50,16 @@ export default function CacheStatusFooter({
       } catch (error) {
         console.error('Failed to poll status:', error);
       }
-    }, 30000); // Poll every 30 seconds
+    };
+
+    // Poll immediately on mount
+    pollStatus();
+    
+    // Poll more frequently when revalidating (every 5 seconds), otherwise every 30 seconds
+    const pollInterval = setInterval(pollStatus, isRevalidating ? 5000 : 30000);
 
     return () => clearInterval(pollInterval);
-  }, []);
+  }, [isRevalidating]);
 
   const formatTime = (timestamp: number | null): string => {
     if (!timestamp) return 'Never';
