@@ -16,13 +16,10 @@ export default function SyncStatusIndicator({ initialStatus, initialCalendarStat
 
     const isRevalidating = syncStatus.isRevalidating || calendarSyncStatus.isRevalidating;
 
-    // Poll for status updates while revalidating
+    // Poll for status updates - check on mount and while revalidating
     useEffect(() => {
-        if (!isRevalidating) {
-            return;
-        }
-
-        const pollInterval = setInterval(async () => {
+        // Poll immediately on mount to catch any in-progress syncs
+        const pollStatus = async () => {
             try {
                 // Fetch both sync statuses
                 const [youtubeResponse, calendarResponse] = await Promise.all([
@@ -51,7 +48,17 @@ export default function SyncStatusIndicator({ initialStatus, initialCalendarStat
             } catch (error) {
                 console.error('Failed to fetch sync status:', error);
             }
-        }, 5000); // Poll every 5 seconds
+        };
+
+        // Poll immediately on mount
+        pollStatus();
+
+        // If revalidating, continue polling every 5 seconds
+        if (!isRevalidating) {
+            return;
+        }
+
+        const pollInterval = setInterval(pollStatus, 5000); // Poll every 5 seconds
 
         return () => clearInterval(pollInterval);
     }, [isRevalidating]);

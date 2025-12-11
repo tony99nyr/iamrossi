@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
-import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, getStatSessions } from '@/lib/kv';
+import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, setSyncStatus, setCalendarSyncStatus, getStatSessions } from '@/lib/kv';
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
 
@@ -89,6 +89,15 @@ export default async function NextGamePage() {
         (!syncStatus.lastSyncTime || (new Date().getTime() - syncStatus.lastSyncTime) > COOLDOWN_MS);
 
     if (shouldTriggerYouTubeSync && adminSecret) {
+        // Set revalidating flag optimistically before triggering background sync
+        const optimisticSyncStatus = {
+            ...syncStatus,
+            isRevalidating: true,
+            lastError: null
+        };
+        await setSyncStatus(optimisticSyncStatus);
+        syncStatus.isRevalidating = true; // Update local status for rendering
+        
         // Trigger YouTube sync in background (fire and forget)
         fetch(`${protocol}://${host}/api/admin/sync-youtube`, {
             method: 'POST',
@@ -96,7 +105,15 @@ export default async function NextGamePage() {
                 'Authorization': `Bearer ${adminSecret}`,
                 'Content-Type': 'application/json'
             }
-        }).catch(err => console.error('Background YouTube sync failed:', err));
+        }).catch(err => {
+            console.error('Background YouTube sync failed:', err);
+            // Reset revalidating flag on error
+            setSyncStatus({
+                ...optimisticSyncStatus,
+                isRevalidating: false,
+                lastError: err instanceof Error ? err.message : 'Sync failed'
+            }).catch(console.error);
+        });
     }
 
     // Trigger Schedule sync if needed
@@ -104,6 +121,15 @@ export default async function NextGamePage() {
         (!calendarSyncStatus.lastSyncTime || (new Date().getTime() - calendarSyncStatus.lastSyncTime) > COOLDOWN_MS);
 
     if (shouldTriggerScheduleSync && adminSecret) {
+        // Set revalidating flag optimistically before triggering background sync
+        const optimisticCalendarStatus = {
+            ...calendarSyncStatus,
+            isRevalidating: true,
+            lastError: null
+        };
+        await setCalendarSyncStatus(optimisticCalendarStatus);
+        calendarSyncStatus.isRevalidating = true; // Update local status for rendering
+        
         // Trigger schedule sync in background (fire and forget)
         fetch(`${protocol}://${host}/api/admin/sync-schedule`, {
             method: 'POST',
@@ -111,7 +137,15 @@ export default async function NextGamePage() {
                 'Authorization': `Bearer ${adminSecret}`,
                 'Content-Type': 'application/json'
             }
-        }).catch(err => console.error('Background schedule sync failed:', err));
+        }).catch(err => {
+            console.error('Background schedule sync failed:', err);
+            // Reset revalidating flag on error
+            setCalendarSyncStatus({
+                ...optimisticCalendarStatus,
+                isRevalidating: false,
+                lastError: err instanceof Error ? err.message : 'Sync failed'
+            }).catch(console.error);
+        });
     }
 
     
