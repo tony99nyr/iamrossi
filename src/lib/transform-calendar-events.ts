@@ -11,12 +11,223 @@ async function getSettings() {
     };
 }
 
+/**
+ * Normalizes a date string to YYYY-MM-DD format
+ * Handles both YYYYMMDD and YYYY-MM-DD formats
+ * MHR dates are already date-only strings (no time component) representing dates in Eastern Time
+ * We just normalize the format for consistent comparison with calendar event dates
+ */
+function normalizeDateToEastern(dateStr: string): string {
+    // Normalize to YYYY-MM-DD format
+    // MHR dates are already date-only strings, so we just need to ensure consistent format
+    if (dateStr.includes('-')) {
+        return dateStr; // Already in YYYY-MM-DD format
+    }
+    // Convert YYYYMMDD to YYYY-MM-DD
+    return `${dateStr.substring(0,4)}-${dateStr.substring(4,6)}-${dateStr.substring(6,8)}`;
+}
+
 interface CalendarEvent {
     summary: string;
     start: Date;
     end: Date;
     location?: string;
     description?: string;
+}
+
+/**
+ * Creates a Game entry from an MHR game object
+ * Used for MHR games that aren't in the calendar
+ */
+async function createGameFromMHR(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mhrGame: any,
+    dateStr: string,
+    settings: { teamName: string; identifiers: string[]; mhrTeamId?: string },
+    year: string,
+    ourTeamLogo: string,
+    mainTeamStats?: { record: string; rating: string }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any | null> {
+    try {
+        // Determine home/away and opponent
+        const homeTeamName = mhrGame.home_team_name || '';
+        const visitorTeamName = mhrGame.visitor_team_name || '';
+        const opponentName = mhrGame.opponent_name || '';
+
+        // Check if our team is home or visitor
+        const isUsHome = isUs(homeTeamName, settings.identifiers);
+        const isUsVisitor = isUs(visitorTeamName, settings.identifiers);
+
+        if (!isUsHome && !isUsVisitor) {
+            // If we can't identify our team, try using opponent_name
+            if (opponentName) {
+                // Assume we're home if opponent_name is provided
+                const isHomeGame = true;
+                const opponent = opponentName;
+
+                // Get opponent MHR data
+                let normalizedOpponent = opponent;
+                if (/\bpheonix\b/i.test(normalizedOpponent)) {
+                    normalizedOpponent = normalizedOpponent.replace(/\bpheonix\b/gi, 'Phoenix');
+                }
+
+                const mhrData = await getMHRTeamData(normalizedOpponent, year, '10U', [mhrGame]);
+
+                // Get opponent team ID
+                let opponentTeamId: string | null = null;
+                if (mhrGame.opponent_team_id) {
+                    opponentTeamId = String(mhrGame.opponent_team_id);
+                } else if (mhrData?.mhrId) {
+                    opponentTeamId = mhrData.mhrId;
+                }
+
+                // Format time
+                const gameTime = mhrGame.game_time_format || '00:00:00';
+                const gameTimeFormatted = gameTime.length >= 5 ? gameTime.substring(0, 5) : gameTime;
+
+                // Parse date for pretty formatting
+                // Parse date components to avoid timezone issues (dateStr is YYYY-MM-DD)
+                const [dateYear, dateMonth, dateDay] = dateStr.split('-').map(Number);
+                // Create date at noon to avoid timezone boundary issues, then format in Eastern Time
+                const gameDateObj = new Date(dateYear, dateMonth - 1, dateDay, 12, 0, 0);
+                const gameDatePretty = gameDateObj.toLocaleDateString('en-US', { 
+                    weekday: 'short', 
+                    month: 'short', 
+                    day: 'numeric', 
+                    timeZone: 'America/New_York' 
+                });
+                
+                // Format time consistently with calendar events (12-hour with AM/PM)
+                let gameTimePretty = 'TBD';
+                if (gameTimeFormatted !== '00:00:00' && gameTimeFormatted !== '00:00') {
+                    // Parse MHR time (HH:MM format) and create a Date object in Eastern Time
+                    // Combine date and time: "YYYY-MM-DDTHH:MM:00" format
+                    const timeDateStr = `${dateStr}T${gameTimeFormatted}:00`;
+                    const timeDateObj = new Date(timeDateStr);
+                    gameTimePretty = timeDateObj.toLocaleTimeString('en-US', { 
+                        hour: 'numeric', 
+                        minute: '2-digit', 
+                        timeZone: 'America/New_York' 
+                    });
+                }
+
+                return {
+                    game_nbr: mhrGame.game_nbr || crypto.createHash('md5').update(`${dateStr}-${opponent}`).digest('hex').substring(0, 8),
+                    game_date_format: dateStr,
+                    game_time_format: gameTime,
+                    game_date_format_pretty: gameDatePretty,
+                    game_time_format_pretty: gameTimePretty,
+                    home_team_name: isHomeGame ? settings.teamName : (mhrData?.name || opponent),
+                    visitor_team_name: isHomeGame ? (mhrData?.name || opponent) : settings.teamName,
+                    home_team_logo: isHomeGame ? ourTeamLogo : (mhrData?.logo || ''),
+                    visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : ourTeamLogo,
+                    home_team_score: mhrGame.home_team_score ?? 0,
+                    visitor_team_score: mhrGame.visitor_team_score ?? 0,
+                    rink_name: mhrGame.rink_name || mhrGame.venue || 'TBD',
+                    game_type: mhrGame.game_type || 'Regular Season',
+                    opponent_record: mhrData?.record || mhrGame.opponent_record || '',
+                    opponent_rating: mhrData?.rating || mhrGame.opponent_rating || '',
+                    home_team_record: isHomeGame ? (mainTeamStats?.record || '') : (mhrData?.record || ''),
+                    home_team_rating: isHomeGame ? (mainTeamStats?.rating || '') : (mhrData?.rating || ''),
+                    visitor_team_record: isHomeGame ? (mhrData?.record || '') : (mainTeamStats?.record || ''),
+                    visitor_team_rating: isHomeGame ? (mhrData?.rating || '') : (mainTeamStats?.rating || ''),
+                    game_home_team: isHomeGame ? settings.mhrTeamId : opponentTeamId,
+                    game_visitor_team: isHomeGame ? opponentTeamId : settings.mhrTeamId,
+                    source: 'mhr-only'
+                };
+            }
+            debugLog(`[MHR] Cannot determine home/away for MHR game: ${JSON.stringify(mhrGame)}`);
+            return null;
+        }
+
+        const isHomeGame = isUsHome;
+        const opponent = isHomeGame ? visitorTeamName : homeTeamName;
+
+        if (!opponent) {
+            debugLog(`[MHR] No opponent found for MHR game: ${JSON.stringify(mhrGame)}`);
+            return null;
+        }
+
+        // Normalize opponent name
+        let normalizedOpponent = opponent;
+        if (/\bpheonix\b/i.test(normalizedOpponent)) {
+            normalizedOpponent = normalizedOpponent.replace(/\bpheonix\b/gi, 'Phoenix');
+        }
+
+        // Get opponent MHR data
+        const mhrData = await getMHRTeamData(normalizedOpponent, year, '10U', [mhrGame]);
+
+        // Get opponent team ID
+        let opponentTeamId: string | null = null;
+        if (mhrGame.opponent_team_id) {
+            opponentTeamId = String(mhrGame.opponent_team_id);
+        } else if (isHomeGame && mhrGame.visitor_team_id) {
+            opponentTeamId = String(mhrGame.visitor_team_id);
+        } else if (!isHomeGame && mhrGame.home_team_id) {
+            opponentTeamId = String(mhrGame.home_team_id);
+        } else if (mhrData?.mhrId) {
+            opponentTeamId = mhrData.mhrId;
+        }
+
+        // Format time
+        const gameTime = mhrGame.game_time_format || '00:00:00';
+        const gameTimeFormatted = gameTime.length >= 5 ? gameTime.substring(0, 5) : gameTime;
+
+        // Parse date for pretty formatting
+        // Parse date components to avoid timezone issues (dateStr is YYYY-MM-DD)
+        const [dateYear, dateMonth, dateDay] = dateStr.split('-').map(Number);
+        // Create date at noon to avoid timezone boundary issues, then format in Eastern Time
+        const gameDateObj = new Date(dateYear, dateMonth - 1, dateDay, 12, 0, 0);
+        const gameDatePretty = gameDateObj.toLocaleDateString('en-US', { 
+            weekday: 'short', 
+            month: 'short', 
+            day: 'numeric', 
+            timeZone: 'America/New_York' 
+        });
+        
+        // Format time consistently with calendar events (12-hour with AM/PM)
+        let gameTimePretty = 'TBD';
+        if (gameTimeFormatted !== '00:00:00' && gameTimeFormatted !== '00:00') {
+            // Parse MHR time (HH:MM format) and create a Date object in Eastern Time
+            // Combine date and time: "YYYY-MM-DDTHH:MM:00" format
+            const timeDateStr = `${dateStr}T${gameTimeFormatted}:00`;
+            const timeDateObj = new Date(timeDateStr);
+            gameTimePretty = timeDateObj.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit', 
+                timeZone: 'America/New_York' 
+            });
+        }
+
+        return {
+            game_nbr: mhrGame.game_nbr || crypto.createHash('md5').update(`${dateStr}-${opponent}`).digest('hex').substring(0, 8),
+            game_date_format: dateStr,
+            game_time_format: gameTime,
+            game_date_format_pretty: gameDatePretty,
+            game_time_format_pretty: gameTimePretty,
+            home_team_name: isHomeGame ? settings.teamName : (mhrData?.name || opponent),
+            visitor_team_name: isHomeGame ? (mhrData?.name || opponent) : settings.teamName,
+            home_team_logo: isHomeGame ? ourTeamLogo : (mhrData?.logo || ''),
+            visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : ourTeamLogo,
+            home_team_score: mhrGame.home_team_score ?? 0,
+            visitor_team_score: mhrGame.visitor_team_score ?? 0,
+            rink_name: mhrGame.rink_name || mhrGame.venue || 'TBD',
+            game_type: mhrGame.game_type || 'Regular Season',
+            opponent_record: mhrData?.record || mhrGame.opponent_record || '',
+            opponent_rating: mhrData?.rating || mhrGame.opponent_rating || '',
+            home_team_record: isHomeGame ? (mainTeamStats?.record || '') : (mhrData?.record || ''),
+            home_team_rating: isHomeGame ? (mainTeamStats?.rating || '') : (mhrData?.rating || ''),
+            visitor_team_record: isHomeGame ? (mhrData?.record || '') : (mainTeamStats?.record || ''),
+            visitor_team_rating: isHomeGame ? (mhrData?.rating || '') : (mainTeamStats?.rating || ''),
+            game_home_team: isHomeGame ? settings.mhrTeamId : opponentTeamId,
+            game_visitor_team: isHomeGame ? opponentTeamId : settings.mhrTeamId,
+            source: 'mhr-only'
+        };
+    } catch (error) {
+        debugLog(`[MHR] Error creating game from MHR data:`, error);
+        return null;
+    }
 }
 
 /**
@@ -92,6 +303,8 @@ export async function transformCalendarEvents(
     }
 
     const schedule = [];
+    // Track which MHR games have been matched to calendar events
+    const matchedMhrGameNbrs = new Set<string | number>();
 
     for (const event of events) {
         const eventStartDate = new Date(event.start);
@@ -274,12 +487,12 @@ export async function transformCalendarEvents(
         if (mhrSchedule && Array.isArray(mhrSchedule)) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             matchedGame = mhrSchedule.find((mhrGame: any) => {
-                // Match by date
+                // Match by date - normalize MHR date to Eastern Time for comparison
                 const mhrGameDate = mhrGame.game_date_format || mhrGame.game_date;
                 if (!mhrGameDate) return false;
                 
-                const mhrDateStr = mhrGameDate.includes('-') ? mhrGameDate : 
-                    `${mhrGameDate.substring(0,4)}-${mhrGameDate.substring(4,6)}-${mhrGameDate.substring(6,8)}`;
+                // Normalize MHR date to Eastern Time format
+                const mhrDateStr = normalizeDateToEastern(mhrGameDate);
                 
                 if (localDateStr !== mhrDateStr) return false;
                 
@@ -308,6 +521,7 @@ export async function transformCalendarEvents(
             
             if (matchedGame && matchedGame.game_nbr) {
                 mhrGameNbr = matchedGame.game_nbr;
+                matchedMhrGameNbrs.add(matchedGame.game_nbr);
                 debugLog(`[MHR] Matched calendar event to MHR game ${mhrGameNbr}`);
             }
         }
@@ -461,21 +675,41 @@ export async function transformCalendarEvents(
             opponentTeamId = mhrData?.mhrId || null;
         }
         
+        // Smart merge: prefer calendar for location/time, prefer MHR for scores/opponent details
+        // Location: prefer calendar, fallback to MHR
+        const rinkName = event.location || matchedGame?.rink_name || matchedGame?.venue || 'TBD';
+        
+        // Time: prefer calendar (more accurate), but use MHR if calendar time is missing
+        const finalGameTime = gameTime !== '00:00:00' ? gameTime : (matchedGame?.game_time_format || '00:00:00');
+        const finalGameTimePretty = gameTime !== '00:00:00' 
+            ? gameDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })
+            : (matchedGame?.game_time_format && matchedGame.game_time_format !== '00:00:00' 
+                ? matchedGame.game_time_format.substring(0, 5)
+                : 'TBD');
+
+        // Scores: prefer MHR (source of truth for results)
+        const homeScore = matchedGame?.home_team_score ?? 0;
+        const visitorScore = matchedGame?.visitor_team_score ?? 0;
+
+        // Opponent details: prefer MHR data (more complete)
+        const finalOpponentName = mhrData?.name || normalizedOpponent;
+        const finalOpponentLogo = mhrData?.logo || '';
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const gameEntry: any = {
             game_nbr: mhrGameNbr, // Use MHR game_nbr if matched, otherwise hash ID
             game_date_format: localDateStr,
-            game_time_format: gameTime,
+            game_time_format: finalGameTime,
             game_date_format_pretty: gameDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }),
-            game_time_format_pretty: gameDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }),
-            home_team_name: isHomeGame ? settings.teamName : (mhrData?.name || normalizedOpponent),
-            visitor_team_name: isHomeGame ? (mhrData?.name || normalizedOpponent) : settings.teamName,
-            home_team_logo: isHomeGame ? ourTeamLogo : (mhrData?.logo || ''),
-            visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : ourTeamLogo,
-            home_team_score: matchedGame?.home_team_score ?? 0, // Use matched score or default to 0
-            visitor_team_score: matchedGame?.visitor_team_score ?? 0, // Use matched score or default to 0
-            rink_name: event.location || 'TBD',
-            game_type: 'Regular Season',
+            game_time_format_pretty: finalGameTimePretty,
+            home_team_name: isHomeGame ? settings.teamName : finalOpponentName,
+            visitor_team_name: isHomeGame ? finalOpponentName : settings.teamName,
+            home_team_logo: isHomeGame ? ourTeamLogo : finalOpponentLogo,
+            visitor_team_logo: isHomeGame ? finalOpponentLogo : ourTeamLogo,
+            home_team_score: homeScore,
+            visitor_team_score: visitorScore,
+            rink_name: rinkName,
+            game_type: matchedGame?.game_type || 'Regular Season',
             // Legacy fields for backward compatibility
             opponent_record: mhrData?.record || '',
             opponent_rating: mhrData?.rating || '',
@@ -486,17 +720,243 @@ export async function transformCalendarEvents(
             visitor_team_rating: isHomeGame ? (mhrData?.rating || '') : (mainTeamStats?.rating || ''),
             // Team IDs for links - use opponentTeamId from matched game if available
             game_home_team: isHomeGame ? settings.mhrTeamId : opponentTeamId,
-            game_visitor_team: isHomeGame ? opponentTeamId : settings.mhrTeamId
+            game_visitor_team: isHomeGame ? opponentTeamId : settings.mhrTeamId,
+            // Mark as calendar event (not MHR-only) for deduplication
+            source: 'calendar'
         };
 
         schedule.push(gameEntry);
     }
 
-    return schedule.sort((a, b) => {
+    // Process unmatched MHR games (games not in calendar)
+    if (mhrSchedule && Array.isArray(mhrSchedule)) {
+        for (const mhrGame of mhrSchedule) {
+            // Skip if already matched to a calendar event
+            if (mhrGame.game_nbr && matchedMhrGameNbrs.has(mhrGame.game_nbr)) {
+                continue;
+            }
+
+            // Verify required fields: date and opponent information
+            const mhrGameDate = mhrGame.game_date_format || mhrGame.game_date;
+            if (!mhrGameDate) {
+                debugLog(`[MHR] Skipping MHR game without date: ${JSON.stringify(mhrGame)}`);
+                continue;
+            }
+
+            // Check if we have opponent information (either home_team_name or visitor_team_name)
+            const hasOpponentInfo = mhrGame.home_team_name || mhrGame.visitor_team_name || mhrGame.opponent_name;
+            if (!hasOpponentInfo) {
+                debugLog(`[MHR] Skipping MHR game without opponent info: ${JSON.stringify(mhrGame)}`);
+                continue;
+            }
+
+            // Normalize date format to Eastern Time for consistency
+            const mhrDateStr = normalizeDateToEastern(mhrGameDate);
+            
+            // Parse date for season filtering (use the Eastern Time date)
+            const [year, month, day] = mhrDateStr.split('-').map(Number);
+            const mhrGameDateObj = new Date(year, month - 1, day, 12, 0, 0);
+            if (mhrGameDateObj < seasonStartDate || mhrGameDateObj > seasonEndDate) {
+                debugLog(`[MHR] Skipping MHR game outside season: ${mhrDateStr}`);
+                continue;
+            }
+
+            // Create game entry from MHR data
+            const mhrGameEntry = await createGameFromMHR(
+                mhrGame,
+                mhrDateStr,
+                settings,
+                effectiveYear,
+                ourTeamLogo,
+                mainTeamStats
+            );
+
+            if (mhrGameEntry) {
+                schedule.push(mhrGameEntry);
+                debugLog(`[MHR] Created game entry from unmatched MHR game: ${mhrGame.game_nbr || 'unknown'}`);
+            }
+        }
+    }
+
+    // Deduplicate games - prefer calendar events over MHR-only games
+    const deduplicatedSchedule = deduplicateGames(schedule, settings.identifiers);
+    
+    return deduplicatedSchedule.sort((a, b) => {
         const dateA = new Date(`${a.game_date_format}T${a.game_time_format}`);
         const dateB = new Date(`${b.game_date_format}T${b.game_time_format}`);
         return dateA.getTime() - dateB.getTime();
     });
+}
+
+/**
+ * Deduplicates games by date, time, and opponent
+ * When duplicates are found, prefers calendar events (source !== 'mhr-only') over MHR-only games
+ * Merges data intelligently: calendar for location/time, MHR for scores/details
+ */
+function deduplicateGames(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    games: any[],
+    identifiers: string[]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any[] {
+    // Create a map to track games by their unique key (date + time + opponent)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gameMap = new Map<string, any>();
+    
+    for (const game of games) {
+        // Skip placeholders - they shouldn't be deduplicated
+        if (game.isPlaceholder) {
+            gameMap.set(`placeholder-${game.game_nbr}`, game);
+            continue;
+        }
+        
+        // Create a unique key for this game: date + time + opponent
+        const date = game.game_date_format || '';
+        const time = game.game_time_format || '00:00:00';
+        
+        // Normalize opponent name for comparison
+        const homeTeam = game.home_team_name || '';
+        const visitorTeam = game.visitor_team_name || '';
+        const isHomeGame = isUs(homeTeam, identifiers);
+        const opponent = isHomeGame ? visitorTeam : homeTeam;
+        const normalizedOpponent = opponent.toLowerCase().replace(/[^a-z0-9]/g, '');
+        
+        // Create key: date + time (rounded to nearest 5 minutes for fuzzy matching) + opponent
+        // Round time to nearest 5 minutes to handle slight time differences
+        const timeParts = time.split(':');
+        const hours = parseInt(timeParts[0] || '0', 10);
+        const minutes = parseInt(timeParts[1] || '0', 10);
+        const roundedMinutes = Math.round(minutes / 5) * 5;
+        const roundedTime = `${String(hours).padStart(2, '0')}:${String(roundedMinutes).padStart(2, '0')}`;
+        
+        const key = `${date}|${roundedTime}|${normalizedOpponent}`;
+        
+        const existingGame = gameMap.get(key);
+        
+        if (!existingGame) {
+            // First occurrence of this game
+            gameMap.set(key, game);
+        } else {
+            // Duplicate found - merge them
+            const isExistingFromCalendar = existingGame.source !== 'mhr-only';
+            const isNewFromCalendar = game.source !== 'mhr-only';
+            
+            // Prefer calendar event over MHR-only
+            if (isNewFromCalendar && !isExistingFromCalendar) {
+                // New game is from calendar, existing is MHR-only - replace with merged version
+                gameMap.set(key, mergeGameData(existingGame, game));
+            } else if (!isNewFromCalendar && isExistingFromCalendar) {
+                // Existing is from calendar, new is MHR-only - merge into existing
+                gameMap.set(key, mergeGameData(game, existingGame));
+            } else {
+                // Both from same source, or both MHR-only - prefer the one with more complete data
+                // (e.g., has scores, has location, etc.)
+                const existingScore = (existingGame.home_team_score || 0) + (existingGame.visitor_team_score || 0);
+                const newScore = (game.home_team_score || 0) + (game.visitor_team_score || 0);
+                const existingHasLocation = existingGame.rink_name && existingGame.rink_name !== 'TBD';
+                const newHasLocation = game.rink_name && game.rink_name !== 'TBD';
+                
+                if (newScore > existingScore || (newHasLocation && !existingHasLocation)) {
+                    // New game has better data
+                    gameMap.set(key, mergeGameData(existingGame, game));
+                } else {
+                    // Existing game has better data
+                    gameMap.set(key, mergeGameData(game, existingGame));
+                }
+            }
+            
+            debugLog(`[Deduplicate] Merged duplicate game: ${date} ${time} vs ${opponent}`);
+        }
+    }
+    
+    return Array.from(gameMap.values());
+}
+
+/**
+ * Merges two game entries, preferring the primary game but taking the best data from both
+ * Primary should be the calendar event (if available), secondary is MHR-only
+ */
+function mergeGameData(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    secondary: any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    primary: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
+    // Start with primary (calendar event)
+    const merged = { ...primary };
+    
+    // Prefer calendar for: location, time (if calendar has specific time)
+    // Prefer MHR for: scores, game_nbr, opponent details (record, rating, logo)
+    
+    // Location: prefer calendar, fallback to MHR
+    if (!merged.rink_name || merged.rink_name === 'TBD') {
+        merged.rink_name = secondary.rink_name || merged.rink_name;
+    }
+    
+    // Time: prefer calendar if it has a specific time (not 00:00:00), otherwise use MHR
+    if (merged.game_time_format === '00:00:00' || merged.game_time_format === '00:00') {
+        if (secondary.game_time_format && secondary.game_time_format !== '00:00:00' && secondary.game_time_format !== '00:00') {
+            merged.game_time_format = secondary.game_time_format;
+            merged.game_time_format_pretty = secondary.game_time_format_pretty;
+        }
+    }
+    
+    // Scores: prefer MHR (source of truth for results)
+    if ((secondary.home_team_score || 0) + (secondary.visitor_team_score || 0) > 
+        (merged.home_team_score || 0) + (merged.visitor_team_score || 0)) {
+        merged.home_team_score = secondary.home_team_score ?? merged.home_team_score;
+        merged.visitor_team_score = secondary.visitor_team_score ?? merged.visitor_team_score;
+    }
+    
+    // Game number: prefer MHR game_nbr if available
+    if (secondary.game_nbr && (!merged.game_nbr || typeof merged.game_nbr === 'string' && merged.game_nbr.length === 8)) {
+        // If merged has a hash-based ID (8 chars), prefer MHR game_nbr
+        merged.game_nbr = secondary.game_nbr;
+    }
+    
+    // Opponent details: prefer MHR (more complete)
+    if (!merged.opponent_record && secondary.opponent_record) {
+        merged.opponent_record = secondary.opponent_record;
+    }
+    if (!merged.opponent_rating && secondary.opponent_rating) {
+        merged.opponent_rating = secondary.opponent_rating;
+    }
+    
+    // Team records and ratings: prefer MHR if available
+    if (!merged.home_team_record && secondary.home_team_record) {
+        merged.home_team_record = secondary.home_team_record;
+    }
+    if (!merged.home_team_rating && secondary.home_team_rating) {
+        merged.home_team_rating = secondary.home_team_rating;
+    }
+    if (!merged.visitor_team_record && secondary.visitor_team_record) {
+        merged.visitor_team_record = secondary.visitor_team_record;
+    }
+    if (!merged.visitor_team_rating && secondary.visitor_team_rating) {
+        merged.visitor_team_rating = secondary.visitor_team_rating;
+    }
+    
+    // Logos: prefer MHR if available
+    if (!merged.home_team_logo && secondary.home_team_logo) {
+        merged.home_team_logo = secondary.home_team_logo;
+    }
+    if (!merged.visitor_team_logo && secondary.visitor_team_logo) {
+        merged.visitor_team_logo = secondary.visitor_team_logo;
+    }
+    
+    // Team IDs: prefer MHR if available
+    if (!merged.game_home_team && secondary.game_home_team) {
+        merged.game_home_team = secondary.game_home_team;
+    }
+    if (!merged.game_visitor_team && secondary.game_visitor_team) {
+        merged.game_visitor_team = secondary.game_visitor_team;
+    }
+    
+    // Remove source flag since this is now a merged game
+    delete merged.source;
+    
+    return merged;
 }
 
 function parseEventSummary(summary: string, identifiers: string[]): { opponent: string | null, isHome: boolean } {
