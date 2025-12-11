@@ -33,41 +33,10 @@ describe('/api/google-fit', () => {
   });
 
   describe('GET /api/google-fit/status', () => {
-    it('should return 401 without authentication', async () => {
-      const request = new NextRequest('http://localhost:3000/api/google-fit/status');
-      const response = await getStatus(request);
-      const data = await response.json();
-
-      expect(response.status).toBe(401);
-      expect(data.error).toBe('Unauthorized');
-    });
-
-    it('should return configured status with valid authentication (cookie)', async () => {
+    it('should return configured status without authentication (public endpoint)', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/status', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
-
-      const response = await getStatus(request);
-      const data = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(data.configured).toBe(true);
-    });
-
-    it('should return configured status with valid authentication (Bearer token)', async () => {
-      vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
-
-      const request = new NextRequest('http://localhost:3000/api/google-fit/status', {
-        headers: {
-          authorization: 'Bearer test-token',
-        },
-      });
-
-      const response = await getStatus(request);
+      const response = await getStatus();
       const data = await response.json();
 
       expect(response.status).toBe(200);
@@ -77,13 +46,7 @@ describe('/api/google-fit', () => {
     it('should return false when Google Fit is not configured', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(false);
 
-      const request = new NextRequest('http://localhost:3000/api/google-fit/status', {
-        headers: {
-          cookie: 'rehab_auth=test-token',
-        },
-      });
-
-      const response = await getStatus(request);
+      const response = await getStatus();
       const data = await response.json();
 
       expect(response.status).toBe(200);

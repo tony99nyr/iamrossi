@@ -192,7 +192,9 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
                         .map(async (date) => {
                             const dateStr = formatDate(date);
                             try {
-                                const response = await fetch(`/api/google-fit/heart-rate?date=${dateStr}`);
+                                const response = await fetch(`/api/google-fit/heart-rate?date=${dateStr}`, {
+                                    credentials: 'include', // Include cookies for authentication
+                                });
                                 if (response.ok) {
                                     const data = await response.json();
                                     rates[dateStr] = data;
