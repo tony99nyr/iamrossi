@@ -39,14 +39,17 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
             if (dateParam) {
                 // Validate date format (YYYY-MM-DD)
                 if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
-                    setSelectedDate(dateParam);
-                    // Set week start to the week containing this date
-                    const date = new Date(`${dateParam}T00:00:00`);
-                    const day = date.getDay();
-                    const diff = date.getDate() - day;
-                    const weekStart = new Date(date);
-                    weekStart.setDate(diff);
-                    setCurrentWeekStart(weekStart);
+                    // Use setTimeout to avoid synchronous setState in effect
+                    setTimeout(() => {
+                        setSelectedDate(dateParam);
+                        // Set week start to the week containing this date
+                        const date = new Date(`${dateParam}T00:00:00`);
+                        const day = date.getDay();
+                        const diff = date.getDate() - day;
+                        const weekStart = new Date(date);
+                        weekStart.setDate(diff);
+                        setCurrentWeekStart(weekStart);
+                    }, 0);
                 }
             }
         }
@@ -206,7 +209,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
             }
         };
         fetchHeartRates();
-    }, [currentWeekStart]);
+    }, [currentWeekStart, entries]);
 
     const selectedEntry = entries.find(e => e.date === selectedDate);
 

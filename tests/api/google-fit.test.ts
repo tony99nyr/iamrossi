@@ -3,7 +3,6 @@ import { GET as getHeartRate } from '@/app/api/google-fit/heart-rate/route';
 import { GET as getStatus } from '@/app/api/google-fit/status/route';
 import { NextRequest } from 'next/server';
 import * as googleFitService from '@/lib/google-fit-service';
-import * as kv from '@/lib/kv';
 import { resetMockStore } from '../mocks/redis.mock';
 
 // Mock the Google Fit service

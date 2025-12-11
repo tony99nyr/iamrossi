@@ -11,7 +11,12 @@ export default defineConfig({
   include: ['./src/**/*.{js,jsx,ts,tsx}'],
 
   // Files to exclude
-  exclude: [],
+  // Exclude files with dynamic imports that ts-evaluator can't handle
+  exclude: [
+    './src/app/api/backup/route.ts',
+    './src/lib/transform-calendar-events.ts',
+    './src/lib/mhr-service.ts',
+  ],
 
   // Output directory for generated files
   outdir: 'styled-system',

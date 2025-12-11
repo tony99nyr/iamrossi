@@ -130,7 +130,7 @@ export default async function KneeRehabPrintPage() {
           <p className={cx('print-page-eyebrow', printPageEyebrow)}>Knee Rehab · Printable Brief</p>
           <h1 className={cx('print-page-title', printPageTitle)}>30-Day Activity Report</h1>
           <p className={cx('date-range-label', css({ fontSize: '1rem', color: '#334155' }))}>Coverage: {formatRangeLabel(startDate, today)}</p>
-          <p className={cx('generation-timestamp-label', css({ fontSize: '0.9rem', color: '#475569', marginTop: '0.5rem', '@media print': { marginTop: '0.25rem', fontSize: '0.75rem' } }))}>Generated on {lastUpdatedLabel}. Use your browser's print dialog to export a PDF for your PT.</p>
+          <p className={cx('generation-timestamp-label', css({ fontSize: '0.9rem', color: '#475569', marginTop: '0.5rem', '@media print': { marginTop: '0.25rem', fontSize: '0.75rem' } }))}>Generated on {lastUpdatedLabel}. Use your browser&apos;s print dialog to export a PDF for your PT.</p>
         </div>
         <div className={cx('print-page-header-actions', printPageHeaderActions)}>
           <Link href="/tools/knee-rehab" className={cx('back-to-tracker-link', css({ color: '#2563eb', fontWeight: 600, textDecoration: 'none', '@media print': { display: 'none' } }))}>
