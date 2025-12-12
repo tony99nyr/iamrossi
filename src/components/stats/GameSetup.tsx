@@ -107,6 +107,19 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
         const tomorrow = tomorrowDate.toISOString().split('T')[0];
 
         const relevantGames = data.filter((g: Game) => {
+            // Exclude placeholder events (tournaments, showcases, multi-day events)
+            if (g.isPlaceholder === true) {
+              return false;
+            }
+            // Also check if event spans more than 1 day (fallback check)
+            if (g.placeholderStartDate && g.placeholderEndDate) {
+              const startDate = new Date(g.placeholderStartDate);
+              const endDate = new Date(g.placeholderEndDate);
+              const daysDiff = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+              if (daysDiff > 1) {
+                return false;
+              }
+            }
             const date = g.game_date_format || g.game_date;
             if (!date) return false;
             // Check if date string starts with today or tomorrow (handling potential time components if present in raw date)
