@@ -136,7 +136,26 @@ export async function POST(request: NextRequest) {
 // GET endpoint to check sync status
 export async function GET() {
   try {
-    const syncStatus = await getSyncStatus();
+    let syncStatus = await getSyncStatus();
+    
+    // Check if stuck in revalidating state
+    if (syncStatus.isRevalidating) {
+      const timeSinceLastSync = syncStatus.lastSyncTime 
+        ? Date.now() - syncStatus.lastSyncTime 
+        : Infinity;
+      const stuckTimeout = 10 * 60 * 1000; // 10 minutes
+      
+      // If stuck for more than 10 minutes, reset the flag
+      if (!syncStatus.lastSyncTime || timeSinceLastSync > stuckTimeout) {
+        debugLog('[YouTube Sync Status] Detected stuck revalidating flag, resetting');
+        syncStatus = {
+          ...syncStatus,
+          isRevalidating: false,
+          lastError: syncStatus.lastError || 'Previous sync was stuck and has been reset'
+        };
+        await setSyncStatus(syncStatus);
+      }
+    }
     
     // Calculate if cooldown is active
     let cooldownActive = false;

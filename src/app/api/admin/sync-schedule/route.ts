@@ -11,6 +11,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for scraping
 
+// Cooldown period: 2 hours in milliseconds
+const COOLDOWN_MS = 2 * 60 * 60 * 1000;
+
 export async function POST(request: NextRequest) {
   // Verify admin authentication
   if (!verifyAdminAuth(request)) {
@@ -19,6 +22,36 @@ export async function POST(request: NextRequest) {
   
   // Get current sync status
   const syncStatus = await getCalendarSyncStatus();
+  
+  // Check cooldown first - if past cooldown, we should sync regardless of revalidating flag
+  const timeSinceLastSync = syncStatus.lastSyncTime 
+    ? Date.now() - syncStatus.lastSyncTime 
+    : Infinity;
+  const isPastCooldown = !syncStatus.lastSyncTime || timeSinceLastSync >= COOLDOWN_MS;
+
+  // Check if already revalidating, but allow if past cooldown (might be from optimistic update)
+  if (syncStatus.isRevalidating && !isPastCooldown) {
+    const stuckTimeout = 10 * 60 * 1000; // 10 minutes - if no sync completed in this time, consider it stuck
+    
+    // If lastSyncTime is null or very old, and we're marked as revalidating, it's likely stuck
+    if (!syncStatus.lastSyncTime || timeSinceLastSync > stuckTimeout) {
+      // Reset stuck revalidating flag
+      debugLog('[Calendar Sync] Resetting stuck revalidating flag (no recent sync activity)');
+      await setCalendarSyncStatus({
+        ...syncStatus,
+        isRevalidating: false,
+        lastError: syncStatus.lastError || 'Previous sync was stuck and has been reset'
+      });
+      // Continue with sync below
+    } else {
+      // Within cooldown and revalidating - sync is likely in progress
+      return NextResponse.json({ 
+        error: 'Sync already in progress',
+        message: 'A sync operation is currently running. Please wait for it to complete.',
+        status: syncStatus
+      }, { status: 429 });
+    }
+  }
   
   // Set revalidating flag
   await setCalendarSyncStatus({
