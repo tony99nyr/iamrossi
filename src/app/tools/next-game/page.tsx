@@ -5,6 +5,7 @@ import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnriched
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
 import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
+import { partitionNextGameSchedule } from '@/lib/next-game/partition-games';
 
 // Force dynamic rendering since we're reading from KV
 export const dynamic = 'force-dynamic';
@@ -210,43 +211,39 @@ export default async function NextGamePage() {
     // Keep games visible until 1 hour after puck drop.
     const now = new Date();
     const UPCOMING_GRACE_PERIOD_MS = 60 * 60 * 1000;
-    const futureGames = schedule
-        .map((game: Game) => {
-            const dateStr = game.game_date_format || game.game_date;
-            const timeStr = game.game_time_format || game.game_time;
-            const startUtc = parseDateTimeInTimeZoneToUtc(dateStr, timeStr, EASTERN_TIME_ZONE);
-            return { game, startUtc };
-        })
-        .filter((entry): entry is { game: Game; startUtc: Date } => {
-            if (!entry.startUtc) return false;
-            return now.getTime() < entry.startUtc.getTime() + UPCOMING_GRACE_PERIOD_MS;
-        })
-        .sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime())
-        .map(({ game }) => game);
+    const scheduleOrFallback = schedule.length > 0 ? schedule : sanitizeGames(mhrSchedule as unknown as Game[]);
+    const { futureGames, pastGames: pastFromSchedule } = partitionNextGameSchedule(scheduleOrFallback, now, {
+        timeZone: EASTERN_TIME_ZONE,
+        upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
+    });
 
-    // Filter for past games from MHR (current season only)
+    // Filter for past games (current season only)
     // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
     const mhrYear = settings.mhrYear || '2025';
     const seasonStartYear = mhrYear;
     const seasonEndYear = String(parseInt(mhrYear) + 1);
     const currentSeasonStart = new Date(`${seasonStartYear}-08-01T00:00:00`);
     const currentSeasonEnd = new Date(`${seasonEndYear}-03-01T23:59:59`);
-    const pastGames = (mhrSchedule as unknown as Game[]).filter((game: Game) => {
-        const gameDate = new Date(game.game_date_format || game.game_date);
+    const pastGames = pastFromSchedule
+        .filter((game: Game) => {
+            // Keep placeholders out of the past games list (they're not "results").
+            if (game.isPlaceholder) return false;
 
-        // Must be from current season
-        if (gameDate < currentSeasonStart || gameDate >= currentSeasonEnd) return false;
+            // Must be from current season.
+            const dateStr = game.game_date_format || game.game_date;
+            const timeStr = game.game_time_format || game.game_time;
+            const startUtc = parseDateTimeInTimeZoneToUtc(dateStr, timeStr, EASTERN_TIME_ZONE);
+            if (!startUtc) return false;
+            if (startUtc < currentSeasonStart || startUtc >= currentSeasonEnd) return false;
 
-        // Must be in the past (before today)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return gameDate < today;
-    }).sort((a: Game, b: Game) => {
-        // Sort descending (most recent first)
-        const dateA = new Date(a.game_date_format || a.game_date);
-        const dateB = new Date(b.game_date_format || b.game_date);
-        return dateB.getTime() - dateA.getTime();
-    });
+            return true;
+        })
+        .sort((a: Game, b: Game) => {
+            // Sort descending (most recent first)
+            const dateA = parseDateTimeInTimeZoneToUtc(a.game_date_format || a.game_date, a.game_time_format || a.game_time, EASTERN_TIME_ZONE);
+            const dateB = parseDateTimeInTimeZoneToUtc(b.game_date_format || b.game_date, b.game_time_format || b.game_time, EASTERN_TIME_ZONE);
+            return (dateB?.getTime() ?? 0) - (dateA?.getTime() ?? 0);
+        });
 
     // Check cache for enriched games (video-matched)
     let enrichedPastGames: Game[];
