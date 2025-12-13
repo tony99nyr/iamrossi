@@ -134,6 +134,45 @@ describe('Transform Calendar Events', () => {
     expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
   });
 
+  it('should treat (Home)/(Away) in calendar titles as an override and not create duplicates vs MHR', async () => {
+    const events = [
+      {
+        summary: 'Black vs Rangers (Away)',
+        // Dec 13 is EST (UTC-5). 6:30pm ET = 23:30Z.
+        start: new Date('2025-12-13T23:30:00.000Z'),
+        end: new Date('2025-12-14T00:30:00.000Z'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const mhrSchedule = [
+      {
+        game_nbr: 424242,
+        game_date: '2025-12-13',
+        game_time: '6:30 PM',
+        home_team_name: 'Carolina Junior Canes (Black) 10U AA',
+        visitor_team_name: 'Rangers',
+        home_team_score: 2,
+        visitor_team_score: 3,
+        rink_name: 'Test Rink',
+        home_team_id: '12345',
+        visitor_team_id: '99999',
+        opponent_team_id: '99999',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, mhrSchedule, '2025');
+
+    expect(result).toHaveLength(1);
+    // Calendar override wins.
+    expect(result[0].home_team_name).toBe('Rangers');
+    expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+    // But we still pull MHR data.
+    expect(result[0].game_nbr).toBe(424242);
+    expect(result[0].home_team_score).toBe(2);
+    expect(result[0].visitor_team_score).toBe(3);
+  });
+
   it('should let (Home) override "@" away/home inference', async () => {
     const events = [
       {
