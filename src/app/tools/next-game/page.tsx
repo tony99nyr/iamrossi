@@ -3,7 +3,6 @@ import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
 import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, setSyncStatus, setCalendarSyncStatus, getStatSessions } from '@/lib/kv';
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
-import { hasValidFinalScore } from '@/lib/game-scores';
 import { Game } from '@/types';
 import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
 import { partitionNextGameSchedule } from '@/lib/next-game/partition-games';
@@ -240,7 +239,15 @@ export default async function NextGamePage() {
     }
     combined.push(...combinedByGameNbr.values());
 
-    const { futureGames, pastGames: pastFromSchedule } = partitionNextGameSchedule(combined, now, {
+    const { futureGames } = partitionNextGameSchedule(combined, now, {
+        timeZone: EASTERN_TIME_ZONE,
+        upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
+    });
+
+    // Past games should come from MHR (source of truth for season history).
+    // This avoids accidentally treating calendar misc events as "past games".
+    const mhrGames = sanitizeGames(mhrSchedule as unknown as Game[]);
+    const { pastGames: pastFromMhr } = partitionNextGameSchedule(mhrGames, now, {
         timeZone: EASTERN_TIME_ZONE,
         upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
     });
@@ -251,7 +258,7 @@ export default async function NextGamePage() {
     const seasonEndYear = String(parseInt(mhrYear) + 1);
     const currentSeasonStart = new Date(`${seasonStartYear}-08-01T00:00:00`);
     const currentSeasonEnd = new Date(`${seasonEndYear}-03-01T23:59:59`);
-    const pastGames = pastFromSchedule
+    const pastGames = pastFromMhr
         .filter((game: Game) => {
             // Keep placeholders out of the past games list (they're not "results").
             if (game.isPlaceholder) return false;
@@ -306,10 +313,6 @@ export default async function NextGamePage() {
         statSessions,
         settings.teamName
     );
-
-    // Past Games should only show real results.
-    // If a "past" entry doesn't have a final score (from MHR or stat sessions), hide it.
-    enrichedPastGames = enrichedPastGames.filter(hasValidFinalScore);
 
     // Enrich future games with upcoming/live video data.
     // IMPORTANT: For upcoming games, we only want stream links (not VOD "full game"/"highlights" links).
