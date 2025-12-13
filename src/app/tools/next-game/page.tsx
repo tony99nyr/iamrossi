@@ -6,6 +6,7 @@ import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
 import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
 import { partitionNextGameSchedule } from '@/lib/next-game/partition-games';
+import { selectFeaturedStream } from '@/lib/next-game/featured-stream';
 
 // Force dynamic rendering since we're reading from KV
 export const dynamic = 'force-dynamic';
@@ -321,20 +322,20 @@ export default async function NextGamePage() {
     // Check if there are any live games (games with live stream URLs)
     const liveGames = enrichedFutureGames.filter((game: Game) => (game as unknown as { liveStreamUrl?: string }).liveStreamUrl);
 
-    // Detect active live streams from YouTube videos (not just matched to games)
-    // Prioritize actually live streams over upcoming ones
-    const activeLiveStreams = youtubeVideos.filter((video): video is import('@/lib/youtube-service').YouTubeVideo => {
-        return video.videoType === 'live' || video.videoType === 'upcoming';
+    // Featured stream at top of page (live video first; else nearest game w/ stream)
+    const featuredStream = selectFeaturedStream({
+        now,
+        timeZone: EASTERN_TIME_ZONE,
+        futureGames: enrichedFutureGames,
+        youtubeVideos,
     });
 
-    // Get the most recent active live stream (prioritize live over upcoming)
-    const activeLiveStream = activeLiveStreams
-        .sort((a, b) => {
-            // Sort live streams first, then upcoming
-            if (a.videoType === 'live' && b.videoType !== 'live') return -1;
-            if (a.videoType !== 'live' && b.videoType === 'live') return 1;
-            return 0;
-        })[0] || null;
+    // Keep backwards-compatible prop for "standalone YouTube stream" alert.
+    // We ONLY set this for actual live streams; upcoming streams should be tied to the schedule.
+    const activeLiveStream =
+        featuredStream?.kind === 'youtube' && featuredStream.state === 'live'
+            ? featuredStream.video
+            : null;
 
     return <NextGameClient 
         futureGames={enrichedFutureGames} 
@@ -344,5 +345,6 @@ export default async function NextGamePage() {
         calendarSyncStatus={calendarSyncStatus} 
         liveGames={liveGames}
         activeLiveStream={activeLiveStream}
+        featuredStream={featuredStream}
     />;
 }
