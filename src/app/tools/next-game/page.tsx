@@ -259,10 +259,16 @@ export default async function NextGamePage() {
 
     if (cachedEnrichedGames && !isEnrichedGamesCacheStale(cachedEnrichedGames)) {
         // Use cached enriched games
-        enrichedPastGames = cachedEnrichedGames.games;
+        // Past games should never show stream buttons; clear any cached stream URLs defensively.
+        enrichedPastGames = cachedEnrichedGames.games.map((g) => ({
+            ...g,
+            liveStreamUrl: undefined,
+            upcomingStreamUrl: undefined,
+        }));
     } else {
         // Cache miss or stale - compute and cache
-        enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
+        // For past games, we only want VOD links (not live/upcoming stream links).
+        enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos, { includeStreamLinks: false });
         try {
             await setEnrichedGames(enrichedPastGames);
         } catch (error) {
