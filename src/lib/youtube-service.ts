@@ -195,22 +195,53 @@ async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
                 const href = linkElement?.getAttribute('href');
                 const url = href ? `https://www.youtube.com${href}` : null;
 
-                // Check for live/upcoming badges
-                const badges = element.querySelectorAll('.badge-style-type-live-now, .badge-style-type-upcoming');
-                let videoType: 'live' | 'upcoming' | 'regular' = 'regular';
-                
-                badges.forEach((badge: Element) => {
-                    const badgeText = badge.textContent?.toLowerCase() || '';
-                    if (badgeText.includes('live')) {
-                        videoType = 'live';
-                    } else if (badgeText.includes('upcoming') || badgeText.includes('scheduled')) {
-                        videoType = 'upcoming';
+                // Get metadata line text (YouTube uses this for "Scheduled for …" and "Streamed …")
+                const metadataSpans = Array.from(element.querySelectorAll('#metadata-line span'))
+                    .map(s => s.textContent?.trim())
+                    .filter((s): s is string => Boolean(s));
+                const metadataText = metadataSpans.join(' • ');
+
+                // Detect live/upcoming. YouTube's markup changes frequently, so we use multiple signals:
+                // - thumbnail overlay status renderer (LIVE / UPCOMING)
+                // - badge classes (older markup)
+                // - metadata text ("Scheduled", "Streaming in", "Starts in")
+                let sawLive = false;
+                let sawUpcoming = false;
+
+                const overlayEls = element.querySelectorAll('ytd-thumbnail-overlay-time-status-renderer');
+                overlayEls.forEach((overlay) => {
+                    const overlayStyle = overlay.getAttribute('overlay-style')?.toLowerCase() || '';
+                    const overlayText = overlay.textContent?.toLowerCase() || '';
+
+                    if (overlayStyle.includes('live') || overlayText.includes('live')) {
+                        sawLive = true;
+                    }
+                    if (overlayStyle.includes('upcoming') || overlayText.includes('upcoming') || overlayText.includes('scheduled')) {
+                        sawUpcoming = true;
                     }
                 });
 
-                // Get metadata (date/time for upcoming, or streamed date for past)
-                const metadataElement = element.querySelector('#metadata-line span');
-                const publishDate = metadataElement?.textContent?.trim();
+                const legacyBadges = element.querySelectorAll('.badge-style-type-live-now, .badge-style-type-upcoming');
+                legacyBadges.forEach((badge) => {
+                    const badgeText = badge.textContent?.toLowerCase() || '';
+                    if (badgeText.includes('live')) sawLive = true;
+                    if (badgeText.includes('upcoming') || badgeText.includes('scheduled')) sawUpcoming = true;
+                });
+
+                const lowerMeta = metadataText.toLowerCase();
+                if (lowerMeta.includes('scheduled') || lowerMeta.includes('streaming in') || lowerMeta.includes('starts in')) {
+                    sawUpcoming = true;
+                }
+                if (lowerMeta.includes('watching') && lowerMeta.includes('now')) {
+                    sawLive = true;
+                }
+
+                const videoType: 'live' | 'upcoming' | 'regular' = sawLive ? 'live' : sawUpcoming ? 'upcoming' : 'regular';
+
+                // Prefer the most useful publishDate string for upcoming/live parsing.
+                const publishDate =
+                    metadataSpans.find((s) => /scheduled|streaming in|starts in|watching now/i.test(s)) ??
+                    metadataSpans[0];
 
                 if (title && url) {
                     results.push({

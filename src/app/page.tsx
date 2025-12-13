@@ -4,6 +4,9 @@ import { AnimatedLogo } from '@/components/AnimatedLogo';
 import { css } from '@styled-system/css';
 import { getSettings } from '@/lib/kv';
 
+// This page reads from Redis/KV at request time, so it must not be statically prerendered.
+export const dynamic = 'force-dynamic';
+
 export default async function HomePage() {
     // Fetch team name from settings
     const settingsData = await getSettings();
