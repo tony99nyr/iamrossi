@@ -43,7 +43,6 @@ function parseClockTimeToMinutes(timeStr: unknown): number | null {
   const trimmed = timeStr.trim();
   if (!trimmed) return null;
   if (trimmed.toUpperCase() === 'TBD') return null;
-
   // Be forgiving: normalize whitespace and remove dots in "p.m." / "a.m." formats.
   const cleaned = trimmed.replace(/\s+/g, ' ').replace(/\./g, '').toUpperCase();
 
