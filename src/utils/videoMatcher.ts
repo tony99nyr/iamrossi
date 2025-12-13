@@ -50,7 +50,7 @@ export function matchVideosToGames(games: Game[], videos: Video[]): EnrichedGame
         return at - bt;
     });
 
-    for (const { game, startUtc, key } of sortedGames) {
+    for (const { startUtc, key } of sortedGames) {
         if (!startUtc) continue;
 
         let bestUrl: string | null = null;
@@ -182,7 +182,8 @@ function parseYouTubeScheduledUtc(publishDate?: string): Date | null {
     return null;
 }
 
-function extractIsoDateFromText(text: string): string | null {
+function extractIsoDateFromText(text: unknown): string | null {
+    if (typeof text !== 'string') return null;
     const trimmed = text.trim();
     if (!trimmed) return null;
 
@@ -237,11 +238,12 @@ function monthToNumber(month: string): string | null {
     return map[m] ?? null;
 }
 
-function coerceToIsoDate(dateStr: string): string | null {
+function coerceToIsoDate(dateStr: unknown): string | null {
     return extractIsoDateFromText(dateStr);
 }
 
-function coerceTo24hTime(timeStr: string): string | null {
+function coerceTo24hTime(timeStr: unknown): string | null {
+    if (typeof timeStr !== 'string') return null;
     const trimmed = timeStr.trim();
     if (!trimmed || trimmed.toUpperCase() === 'TBD') return null;
 

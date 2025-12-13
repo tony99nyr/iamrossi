@@ -128,5 +128,26 @@ describe('matchVideosToGames (upcoming streams)', () => {
     expect(enriched[0]?.liveStreamUrl).toBe('https://www.youtube.com/watch?v=live1');
     expect(enriched[0]?.upcomingStreamUrl).toBeUndefined();
   });
+
+  it('does not throw if a game is missing date/time fields', () => {
+    const games = [
+      {
+        game_nbr: 99,
+        // Intentionally missing game_date/game_time fields that real-world KV data can omit
+        home_team_name: 'Junior Canes',
+        visitor_team_name: 'Opponent',
+        rink_name: 'Rink',
+      } as unknown as Game,
+    ];
+
+    const videos = [
+      {
+        title: 'Some Video 12/14/2025',
+        url: 'https://www.youtube.com/watch?v=zzz',
+      },
+    ];
+
+    expect(() => matchVideosToGames(games, videos)).not.toThrow();
+  });
 });
 
