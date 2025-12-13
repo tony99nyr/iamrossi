@@ -7,6 +7,7 @@ import { Game } from '@/types';
 import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
 import { partitionNextGameSchedule } from '@/lib/next-game/partition-games';
 import { selectFeaturedStream } from '@/lib/next-game/featured-stream';
+import type { YouTubeVideo } from '@/lib/youtube-service';
 
 // Force dynamic rendering since we're reading from KV
 export const dynamic = 'force-dynamic';
@@ -55,12 +56,25 @@ function sanitizeGames(games: Game[]): Game[] {
     return (Array.isArray(games) ? games : []).filter((g): g is Game => isRecord(g));
 }
 
-function sanitizeYouTubeVideos(videos: Awaited<ReturnType<typeof getYouTubeVideos>>): Awaited<ReturnType<typeof getYouTubeVideos>> {
+function sanitizeYouTubeVideos(videos: Awaited<ReturnType<typeof getYouTubeVideos>>): YouTubeVideo[] {
     // Keep only entries with required fields for downstream usage.
-    return (Array.isArray(videos) ? videos : []).filter((v) => {
-        if (!isRecord(v)) return false;
-        return typeof v.title === 'string' && typeof v.url === 'string';
-    }) as Awaited<ReturnType<typeof getYouTubeVideos>>;
+    // KV historically stored entries without `videoType`; default those to 'regular' for type safety.
+    return (Array.isArray(videos) ? videos : [])
+        .filter((v) => {
+            if (!isRecord(v)) return false;
+            return typeof v.title === 'string' && typeof v.url === 'string';
+        })
+        .map((v) => {
+            const videoType = v.videoType;
+            const normalizedVideoType =
+                videoType === 'live' || videoType === 'upcoming' || videoType === 'regular'
+                    ? videoType
+                    : 'regular';
+            return {
+                ...v,
+                videoType: normalizedVideoType,
+            };
+        }) as YouTubeVideo[];
 }
 
 // async function triggerSync() {
@@ -85,7 +99,7 @@ function sanitizeYouTubeVideos(videos: Awaited<ReturnType<typeof getYouTubeVideo
 export default async function NextGamePage() {
     let schedule: Game[] = [];
     let mhrSchedule: Awaited<ReturnType<typeof getMHRSchedule>> = [];
-    let youtubeVideos: Awaited<ReturnType<typeof getYouTubeVideos>> = [];
+    let youtubeVideos: YouTubeVideo[] = [];
 
     // KV reads can fail in production (missing env, transient Redis outage, bad data).
     // This page should degrade gracefully instead of throwing a 500.
