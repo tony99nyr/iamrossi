@@ -115,6 +115,42 @@ describe('Transform Calendar Events', () => {
     expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
   });
 
+  it('should let (Away) override "vs" home/away inference', async () => {
+    const events = [
+      {
+        summary: 'Black vs Rangers (Away)',
+        start: new Date('2025-12-13T18:30:00'),
+        end: new Date('2025-12-13T19:30:00'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    // Normally "Black vs Rangers" would imply we're home.
+    // The explicit (Away) marker must override that.
+    expect(result[0].home_team_name).toBe('Rangers');
+    expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+  });
+
+  it('should treat explicit (Away) titles without separators as games', async () => {
+    const events = [
+      {
+        summary: 'Rangers (Away)',
+        start: new Date('2025-12-14T14:00:00'),
+        end: new Date('2025-12-14T15:00:00'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].home_team_name).toBe('Rangers');
+    expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+  });
+
   it('should merge MHR schedule data when available', async () => {
     const events = [
       {
