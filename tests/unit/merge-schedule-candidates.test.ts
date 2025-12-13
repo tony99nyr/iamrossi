@@ -30,6 +30,8 @@ describe('mergeScheduleCandidates', () => {
       game_time_format: '18:30:00',
       home_team_name: 'Ohio Blue Jackets',
       visitor_team_name: teamName,
+      game_home_team: opponentId,
+      game_visitor_team: mhrTeamId,
       rink_name: 'Some Arena',
       source: 'calendar' as unknown as Game['source'],
     };
@@ -50,6 +52,52 @@ describe('mergeScheduleCandidates', () => {
 
     // Prefer MHR game_nbr for linking when calendar had a short hash.
     expect(merged[0].game_nbr).toBe(123456);
+  });
+
+  it('de-dupes using team IDs even when team names differ across sources', () => {
+    const teamName = 'Jr Canes 10U Black';
+    const mhrTeamId = '19758';
+    const opponentId = '1086';
+
+    // Raw MHR might use a more formal team name, but IDs should align.
+    const mhrGame: Game = {
+      game_nbr: 1250927,
+      game_date: '2025-12-13',
+      game_time: '6:30 PM',
+      home_team_name: 'Carolina Junior Canes (Black) 10U AA',
+      visitor_team_name: 'Ohio Blue Jackets 10U AAA',
+      game_home_team: mhrTeamId,
+      game_visitor_team: opponentId,
+      rink_name: 'Some Arena',
+    };
+
+    // Calendar override says we're away, with a shortened team name but same IDs.
+    const calendarGame: Game = {
+      game_nbr: 'deadbeef',
+      game_date: '2025-12-13',
+      game_time: '18:30:00',
+      game_date_format: '2025-12-13',
+      game_time_format: '18:30:00',
+      home_team_name: 'Ohio Blue Jackets 10U AAA',
+      visitor_team_name: teamName,
+      game_home_team: opponentId,
+      game_visitor_team: mhrTeamId,
+      rink_name: 'Some Arena',
+      source: 'calendar' as unknown as Game['source'],
+    };
+
+    const merged = mergeScheduleCandidates([mhrGame], [calendarGame], {
+      mhrTeamId,
+      teamName,
+      timeZone: EASTERN_TIME_ZONE,
+    });
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].home_team_name).toBe('Ohio Blue Jackets 10U AAA');
+    expect(merged[0].visitor_team_name).toBe(teamName);
+    expect(String(merged[0].game_home_team)).toBe(opponentId);
+    expect(String(merged[0].game_visitor_team)).toBe(mhrTeamId);
+    expect(merged[0].game_nbr).toBe(1250927);
   });
 
   it('merges even when MHR time is in a weird but common format (e.g. "18:30 PM")', () => {
@@ -78,6 +126,8 @@ describe('mergeScheduleCandidates', () => {
       game_time_format: '18:30:00',
       home_team_name: 'Rangers',
       visitor_team_name: teamName,
+      game_home_team: opponentId,
+      game_visitor_team: mhrTeamId,
       rink_name: 'Some Arena',
       source: 'calendar' as unknown as Game['source'],
     };
