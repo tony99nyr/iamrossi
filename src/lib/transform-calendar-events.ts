@@ -1038,9 +1038,17 @@ function parseEventSummary(summary: string, identifiers: string[]): { opponent: 
         // causes non-game calendar entries (Team Photo, Breakfast, Concussion Testing, etc.)
         // to be misclassified as games.
         //
-        // New rule: if there's no explicit separator, only treat it as a game when the
-        // title includes one of our identifiers (e.g. "Jr Canes Black")—otherwise skip.
-        if (isUs(cleanSummary, identifiers)) {
+        // New rule: if there's no explicit separator, only treat it as a game when:
+        // - The title includes one of our identifiers (e.g. "Jr Canes Black"), OR
+        // - The title explicitly includes (Home) or (Away), which is a user override.
+        //
+        // This preserves safety (don't misclassify random events), while allowing
+        // explicit calendar overrides like "Opponent (Away)" to be treated as games
+        // even when our team name isn't present in the title.
+        if (explicitHomeAway && cleanSummary && !isUs(cleanSummary, identifiers)) {
+            opponent = cleanSummary;
+            isHome = explicitHomeAway === 'home';
+        } else if (isUs(cleanSummary, identifiers)) {
             opponent = cleanSummary;
             isHome = true;
         }
