@@ -15,7 +15,18 @@ export interface EnrichedGame extends Game {
     liveStreamUrl?: string;
 }
 
-export function matchVideosToGames(games: Game[], videos: Video[]): EnrichedGame[] {
+export interface MatchVideosOptions {
+    /**
+     * When false, we will only attach stream URLs (live/upcoming) and will
+     * explicitly clear any VOD URLs (highlights/full game). This is useful for
+     * upcoming games where "Watch Full Game" links should never appear.
+     */
+    includeVodLinks?: boolean;
+}
+
+export function matchVideosToGames(games: Game[], videos: Video[], options: MatchVideosOptions = {}): EnrichedGame[] {
+    const includeVodLinks = options.includeVodLinks ?? true;
+
     // 1) Match live/upcoming streams to games using scheduled time (from publishDate) when possible.
     //    This is the most reliable way to match "upcoming streams", since titles often don't include a date.
     const gameWithStartTimes = games
@@ -95,6 +106,19 @@ export function matchVideosToGames(games: Game[], videos: Video[]): EnrichedGame
 
     // 2) Match regular videos (highlights/full game) by date extracted from title.
     return gameWithStartTimes.map(({ game, startUtc, key }) => {
+        const streamUrls = assignments.get(key) ?? {};
+
+        // For upcoming games we do NOT want VOD buttons ("Watch Full Game"/"Highlights") to appear.
+        // Only attach stream URLs and explicitly clear any existing VOD URLs.
+        if (!includeVodLinks) {
+            return {
+                ...game,
+                highlightsUrl: undefined,
+                fullGameUrl: undefined,
+                ...streamUrls,
+            };
+        }
+
         const gameDate = startUtc ? new Date(startUtc) : new Date(game.game_date_format || game.game_date);
 
         const matchingVideos = videos.filter((video) => {
@@ -119,8 +143,6 @@ export function matchVideosToGames(games: Game[], videos: Video[]): EnrichedGame
                 fullGameUrl = video.url;
             }
         });
-
-        const streamUrls = assignments.get(key) ?? {};
 
         return {
             ...game,
