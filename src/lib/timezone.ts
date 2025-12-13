@@ -20,6 +20,24 @@ function parseTimeParts(timeStr: string): { hour: number; minute: number; second
   if (!trimmed) return null;
   if (trimmed.toUpperCase() === 'TBD') return null;
 
+  // Support both 24h ("09:45", "09:45:00") and 12h ("9:45 AM", "09:45PM", "9:45:30 pm") inputs.
+  const twelveHourMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (twelveHourMatch) {
+    const rawHour = Number(twelveHourMatch[1]);
+    const minute = Number(twelveHourMatch[2]);
+    const second = twelveHourMatch[3] ? Number(twelveHourMatch[3]) : 0;
+    const ampm = String(twelveHourMatch[4]).toUpperCase();
+
+    if (!Number.isFinite(rawHour) || rawHour < 1 || rawHour > 12) return null;
+    if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+    if (!Number.isFinite(second) || second < 0 || second > 59) return null;
+
+    let hour = rawHour % 12;
+    if (ampm === 'PM') hour += 12;
+
+    return { hour, minute, second };
+  }
+
   const [hh, mm, ss] = trimmed.split(':');
   if (hh === undefined || mm === undefined) return null;
 

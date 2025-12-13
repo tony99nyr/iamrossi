@@ -8,6 +8,12 @@ describe('parseDateTimeInTimeZoneToUtc', () => {
     expect(dt?.toISOString()).toBe('2025-12-13T14:45:00.000Z');
   });
 
+  it('accepts 12-hour AM/PM times', () => {
+    const dt = parseDateTimeInTimeZoneToUtc('2025-12-13', '9:45 AM', EASTERN_TIME_ZONE);
+    expect(dt).not.toBeNull();
+    expect(dt?.toISOString()).toBe('2025-12-13T14:45:00.000Z');
+  });
+
   it('converts Eastern summer time to correct UTC (DST)', () => {
     const dt = parseDateTimeInTimeZoneToUtc('2025-07-01', '09:45', EASTERN_TIME_ZONE);
     expect(dt).not.toBeNull();
