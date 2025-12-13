@@ -3,6 +3,7 @@ import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
 import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, setSyncStatus, setCalendarSyncStatus, getStatSessions } from '@/lib/kv';
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
+import { hasValidFinalScore } from '@/lib/game-scores';
 import { Game } from '@/types';
 import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
 import { partitionNextGameSchedule } from '@/lib/next-game/partition-games';
@@ -305,6 +306,10 @@ export default async function NextGamePage() {
         statSessions,
         settings.teamName
     );
+
+    // Past Games should only show real results.
+    // If a "past" entry doesn't have a final score (from MHR or stat sessions), hide it.
+    enrichedPastGames = enrichedPastGames.filter(hasValidFinalScore);
 
     // Enrich future games with upcoming/live video data.
     // IMPORTANT: For upcoming games, we only want stream links (not VOD "full game"/"highlights" links).
