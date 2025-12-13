@@ -244,7 +244,6 @@ export default async function NextGamePage() {
         timeZone: EASTERN_TIME_ZONE,
         upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
     });
-
     // Filter for past games (current season only)
     // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
     const mhrYear = settings.mhrYear || '2025';
