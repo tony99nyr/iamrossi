@@ -4,6 +4,7 @@ import { matchVideosToGames } from '@/utils/videoMatcher';
 import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, setSyncStatus, setCalendarSyncStatus, getStatSessions } from '@/lib/kv';
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
+import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
 
 // Force dynamic rendering since we're reading from KV
 export const dynamic = 'force-dynamic';
@@ -149,16 +150,24 @@ export default async function NextGamePage() {
     }
 
     
-    // Filter for future games
+    // Filter for upcoming games.
+    // IMPORTANT: schedule times are Eastern; Vercel's server runtime is UTC.
+    // Keep games visible until 1 hour after puck drop.
     const now = new Date();
-    const futureGames = schedule.filter((game: Game) => {
-        const gameDateTime = new Date(`${game.game_date_format}T${game.game_time_format}`);
-        return gameDateTime >= now;
-    }).sort((a: Game, b: Game) => {
-        const dateA = new Date(`${a.game_date_format}T${a.game_time_format}`);
-        const dateB = new Date(`${b.game_date_format}T${b.game_time_format}`);
-        return dateA.getTime() - dateB.getTime();
-    });
+    const UPCOMING_GRACE_PERIOD_MS = 60 * 60 * 1000;
+    const futureGames = schedule
+        .map((game: Game) => {
+            const dateStr = game.game_date_format || game.game_date;
+            const timeStr = game.game_time_format || game.game_time;
+            const startUtc = parseDateTimeInTimeZoneToUtc(dateStr, timeStr, EASTERN_TIME_ZONE);
+            return { game, startUtc };
+        })
+        .filter((entry): entry is { game: Game; startUtc: Date } => {
+            if (!entry.startUtc) return false;
+            return now.getTime() < entry.startUtc.getTime() + UPCOMING_GRACE_PERIOD_MS;
+        })
+        .sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime())
+        .map(({ game }) => game);
 
     // Filter for past games from MHR (current season only)
     // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
