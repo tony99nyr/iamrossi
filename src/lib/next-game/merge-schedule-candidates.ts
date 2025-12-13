@@ -24,7 +24,18 @@ function normalizeDateString(dateStr: unknown): string | null {
 
 function normalizeTeamName(name: unknown): string {
   if (typeof name !== 'string') return '';
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const collapsed = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Normalize common hockey age-group tokens so "10AA" and "10U AA" compare cleanly.
+  return collapsed.replace(/(\d{1,2})u/g, '$1');
+}
+
+function normalizeTeamId(id: unknown): string | null {
+  if (id === undefined || id === null) return null;
+  const str = String(id).trim();
+  if (!str) return null;
+  // IDs are numeric strings in KV, but be defensive.
+  if (!/^\d+$/.test(str)) return null;
+  return str;
 }
 
 function parseClockTimeToMinutes(timeStr: unknown): number | null {
@@ -32,7 +43,6 @@ function parseClockTimeToMinutes(timeStr: unknown): number | null {
   const trimmed = timeStr.trim();
   if (!trimmed) return null;
   if (trimmed.toUpperCase() === 'TBD') return null;
-
   // Be forgiving: normalize whitespace and remove dots in "p.m." / "a.m." formats.
   const cleaned = trimmed.replace(/\s+/g, ' ').replace(/\./g, '').toUpperCase();
 
@@ -86,6 +96,12 @@ function getStartBucketKey(game: Game, _timeZone: string): string {
 }
 
 function getTeamsKey(game: Game): string | null {
+  // Prefer stable team IDs when available (resilient to name variations like "Jr Canes" vs full name).
+  const homeId = normalizeTeamId(game.game_home_team);
+  const visitorId = normalizeTeamId(game.game_visitor_team);
+  if (homeId && visitorId) return [homeId, visitorId].sort().join('|');
+
+  // Fall back to names (best-effort).
   const home = normalizeTeamName(game.home_team_name);
   const visitor = normalizeTeamName(game.visitor_team_name);
   if (!home || !visitor) return null;
