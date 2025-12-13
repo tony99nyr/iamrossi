@@ -44,6 +44,23 @@ export const metadata: Metadata = {
     }
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object';
+}
+
+function sanitizeGames(games: Game[]): Game[] {
+    // KV data can contain nulls/invalid entries; filter to objects only.
+    return (Array.isArray(games) ? games : []).filter((g): g is Game => isRecord(g));
+}
+
+function sanitizeYouTubeVideos(videos: Awaited<ReturnType<typeof getYouTubeVideos>>): Awaited<ReturnType<typeof getYouTubeVideos>> {
+    // Keep only entries with required fields for downstream usage.
+    return (Array.isArray(videos) ? videos : []).filter((v) => {
+        if (!isRecord(v)) return false;
+        return typeof v.title === 'string' && typeof v.url === 'string';
+    }) as Awaited<ReturnType<typeof getYouTubeVideos>>;
+}
+
 // async function triggerSync() {
 //     try {
 //         const headersList = await headers();
@@ -71,19 +88,20 @@ export default async function NextGamePage() {
     // KV reads can fail in production (missing env, transient Redis outage, bad data).
     // This page should degrade gracefully instead of throwing a 500.
     try {
-        schedule = await getSchedule();
+        schedule = sanitizeGames(await getSchedule());
     } catch (error) {
         console.error('[Next Game] Failed to load schedule from KV:', error);
     }
 
     try {
-        mhrSchedule = await getMHRSchedule();
+        // MHR schedule is a looser shape; keep only object entries to avoid null derefs.
+        mhrSchedule = (await getMHRSchedule()).filter((g): g is (typeof mhrSchedule)[number] => isRecord(g));
     } catch (error) {
         console.error('[Next Game] Failed to load MHR schedule from KV:', error);
     }
 
     try {
-        youtubeVideos = await getYouTubeVideos();
+        youtubeVideos = sanitizeYouTubeVideos(await getYouTubeVideos());
     } catch (error) {
         console.error('[Next Game] Failed to load YouTube videos from KV:', error);
     }
