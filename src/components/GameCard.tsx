@@ -444,24 +444,28 @@ export default function GameCard({ title, game, isPastGame = false }: GameCardPr
                     </div>
                 )}
 
-                {/* Upcoming Stream Link */}
-                {!isPastGame && game.upcomingStreamUrl && (
+                {/* Stream Link (live or scheduled) */}
+                {!isPastGame && (game.liveStreamUrl || game.upcomingStreamUrl) && (
                     <div className={css({
                         paddingTop: '0.5rem',
                         display: 'flex',
                         justifyContent: 'center'
                     })}>
                         <a 
-                            href={game.upcomingStreamUrl}
+                            href={game.liveStreamUrl || game.upcomingStreamUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={cx(actionLinkStyle, streamLinkStyle)}
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <circle cx="12" cy="12" r="10"></circle>
-                                <polyline points="12 6 12 12 16 14"></polyline>
+                                {game.liveStreamUrl ? (
+                                    <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                                ) : (
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                )}
                             </svg>
-                            Scheduled Stream
+                            {game.liveStreamUrl ? 'Watch Live Stream' : 'Scheduled Stream'}
                         </a>
                     </div>
                 )}

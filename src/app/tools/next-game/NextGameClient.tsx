@@ -95,7 +95,7 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 <LiveStreamAlert liveStream={featuredStream.video} isStandalone={true} />
             )}
             {featuredStream?.kind === 'game' && (
-                <LiveStreamAlert liveGame={featuredStream.game} />
+                <LiveStreamAlert liveGame={featuredStream.game} ourTeamName={settings.teamName} identifiers={settings.identifiers} />
             )}
 
             <SocialLinks streamState={
@@ -110,7 +110,7 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
 
             {/* Live stream alert - show if any live games (matched to games) */}
             {liveGames.length > 0 && !activeLiveStream && (
-                <LiveStreamAlert liveGame={liveGames[0]} />
+                <LiveStreamAlert liveGame={liveGames[0]} ourTeamName={settings.teamName} identifiers={settings.identifiers} />
             )}
 
             <UpcomingGamesList

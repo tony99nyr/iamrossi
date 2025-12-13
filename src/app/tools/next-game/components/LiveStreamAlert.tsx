@@ -9,6 +9,37 @@ interface LiveStreamAlertProps {
     liveGame?: EnrichedGame;
     liveStream?: YouTubeVideo;
     isStandalone?: boolean;
+    ourTeamName?: string;
+    identifiers?: string[];
+}
+
+function isUsTeam(name: string | undefined, ourTeamName?: string, identifiers?: string[]): boolean {
+    if (!name) return false;
+    const lower = name.toLowerCase();
+
+    if (ourTeamName && lower.includes(ourTeamName.toLowerCase())) return true;
+
+    if (Array.isArray(identifiers)) {
+        for (const id of identifiers) {
+            if (typeof id === 'string' && id.trim() && lower.includes(id.toLowerCase())) return true;
+        }
+    }
+
+    return false;
+}
+
+function getOpponentLabel(game: EnrichedGame, ourTeamName?: string, identifiers?: string[]): string {
+    const home = game.home_team_name;
+    const visitor = game.visitor_team_name;
+
+    const usHome = isUsTeam(home, ourTeamName, identifiers);
+    const usVisitor = isUsTeam(visitor, ourTeamName, identifiers);
+
+    if (usHome && !usVisitor) return visitor || 'Game';
+    if (usVisitor && !usHome) return home ? `@ ${home}` : 'Game';
+
+    if (visitor && home) return `${visitor} @ ${home}`;
+    return visitor || home || 'Game';
 }
 
 /**
@@ -69,7 +100,7 @@ function parseScheduledTime(publishDate?: string): Date | null {
     return null;
 }
 
-export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = false }: LiveStreamAlertProps) {
+export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = false, ourTeamName, identifiers }: LiveStreamAlertProps) {
     const [isScheduledTimePassed, setIsScheduledTimePassed] = useState(false);
 
     // Check if scheduled time has passed for upcoming streams
@@ -250,7 +281,7 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
     // Handle game-matched live stream
     if (!liveGame) return null;
     
-    const opponent = liveGame.opponent || 'Game';
+    const opponent = getOpponentLabel(liveGame, ourTeamName, identifiers);
     const streamUrl = liveGame.liveStreamUrl ?? liveGame.upcomingStreamUrl;
     const isLive = Boolean(liveGame.liveStreamUrl);
 
