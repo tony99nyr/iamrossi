@@ -1032,11 +1032,15 @@ function parseEventSummary(summary: string, identifiers: string[]): { opponent: 
             }
         }
     } else {
-        // No separator found - check if the title is just an opponent name
-        // If the summary doesn't contain any of our team identifiers, treat it as opponent
-        if (!isUs(cleanSummary, identifiers)) {
-            // Title is likely just the opponent name
-            // Default to home game (common convention when only opponent is listed)
+        // No separator found.
+        //
+        // Historically we treated any non-"us" title as an opponent name, but that
+        // causes non-game calendar entries (Team Photo, Breakfast, Concussion Testing, etc.)
+        // to be misclassified as games.
+        //
+        // New rule: if there's no explicit separator, only treat it as a game when the
+        // title includes one of our identifiers (e.g. "Jr Canes Black")—otherwise skip.
+        if (isUs(cleanSummary, identifiers)) {
             opponent = cleanSummary;
             isHome = true;
         }

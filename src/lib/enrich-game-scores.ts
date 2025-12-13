@@ -1,4 +1,5 @@
 import { Game, StatSession } from '@/types';
+import { EASTERN_TIME_ZONE } from '@/lib/timezone';
 
 /**
  * Validates if a score is valid (not a placeholder or invalid value)
@@ -43,24 +44,64 @@ function teamNamesMatch(name1: string, name2: string): boolean {
          normalized2.includes(normalized1);
 }
 
+function normalizeDateString(dateStr: string): string | null {
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{8}$/.test(trimmed)) return `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`;
+  return null;
+}
+
+function toTimeZoneDateKey(date: Date, timeZone: string): string | null {
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const lookup: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') lookup[part.type] = part.value;
+  }
+
+  const y = lookup.year;
+  const m = lookup.month;
+  const d = lookup.day;
+  if (!y || !m || !d) return null;
+  return `${y}-${m}-${d}`;
+}
+
+function getSessionGameDate(session: StatSession): string | null {
+  if (typeof session.scheduledGameDate === 'string' && session.scheduledGameDate.trim()) {
+    return session.scheduledGameDate;
+  }
+  return session.date;
+}
+
 /**
  * Checks if a game date matches a stat session date
  */
 function datesMatch(gameDate: string, sessionDate: string): boolean {
   try {
+    // Game dates are frequently date-only strings (from MHR/schedule). Treat those as authoritative.
+    const normalizedGame = normalizeDateString(gameDate);
+    const normalizedSession = normalizeDateString(sessionDate);
+
+    if (normalizedGame && normalizedSession) return normalizedGame === normalizedSession;
+    if (normalizedGame && !normalizedSession) {
+      const sessionObj = new Date(sessionDate);
+      const sessionKey = toTimeZoneDateKey(sessionObj, EASTERN_TIME_ZONE);
+      return sessionKey !== null && sessionKey === normalizedGame;
+    }
+
+    // Fallback: compare by Eastern calendar day for robustness (server is UTC).
     const gameDateObj = new Date(gameDate);
     const sessionDateObj = new Date(sessionDate);
-    
-    // Check if dates are valid
-    if (isNaN(gameDateObj.getTime()) || isNaN(sessionDateObj.getTime())) {
-      return false;
-    }
-    
-    // Compare dates only (ignore time) - use YYYY-MM-DD format for reliable comparison
-    const gameDateStr = gameDateObj.toISOString().split('T')[0];
-    const sessionDateStr = sessionDateObj.toISOString().split('T')[0];
-    
-    return gameDateStr === sessionDateStr;
+    const gameKey = toTimeZoneDateKey(gameDateObj, EASTERN_TIME_ZONE);
+    const sessionKey = toTimeZoneDateKey(sessionDateObj, EASTERN_TIME_ZONE);
+    return Boolean(gameKey && sessionKey && gameKey === sessionKey);
   } catch {
     return false;
   }
@@ -100,7 +141,9 @@ function findMatchingStatSession(game: Game, statSessions: StatSession[], ourTea
   const visitorTeamName = game.visitor_team_name;
   
   const match = statSessions.find(session => {
-    if (!datesMatch(gameDate, session.date)) return false;
+    const sessionGameDate = getSessionGameDate(session);
+    if (!sessionGameDate) return false;
+    if (!datesMatch(gameDate, sessionGameDate)) return false;
     
     // Check if session opponent matches the opponent team name in the game
     const sessionOpponent = session.opponent;
