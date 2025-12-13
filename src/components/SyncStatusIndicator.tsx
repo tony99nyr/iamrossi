@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { css, cx } from '@styled-system/css';
 import type { SyncStatus, CalendarSyncStatus } from '@/lib/kv';
 
@@ -16,9 +16,22 @@ export default function SyncStatusIndicator({ initialStatus, initialCalendarStat
 
     const isRevalidating = syncStatus.isRevalidating || calendarSyncStatus.isRevalidating;
 
+    // We only want to show the "complete + refresh" UI if the revalidation
+    // both starts AND finishes while the user is on the page.
+    // That means we need to observe a false -> true transition after mount,
+    // then later a true -> false transition.
+    const lastPolledRef = useRef<{
+        youtube: SyncStatus | null;
+        calendar: CalendarSyncStatus | null;
+    }>({ youtube: null, calendar: null });
+
+    const startedInSessionRef = useRef<{ youtube: boolean; calendar: boolean }>({
+        youtube: false,
+        calendar: false,
+    });
+
     // Poll for status updates - check on mount and while revalidating
     useEffect(() => {
-        // Poll immediately on mount to catch any in-progress syncs
         const pollStatus = async () => {
             try {
                 // Fetch both sync statuses
@@ -28,22 +41,54 @@ export default function SyncStatusIndicator({ initialStatus, initialCalendarStat
                 ]);
 
                 if (youtubeResponse) {
-                    setSyncStatus(prev => {
-                        // If sync just completed, show refresh button
-                        if (prev.isRevalidating && !youtubeResponse.isRevalidating) {
-                            setShowRefresh(true);
+                    const prevPolledYoutube = lastPolledRef.current.youtube;
+
+                    // Establish baseline on first successful poll (do not trigger UI)
+                    if (prevPolledYoutube) {
+                        // If sync started while on page, clear any previous refresh UI
+                        if (!prevPolledYoutube.isRevalidating && youtubeResponse.isRevalidating) {
+                            startedInSessionRef.current.youtube = true;
+                            setShowRefresh(false);
                         }
-                        return youtubeResponse;
-                    });
+
+                        // If sync completed and we observed it start in-session, show refresh
+                        if (
+                            prevPolledYoutube.isRevalidating &&
+                            !youtubeResponse.isRevalidating &&
+                            startedInSessionRef.current.youtube
+                        ) {
+                            setShowRefresh(true);
+                            startedInSessionRef.current.youtube = false;
+                        }
+                    }
+
+                    lastPolledRef.current.youtube = youtubeResponse;
+                    setSyncStatus(youtubeResponse);
                 }
                 if (calendarResponse) {
-                    setCalendarSyncStatus(prev => {
-                        // If sync just completed, show refresh button
-                        if (prev.isRevalidating && !calendarResponse.isRevalidating) {
-                            setShowRefresh(true);
+                    const prevPolledCalendar = lastPolledRef.current.calendar;
+
+                    // Establish baseline on first successful poll (do not trigger UI)
+                    if (prevPolledCalendar) {
+                        // If sync started while on page, clear any previous refresh UI
+                        if (!prevPolledCalendar.isRevalidating && calendarResponse.isRevalidating) {
+                            startedInSessionRef.current.calendar = true;
+                            setShowRefresh(false);
                         }
-                        return calendarResponse;
-                    });
+
+                        // If sync completed and we observed it start in-session, show refresh
+                        if (
+                            prevPolledCalendar.isRevalidating &&
+                            !calendarResponse.isRevalidating &&
+                            startedInSessionRef.current.calendar
+                        ) {
+                            setShowRefresh(true);
+                            startedInSessionRef.current.calendar = false;
+                        }
+                    }
+
+                    lastPolledRef.current.calendar = calendarResponse;
+                    setCalendarSyncStatus(calendarResponse);
                 }
             } catch (error) {
                 console.error('Failed to fetch sync status:', error);
@@ -53,12 +98,9 @@ export default function SyncStatusIndicator({ initialStatus, initialCalendarStat
         // Poll immediately on mount
         pollStatus();
 
-        // If revalidating, continue polling every 5 seconds
-        if (!isRevalidating) {
-            return;
-        }
-
-        const pollInterval = setInterval(pollStatus, 5000); // Poll every 5 seconds
+        // Poll more frequently when revalidating, otherwise poll occasionally so we can
+        // detect revalidations that start while the user is on the page.
+        const pollInterval = setInterval(pollStatus, isRevalidating ? 5000 : 30000);
 
         return () => clearInterval(pollInterval);
     }, [isRevalidating]);
