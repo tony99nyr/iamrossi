@@ -1,5 +1,4 @@
 import type { Game } from '@/types';
-import { parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
 
 export interface MergeScheduleCandidatesOptions {
   mhrTeamId: string;
@@ -28,14 +27,61 @@ function normalizeTeamName(name: unknown): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function getStartBucketKey(game: Game, timeZone: string): string {
-  const dateStr = game.game_date_format || game.game_date;
-  const timeStr = game.game_time_format || game.game_time;
-  const startUtc = parseDateTimeInTimeZoneToUtc(dateStr, timeStr, timeZone);
-  if (!startUtc) return 'unknown';
+function parseClockTimeToMinutes(timeStr: unknown): number | null {
+  if (typeof timeStr !== 'string') return null;
+  const trimmed = timeStr.trim();
+  if (!trimmed) return null;
+  if (trimmed.toUpperCase() === 'TBD') return null;
 
-  const bucketMs = 5 * 60 * 1000;
-  const rounded = Math.round(startUtc.getTime() / bucketMs) * bucketMs;
+  // Be forgiving: normalize whitespace and remove dots in "p.m." / "a.m." formats.
+  const cleaned = trimmed.replace(/\s+/g, ' ').replace(/\./g, '').toUpperCase();
+
+  // 12h format: "6:30 PM", "06:30PM", "6:30:00 pm"
+  const twelveHourMatch = cleaned.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/);
+  if (twelveHourMatch) {
+    const rawHour = Number(twelveHourMatch[1]);
+    const minute = Number(twelveHourMatch[2]);
+    const second = twelveHourMatch[3] ? Number(twelveHourMatch[3]) : 0;
+    const ampm = String(twelveHourMatch[4]).toUpperCase();
+
+    if (!Number.isFinite(rawHour) || rawHour < 0 || rawHour > 23) return null;
+    if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+    if (!Number.isFinite(second) || second < 0 || second > 59) return null;
+
+    // If the provider gave a 24h hour *and* AM/PM (e.g. "18:30 PM"), treat it as 24h.
+    if (rawHour > 12) return rawHour * 60 + minute;
+
+    let hour = rawHour % 12;
+    if (ampm === 'PM') hour += 12;
+    return hour * 60 + minute;
+  }
+
+  // 24h format: "18:30", "18:30:00"
+  const twentyFourMatch = cleaned.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (twentyFourMatch) {
+    const hour = Number(twentyFourMatch[1]);
+    const minute = Number(twentyFourMatch[2]);
+    const second = twentyFourMatch[3] ? Number(twentyFourMatch[3]) : 0;
+
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+    if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+    if (!Number.isFinite(second) || second < 0 || second > 59) return null;
+
+    return hour * 60 + minute;
+  }
+
+  return null;
+}
+
+function getStartBucketKey(game: Game, _timeZone: string): string {
+  // Merge keys should be robust across sources: calendar times tend to be 24h ("18:30:00"),
+  // while MHR can be 12h ("6:30 PM") or other variants. We bucket by local clock-time,
+  // and pair it with the local date string in `getMergeKey`.
+  const timeStr = game.game_time_format || game.game_time;
+  const minutes = parseClockTimeToMinutes(timeStr);
+  if (minutes === null) return 'unknown';
+
+  const rounded = Math.round(minutes / 5) * 5;
   return String(rounded);
 }
 
