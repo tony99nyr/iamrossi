@@ -13,5 +13,11 @@ describe('parseDateTimeInTimeZoneToUtc', () => {
     expect(dt).not.toBeNull();
     expect(dt?.toISOString()).toBe('2025-07-01T13:45:00.000Z');
   });
+
+  it('returns null for non-string inputs', () => {
+    expect(parseDateTimeInTimeZoneToUtc(undefined, '09:45', EASTERN_TIME_ZONE)).toBeNull();
+    expect(parseDateTimeInTimeZoneToUtc('2025-07-01', undefined, EASTERN_TIME_ZONE)).toBeNull();
+    expect(parseDateTimeInTimeZoneToUtc(123, 456, EASTERN_TIME_ZONE)).toBeNull();
+  });
 });
 

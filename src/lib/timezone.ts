@@ -75,7 +75,10 @@ function zonedTimeToUtc(date: Date, timeZone: string): Date {
  * Important: This avoids relying on the server's local timezone (Vercel is UTC),
  * which would otherwise shift schedule times.
  */
-export function parseDateTimeInTimeZoneToUtc(dateStr: string, timeStr: string, timeZone: string): Date | null {
+export function parseDateTimeInTimeZoneToUtc(dateStr: unknown, timeStr: unknown, timeZone: string): Date | null {
+  // Be defensive: schedule data can be missing or malformed in KV.
+  if (typeof dateStr !== 'string' || typeof timeStr !== 'string') return null;
+
   const normalizedDate = normalizeDateString(dateStr);
   const timeParts = parseTimeParts(timeStr);
   if (!normalizedDate || !timeParts) return null;

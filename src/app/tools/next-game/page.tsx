@@ -64,12 +64,37 @@ export const metadata: Metadata = {
 // If you need to trigger periodic syncs, implement a cron job or webhook
 
 export default async function NextGamePage() {
-    const schedule = await getSchedule();
-    const mhrSchedule = await getMHRSchedule();
-    const youtubeVideos = await getYouTubeVideos();
-    
+    let schedule: Game[] = [];
+    let mhrSchedule: Awaited<ReturnType<typeof getMHRSchedule>> = [];
+    let youtubeVideos: Awaited<ReturnType<typeof getYouTubeVideos>> = [];
+
+    // KV reads can fail in production (missing env, transient Redis outage, bad data).
+    // This page should degrade gracefully instead of throwing a 500.
+    try {
+        schedule = await getSchedule();
+    } catch (error) {
+        console.error('[Next Game] Failed to load schedule from KV:', error);
+    }
+
+    try {
+        mhrSchedule = await getMHRSchedule();
+    } catch (error) {
+        console.error('[Next Game] Failed to load MHR schedule from KV:', error);
+    }
+
+    try {
+        youtubeVideos = await getYouTubeVideos();
+    } catch (error) {
+        console.error('[Next Game] Failed to load YouTube videos from KV:', error);
+    }
+
     // Read settings from KV
-    const settingsData = await getSettings();
+    let settingsData = null as Awaited<ReturnType<typeof getSettings>>;
+    try {
+        settingsData = await getSettings();
+    } catch (error) {
+        console.error('[Next Game] Failed to load settings from KV:', error);
+    }
     const settings = {
         mhrTeamId: settingsData?.mhrTeamId || '19758',
         mhrYear: settingsData?.mhrYear || '2025',
@@ -78,8 +103,20 @@ export default async function NextGamePage() {
     };
 
     // Check sync status and trigger background syncs if needed (every 2 hours)
-    const syncStatus = await getSyncStatus();
-    const calendarSyncStatus = await getCalendarSyncStatus();
+    let syncStatus = { lastSyncTime: null, isRevalidating: false, lastError: null } as Awaited<ReturnType<typeof getSyncStatus>>;
+    let calendarSyncStatus = { lastSyncTime: null, isRevalidating: false, lastError: null } as Awaited<ReturnType<typeof getCalendarSyncStatus>>;
+
+    try {
+        syncStatus = await getSyncStatus();
+    } catch (error) {
+        console.error('[Next Game] Failed to load YouTube sync status from KV:', error);
+    }
+
+    try {
+        calendarSyncStatus = await getCalendarSyncStatus();
+    } catch (error) {
+        console.error('[Next Game] Failed to load calendar sync status from KV:', error);
+    }
     const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
     const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
     const host = process.env.VERCEL_URL || 'localhost:3000';
@@ -195,7 +232,12 @@ export default async function NextGamePage() {
 
     // Check cache for enriched games (video-matched)
     let enrichedPastGames: Game[];
-    const cachedEnrichedGames = await getEnrichedGames();
+    let cachedEnrichedGames: Awaited<ReturnType<typeof getEnrichedGames>> = null;
+    try {
+        cachedEnrichedGames = await getEnrichedGames();
+    } catch (error) {
+        console.error('[Next Game] Failed to load enriched games cache from KV:', error);
+    }
 
     if (cachedEnrichedGames && !isEnrichedGamesCacheStale(cachedEnrichedGames)) {
         // Use cached enriched games
@@ -203,21 +245,19 @@ export default async function NextGamePage() {
     } else {
         // Cache miss or stale - compute and cache
         enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
-        await setEnrichedGames(enrichedPastGames);
+        try {
+            await setEnrichedGames(enrichedPastGames);
+        } catch (error) {
+            console.error('[Next Game] Failed to write enriched games cache to KV:', error);
+        }
     }
 
     // Enrich past games with stat session scores when MHR scores are invalid
-    const statSessions = await getStatSessions();
-    console.log(`[Next Game] Loaded ${statSessions.length} stat sessions for matching`);
-    if (statSessions.length > 0) {
-      console.log(`[Next Game] Sample stat sessions:`, statSessions.slice(0, 3).map(s => ({
-        id: s.id,
-        gameId: s.gameId,
-        date: s.date,
-        opponent: s.opponent,
-        usGoals: s.usStats.goals,
-        themGoals: s.themStats.goals
-      })));
+    let statSessions: Awaited<ReturnType<typeof getStatSessions>> = [];
+    try {
+        statSessions = await getStatSessions();
+    } catch (error) {
+        console.error('[Next Game] Failed to load stat sessions from KV:', error);
     }
     enrichedPastGames = enrichPastGamesWithStatScores(
         enrichedPastGames,
