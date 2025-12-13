@@ -3,8 +3,10 @@ import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
 import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, setSyncStatus, setCalendarSyncStatus, getStatSessions } from '@/lib/kv';
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
+import { hasValidFinalScore } from '@/lib/game-scores';
 import { Game } from '@/types';
 import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
+import { partitionNextGameSchedule } from '@/lib/next-game/partition-games';
 
 // Force dynamic rendering since we're reading from KV
 export const dynamic = 'force-dynamic';
@@ -210,43 +212,66 @@ export default async function NextGamePage() {
     // Keep games visible until 1 hour after puck drop.
     const now = new Date();
     const UPCOMING_GRACE_PERIOD_MS = 60 * 60 * 1000;
-    const futureGames = schedule
-        .map((game: Game) => {
-            const dateStr = game.game_date_format || game.game_date;
-            const timeStr = game.game_time_format || game.game_time;
-            const startUtc = parseDateTimeInTimeZoneToUtc(dateStr, timeStr, EASTERN_TIME_ZONE);
-            return { game, startUtc };
-        })
-        .filter((entry): entry is { game: Game; startUtc: Date } => {
-            if (!entry.startUtc) return false;
-            return now.getTime() < entry.startUtc.getTime() + UPCOMING_GRACE_PERIOD_MS;
-        })
-        .sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime())
-        .map(({ game }) => game);
+    // Always union calendar-derived schedule + raw MHR schedule so we don't miss games
+    // that failed to merge into `admin:schedule` (common for same-day edits / title mismatches).
+    const combinedCandidates = [
+        ...sanitizeGames(mhrSchedule as unknown as Game[]),
+        ...schedule,
+    ];
 
-    // Filter for past games from MHR (current season only)
+    // Light de-dupe by game_nbr when possible.
+    const combinedByGameNbr = new Map<string, Game>();
+    const combined: Game[] = [];
+    for (const g of combinedCandidates) {
+        const key = g.game_nbr === undefined || g.game_nbr === null ? null : String(g.game_nbr);
+        if (!key) {
+            combined.push(g);
+            continue;
+        }
+        const existing = combinedByGameNbr.get(key);
+        if (!existing) {
+            combinedByGameNbr.set(key, g);
+            continue;
+        }
+        // Prefer the entry with a real time/location; otherwise just keep the first.
+        const existingHasRink = typeof existing.rink_name === 'string' && existing.rink_name.trim() && existing.rink_name !== 'TBD';
+        const newHasRink = typeof g.rink_name === 'string' && g.rink_name.trim() && g.rink_name !== 'TBD';
+        if (newHasRink && !existingHasRink) combinedByGameNbr.set(key, g);
+    }
+    combined.push(...combinedByGameNbr.values());
+
+    const { futureGames, pastGames: pastFromSchedule } = partitionNextGameSchedule(combined, now, {
+        timeZone: EASTERN_TIME_ZONE,
+        upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
+    });
+
+    // Filter for past games (current season only)
     // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
     const mhrYear = settings.mhrYear || '2025';
     const seasonStartYear = mhrYear;
     const seasonEndYear = String(parseInt(mhrYear) + 1);
     const currentSeasonStart = new Date(`${seasonStartYear}-08-01T00:00:00`);
     const currentSeasonEnd = new Date(`${seasonEndYear}-03-01T23:59:59`);
-    const pastGames = (mhrSchedule as unknown as Game[]).filter((game: Game) => {
-        const gameDate = new Date(game.game_date_format || game.game_date);
+    const pastGames = pastFromSchedule
+        .filter((game: Game) => {
+            // Keep placeholders out of the past games list (they're not "results").
+            if (game.isPlaceholder) return false;
 
-        // Must be from current season
-        if (gameDate < currentSeasonStart || gameDate >= currentSeasonEnd) return false;
+            // Must be from current season.
+            const dateStr = game.game_date_format || game.game_date;
+            const timeStr = game.game_time_format || game.game_time;
+            const startUtc = parseDateTimeInTimeZoneToUtc(dateStr, timeStr, EASTERN_TIME_ZONE);
+            if (!startUtc) return false;
+            if (startUtc < currentSeasonStart || startUtc >= currentSeasonEnd) return false;
 
-        // Must be in the past (before today)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return gameDate < today;
-    }).sort((a: Game, b: Game) => {
-        // Sort descending (most recent first)
-        const dateA = new Date(a.game_date_format || a.game_date);
-        const dateB = new Date(b.game_date_format || b.game_date);
-        return dateB.getTime() - dateA.getTime();
-    });
+            return true;
+        })
+        .sort((a: Game, b: Game) => {
+            // Sort descending (most recent first)
+            const dateA = parseDateTimeInTimeZoneToUtc(a.game_date_format || a.game_date, a.game_time_format || a.game_time, EASTERN_TIME_ZONE);
+            const dateB = parseDateTimeInTimeZoneToUtc(b.game_date_format || b.game_date, b.game_time_format || b.game_time, EASTERN_TIME_ZONE);
+            return (dateB?.getTime() ?? 0) - (dateA?.getTime() ?? 0);
+        });
 
     // Check cache for enriched games (video-matched)
     let enrichedPastGames: Game[];
@@ -259,16 +284,10 @@ export default async function NextGamePage() {
 
     if (cachedEnrichedGames && !isEnrichedGamesCacheStale(cachedEnrichedGames)) {
         // Use cached enriched games
-        // Past games should never show stream buttons; clear any cached stream URLs defensively.
-        enrichedPastGames = cachedEnrichedGames.games.map((g) => ({
-            ...g,
-            liveStreamUrl: undefined,
-            upcomingStreamUrl: undefined,
-        }));
+        enrichedPastGames = cachedEnrichedGames.games;
     } else {
         // Cache miss or stale - compute and cache
-        // For past games, we only want VOD links (not live/upcoming stream links).
-        enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos, { includeStreamLinks: false });
+        enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
         try {
             await setEnrichedGames(enrichedPastGames);
         } catch (error) {
@@ -288,6 +307,10 @@ export default async function NextGamePage() {
         statSessions,
         settings.teamName
     );
+
+    // Past Games should only show real results.
+    // If a "past" entry doesn't have a final score (from MHR or stat sessions), hide it.
+    enrichedPastGames = enrichedPastGames.filter(hasValidFinalScore);
 
     // Enrich future games with upcoming/live video data.
     // IMPORTANT: For upcoming games, we only want stream links (not VOD "full game"/"highlights" links).

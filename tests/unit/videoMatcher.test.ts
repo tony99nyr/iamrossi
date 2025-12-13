@@ -216,47 +216,5 @@ describe('matchVideosToGames (VOD links)', () => {
     const enriched = matchVideosToGames(games, videos);
     expect(enriched[0]?.fullGameUrl).toBe('https://www.youtube.com/watch?v=vod1');
   });
-
-  it('does not attach stream links when includeStreamLinks is false (but still attaches VOD links)', () => {
-    const games: Game[] = [
-      {
-        game_nbr: 30,
-        game_date: '2025-12-14',
-        game_time: '12:15:00',
-        game_date_format: '2025-12-14',
-        game_time_format: '12:15:00',
-        game_date_format_pretty: 'Sun Dec 14',
-        game_time_format_pretty: '12:15 PM',
-        home_team_name: 'Opponent B',
-        visitor_team_name: 'Junior Canes',
-        rink_name: 'Rink',
-      },
-    ];
-
-    const videos = [
-      {
-        title: 'Junior Canes @ Opponent B 12/14/2025',
-        url: 'https://www.youtube.com/watch?v=vod1',
-        videoType: 'regular' as const,
-      },
-      {
-        title: 'Junior Canes @ Opponent B (Scheduled Stream)',
-        url: 'https://www.youtube.com/watch?v=stream1',
-        videoType: 'upcoming' as const,
-        publishDate: 'Scheduled for Dec 14, 2025 at 12:15 PM',
-      },
-      {
-        title: 'Junior Canes @ Opponent B (Live)',
-        url: 'https://www.youtube.com/watch?v=live1',
-        videoType: 'live' as const,
-        publishDate: 'Dec 14, 2025 12:15 PM',
-      },
-    ];
-
-    const enriched = matchVideosToGames(games, videos, { includeStreamLinks: false });
-    expect(enriched[0]?.fullGameUrl).toBe('https://www.youtube.com/watch?v=vod1');
-    expect(enriched[0]?.liveStreamUrl).toBeUndefined();
-    expect(enriched[0]?.upcomingStreamUrl).toBeUndefined();
-  });
 });
 

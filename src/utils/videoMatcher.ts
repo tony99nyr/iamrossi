@@ -22,18 +22,10 @@ export interface MatchVideosOptions {
      * upcoming games where "Watch Full Game" links should never appear.
      */
     includeVodLinks?: boolean;
-
-    /**
-     * When false, we will not attach any stream URLs (live/upcoming) and will
-     * explicitly clear them. This is useful for past games where scheduled/live
-     * stream buttons should never appear.
-     */
-    includeStreamLinks?: boolean;
 }
 
 export function matchVideosToGames(games: Game[], videos: Video[], options: MatchVideosOptions = {}): EnrichedGame[] {
     const includeVodLinks = options.includeVodLinks ?? true;
-    const includeStreamLinks = options.includeStreamLinks ?? true;
 
     // 1) Match live/upcoming streams to games using scheduled time (from publishDate) when possible.
     //    This is the most reliable way to match "upcoming streams", since titles often don't include a date.
@@ -71,8 +63,6 @@ export function matchVideosToGames(games: Game[], videos: Video[], options: Matc
 
     for (const { startUtc, key } of sortedGames) {
         if (!startUtc) continue;
-
-        if (!includeStreamLinks) continue;
 
         let bestUrl: string | null = null;
         let bestScore = Number.POSITIVE_INFINITY;
@@ -116,7 +106,7 @@ export function matchVideosToGames(games: Game[], videos: Video[], options: Matc
 
     // 2) Match regular videos (highlights/full game) by date extracted from title.
     return gameWithStartTimes.map(({ game, startUtc, key }) => {
-        const streamUrls = includeStreamLinks ? (assignments.get(key) ?? {}) : {};
+        const streamUrls = assignments.get(key) ?? {};
 
         // For upcoming games we do NOT want VOD buttons ("Watch Full Game"/"Highlights") to appear.
         // Only attach stream URLs and explicitly clear any existing VOD URLs.
@@ -125,12 +115,7 @@ export function matchVideosToGames(games: Game[], videos: Video[], options: Matc
                 ...game,
                 highlightsUrl: undefined,
                 fullGameUrl: undefined,
-                ...(includeStreamLinks
-                    ? streamUrls
-                    : {
-                          liveStreamUrl: undefined,
-                          upcomingStreamUrl: undefined,
-                      }),
+                ...streamUrls,
             };
         }
 
@@ -163,12 +148,7 @@ export function matchVideosToGames(games: Game[], videos: Video[], options: Matc
             ...game,
             highlightsUrl,
             fullGameUrl,
-            ...(includeStreamLinks
-                ? streamUrls
-                : {
-                      liveStreamUrl: undefined,
-                      upcomingStreamUrl: undefined,
-                  }),
+            ...streamUrls,
         };
     });
 }

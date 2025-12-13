@@ -8,6 +8,7 @@ interface GameCardProps {
     title: string;
     game: Game | null;
     isHome?: boolean;
+    isPastGame?: boolean;
 }
 
 const LOGO_BLUR_DATA_URL =
@@ -275,7 +276,7 @@ const videoLinksContainerStyle = css({
     flexWrap: 'wrap'
 });
 
-export default function GameCard({ title, game }: GameCardProps) {
+export default function GameCard({ title, game, isPastGame = false }: GameCardProps) {
     const year = new Date().getFullYear();
 
     if (!game) {
@@ -409,8 +410,8 @@ export default function GameCard({ title, game }: GameCardProps) {
                     </div>
                 )}
 
-                {/* Video Links */}
-                {(game.highlightsUrl || game.fullGameUrl) && (
+                {/* Video Links (Past games only) */}
+                {isPastGame && (game.highlightsUrl || game.fullGameUrl) && (
                     <div className={videoLinksContainerStyle}>
                         {game.highlightsUrl && (
                             <a 
@@ -444,7 +445,7 @@ export default function GameCard({ title, game }: GameCardProps) {
                 )}
 
                 {/* Upcoming Stream Link */}
-                {game.upcomingStreamUrl && (
+                {!isPastGame && game.upcomingStreamUrl && (
                     <div className={css({
                         paddingTop: '0.5rem',
                         display: 'flex',
