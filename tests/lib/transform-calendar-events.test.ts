@@ -134,6 +134,25 @@ describe('Transform Calendar Events', () => {
     expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
   });
 
+  it('should let (Home) override "@" away/home inference', async () => {
+    const events = [
+      {
+        summary: 'Black @ Rangers (Home)',
+        start: new Date('2025-12-13T18:30:00'),
+        end: new Date('2025-12-13T19:30:00'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    // Normally "Black @ Rangers" would imply we're away.
+    // The explicit (Home) marker must override that.
+    expect(result[0].home_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+    expect(result[0].visitor_team_name).toBe('Rangers');
+  });
+
   it('should treat explicit (Away) titles without separators as games', async () => {
     const events = [
       {
@@ -149,6 +168,31 @@ describe('Transform Calendar Events', () => {
     expect(result).toHaveLength(1);
     expect(result[0].home_team_name).toBe('Rangers');
     expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+  });
+
+  it('should treat explicit (AWAY)/(HOME) titles as overrides (case-insensitive)', async () => {
+    const events = [
+      {
+        summary: 'Rangers (AWAY)',
+        start: new Date('2025-12-14T14:00:00'),
+        end: new Date('2025-12-14T15:00:00'),
+        location: 'Test Rink',
+      },
+      {
+        summary: 'Rangers (HOME)',
+        start: new Date('2025-12-15T14:00:00'),
+        end: new Date('2025-12-15T15:00:00'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(2);
+    expect(result[0].home_team_name).toBe('Rangers');
+    expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+    expect(result[1].home_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+    expect(result[1].visitor_team_name).toBe('Rangers');
   });
 
   it('should merge MHR schedule data when available', async () => {
