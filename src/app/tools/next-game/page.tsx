@@ -243,7 +243,6 @@ export default async function NextGamePage() {
         timeZone: EASTERN_TIME_ZONE,
         upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
     });
-
     // Filter for past games (current season only)
     // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
     const mhrYear = settings.mhrYear || '2025';
@@ -307,8 +306,9 @@ export default async function NextGamePage() {
         settings.teamName
     );
 
-    // Enrich future games with upcoming/live video data
-    const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos);
+    // Enrich future games with upcoming/live video data.
+    // IMPORTANT: For upcoming games, we only want stream links (not VOD "full game"/"highlights" links).
+    const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos, { includeVodLinks: false });
 
     // Check if there are any live games (games with live stream URLs)
     const liveGames = enrichedFutureGames.filter((game: Game) => (game as unknown as { liveStreamUrl?: string }).liveStreamUrl);

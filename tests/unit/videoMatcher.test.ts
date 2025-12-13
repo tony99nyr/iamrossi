@@ -151,3 +151,70 @@ describe('matchVideosToGames (upcoming streams)', () => {
   });
 });
 
+describe('matchVideosToGames (VOD links)', () => {
+  it('does not attach full game/highlights links when includeVodLinks is false (but still attaches streams)', () => {
+    const games: Game[] = [
+      {
+        game_nbr: 10,
+        game_date: '2025-12-14',
+        game_time: '12:15:00',
+        game_date_format: '2025-12-14',
+        game_time_format: '12:15:00',
+        game_date_format_pretty: 'Sun Dec 14',
+        game_time_format_pretty: '12:15 PM',
+        home_team_name: 'Opponent B',
+        visitor_team_name: 'Junior Canes',
+        rink_name: 'Rink',
+        // Simulate a bad upstream assignment that we want to strip for future games
+        fullGameUrl: 'https://www.youtube.com/watch?v=existing-vod',
+      },
+    ];
+
+    const videos = [
+      {
+        title: 'Junior Canes @ Opponent B 12/14/2025 (Scheduled Stream)',
+        url: 'https://www.youtube.com/watch?v=stream1',
+        videoType: 'upcoming' as const,
+      },
+      {
+        title: 'Junior Canes @ Opponent B 12/14/2025',
+        url: 'https://www.youtube.com/watch?v=vod1',
+        videoType: 'regular' as const,
+      },
+    ];
+
+    const enriched = matchVideosToGames(games, videos, { includeVodLinks: false });
+    expect(enriched[0]?.upcomingStreamUrl).toBe('https://www.youtube.com/watch?v=stream1');
+    expect(enriched[0]?.fullGameUrl).toBeUndefined();
+    expect(enriched[0]?.highlightsUrl).toBeUndefined();
+  });
+
+  it('attaches regular videos as fullGameUrl by date when includeVodLinks is true (default)', () => {
+    const games: Game[] = [
+      {
+        game_nbr: 10,
+        game_date: '2025-12-14',
+        game_time: '12:15:00',
+        game_date_format: '2025-12-14',
+        game_time_format: '12:15:00',
+        game_date_format_pretty: 'Sun Dec 14',
+        game_time_format_pretty: '12:15 PM',
+        home_team_name: 'Opponent B',
+        visitor_team_name: 'Junior Canes',
+        rink_name: 'Rink',
+      },
+    ];
+
+    const videos = [
+      {
+        title: 'Junior Canes @ Opponent B 12/14/2025',
+        url: 'https://www.youtube.com/watch?v=vod1',
+        videoType: 'regular' as const,
+      },
+    ];
+
+    const enriched = matchVideosToGames(games, videos);
+    expect(enriched[0]?.fullGameUrl).toBe('https://www.youtube.com/watch?v=vod1');
+  });
+});
+
