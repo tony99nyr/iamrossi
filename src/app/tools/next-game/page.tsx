@@ -211,8 +211,35 @@ export default async function NextGamePage() {
     // Keep games visible until 1 hour after puck drop.
     const now = new Date();
     const UPCOMING_GRACE_PERIOD_MS = 60 * 60 * 1000;
-    const scheduleOrFallback = schedule.length > 0 ? schedule : sanitizeGames(mhrSchedule as unknown as Game[]);
-    const { futureGames, pastGames: pastFromSchedule } = partitionNextGameSchedule(scheduleOrFallback, now, {
+    // Always union calendar-derived schedule + raw MHR schedule so we don't miss games
+    // that failed to merge into `admin:schedule` (common for same-day edits / title mismatches).
+    const combinedCandidates = [
+        ...sanitizeGames(mhrSchedule as unknown as Game[]),
+        ...schedule,
+    ];
+
+    // Light de-dupe by game_nbr when possible.
+    const combinedByGameNbr = new Map<string, Game>();
+    const combined: Game[] = [];
+    for (const g of combinedCandidates) {
+        const key = g.game_nbr === undefined || g.game_nbr === null ? null : String(g.game_nbr);
+        if (!key) {
+            combined.push(g);
+            continue;
+        }
+        const existing = combinedByGameNbr.get(key);
+        if (!existing) {
+            combinedByGameNbr.set(key, g);
+            continue;
+        }
+        // Prefer the entry with a real time/location; otherwise just keep the first.
+        const existingHasRink = typeof existing.rink_name === 'string' && existing.rink_name.trim() && existing.rink_name !== 'TBD';
+        const newHasRink = typeof g.rink_name === 'string' && g.rink_name.trim() && g.rink_name !== 'TBD';
+        if (newHasRink && !existingHasRink) combinedByGameNbr.set(key, g);
+    }
+    combined.push(...combinedByGameNbr.values());
+
+    const { futureGames, pastGames: pastFromSchedule } = partitionNextGameSchedule(combined, now, {
         timeZone: EASTERN_TIME_ZONE,
         upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
     });
