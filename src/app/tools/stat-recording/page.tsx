@@ -28,7 +28,7 @@ const containerStyle = css({
 export default function StatRecordingPage() {
   const [view, setView] = useState<'setup' | 'history'>('setup');
   const [settings, setSettings] = useState({
-      teamName: 'Junior Canes 10U Black',
+      teamName: 'Jr Canes 10U Black',
       mhrTeamId: '19758',
       mhrYear: '2025'
   });
@@ -51,7 +51,7 @@ export default function StatRecordingPage() {
           .then(data => {
               if (data) {
                   setSettings({
-                      teamName: data.teamName || 'Junior Canes 10U Black',
+                      teamName: data.teamName || 'Jr Canes 10U Black',
                       mhrTeamId: data.mhrTeamId || '19758',
                       mhrYear: data.mhrYear || '2025'
                   });
