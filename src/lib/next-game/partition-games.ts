@@ -48,6 +48,14 @@ function getPlaceholderEndUtc(game: Game): Date | null {
   return d;
 }
 
+function getPlaceholderStartUtc(game: Game): Date | null {
+  if (!game.isPlaceholder) return null;
+  if (typeof game.placeholderStartDate !== 'string' || !game.placeholderStartDate.trim()) return null;
+  const d = new Date(game.placeholderStartDate);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 export function partitionNextGameSchedule(
   games: Game[],
   now: Date,
@@ -55,8 +63,9 @@ export function partitionNextGameSchedule(
 ): PartitionedNextGameSchedule {
   const entries = (Array.isArray(games) ? games : []).map((game) => {
     const placeholderEndUtc = getPlaceholderEndUtc(game);
+    const placeholderStartUtc = getPlaceholderStartUtc(game);
     const startUtc = getGameStartUtc(game, options.timeZone);
-    return { game, startUtc, placeholderEndUtc };
+    return { game, startUtc, placeholderEndUtc, placeholderStartUtc };
   });
 
   const future: typeof entries = [];
@@ -84,16 +93,19 @@ export function partitionNextGameSchedule(
   }
 
   // Sort: future ascending (unknown-time last), past descending.
+  // For placeholders, use placeholderStartUtc for chronological ordering.
   future.sort((a, b) => {
-    if (!a.startUtc && !b.startUtc) return 0;
-    if (!a.startUtc) return 1;
-    if (!b.startUtc) return -1;
-    return a.startUtc.getTime() - b.startUtc.getTime();
+    const aTime = a.startUtc ?? a.placeholderStartUtc;
+    const bTime = b.startUtc ?? b.placeholderStartUtc;
+    if (!aTime && !bTime) return 0;
+    if (!aTime) return 1;
+    if (!bTime) return -1;
+    return aTime.getTime() - bTime.getTime();
   });
 
   past.sort((a, b) => {
-    const aTime = a.startUtc?.getTime() ?? a.placeholderEndUtc?.getTime() ?? 0;
-    const bTime = b.startUtc?.getTime() ?? b.placeholderEndUtc?.getTime() ?? 0;
+    const aTime = a.startUtc?.getTime() ?? a.placeholderStartUtc?.getTime() ?? a.placeholderEndUtc?.getTime() ?? 0;
+    const bTime = b.startUtc?.getTime() ?? b.placeholderStartUtc?.getTime() ?? b.placeholderEndUtc?.getTime() ?? 0;
     return bTime - aTime;
   });
 
