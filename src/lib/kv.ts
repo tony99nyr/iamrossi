@@ -462,6 +462,11 @@ function coerceStatSession(raw: unknown): StatSession | null {
   return result.data;
 }
 
+export async function setStatSessions(sessions: StatSession[]): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.STATS, JSON.stringify(sessions));
+}
+
 export async function saveStatSession(session: StatSession): Promise<void> {
   await ensureConnected();
   const sessions = await getStatSessions();
