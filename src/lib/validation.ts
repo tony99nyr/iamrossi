@@ -166,6 +166,9 @@ export const adminFixStatOpponentSchema = z
     sessionIds: z.array(z.string().min(1)).optional(),
     // YYYY-MM-DD (matches either session.date prefix or startTime ISO prefix)
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+    // Additional narrowing (epoch millis)
+    startTimeFrom: z.number().int().optional(),
+    startTimeTo: z.number().int().optional(),
     onlyIfOpponentIsUs: z.boolean().optional().default(true),
     limit: z.number().int().positive().max(50).optional().default(10),
     dryRun: z.boolean().optional().default(false),

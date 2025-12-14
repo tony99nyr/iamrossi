@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { newOpponent, sessionIds, date, onlyIfOpponentIsUs, limit, dryRun } = validation.data;
+    const { newOpponent, sessionIds, date, startTimeFrom, startTimeTo, onlyIfOpponentIsUs, limit, dryRun } =
+      validation.data;
 
     const [settings, sessions] = await Promise.all([getSettings(), getStatSessions()]);
 
@@ -35,7 +36,10 @@ export async function POST(request: NextRequest) {
 
     const candidates = sessions.filter((s) => {
       if (idSet) return idSet.has(s.id);
-      return matchesDate(s);
+      if (!matchesDate(s)) return false;
+      if (typeof startTimeFrom === 'number' && s.startTime < startTimeFrom) return false;
+      if (typeof startTimeTo === 'number' && s.startTime > startTimeTo) return false;
+      return true;
     });
 
     const filtered = onlyIfOpponentIsUs
@@ -46,8 +50,17 @@ export async function POST(request: NextRequest) {
         })
       : candidates;
 
-    const selected = filtered.slice(0, limit);
+    const selected = filtered.toSorted((a, b) => a.startTime - b.startTime).slice(0, limit);
     const updatedById = new Map(selected.map((s) => [s.id, { ...s, opponent: newOpponent }]));
+    const sessionPreview = selected.map((s) => ({
+      id: s.id,
+      date: s.date,
+      startTime: s.startTime,
+      endTime: s.endTime ?? null,
+      ourTeamName: s.ourTeamName ?? null,
+      opponent: s.opponent,
+      gameId: s.gameId ?? null,
+    }));
 
     if (dryRun) {
       return NextResponse.json({
@@ -55,7 +68,7 @@ export async function POST(request: NextRequest) {
         dryRun: true,
         matched: filtered.length,
         updated: selected.length,
-        sessionIds: selected.map((s) => s.id),
+        sessions: sessionPreview,
       });
     }
 
@@ -65,7 +78,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       updated: selected.length,
-      sessionIds: selected.map((s) => s.id),
+      sessions: sessionPreview.map((s) => ({ ...s, opponent: newOpponent })),
     });
   } catch (error) {
     logger.apiError('POST', '/api/admin/stats/fix-opponent', error);

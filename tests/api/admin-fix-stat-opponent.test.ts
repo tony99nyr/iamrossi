@@ -92,6 +92,7 @@ describe('POST /api/admin/stats/fix-opponent', () => {
     const data = await response.json();
     expect(data.success).toBe(true);
     expect(data.updated).toBe(2);
+    expect(Array.isArray(data.sessions)).toBe(true);
 
     const stored = getMockStore('game:stats') as StatSession[];
     const updated1 = stored.find((s) => s.id === 's1');
