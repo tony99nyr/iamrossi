@@ -20,8 +20,12 @@ function parseTimeParts(timeStr: string): { hour: number; minute: number; second
   if (!trimmed) return null;
   if (trimmed.toUpperCase() === 'TBD') return null;
 
+  // Normalize: remove periods (e.g., "A.M." -> "AM") and collapse whitespace
+  // This matches the normalization in merge-schedule-candidates.ts parseClockTimeToMinutes
+  const normalized = trimmed.replace(/\./g, '').replace(/\s+/g, ' ');
+
   // Support both 24h ("09:45", "09:45:00") and 12h ("9:45 AM", "09:45PM", "9:45:30 pm") inputs.
-  const twelveHourMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  const twelveHourMatch = normalized.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
   if (twelveHourMatch) {
     const rawHour = Number(twelveHourMatch[1]);
     const minute = Number(twelveHourMatch[2]);
@@ -38,7 +42,7 @@ function parseTimeParts(timeStr: string): { hour: number; minute: number; second
     return { hour, minute, second };
   }
 
-  const [hh, mm, ss] = trimmed.split(':');
+  const [hh, mm, ss] = normalized.split(':');
   if (hh === undefined || mm === undefined) return null;
 
   const hour = Number(hh);
