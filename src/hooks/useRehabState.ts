@@ -30,6 +30,14 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
 
     // Debounce timer for auto-save
     const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    
+    // Ref to track latest entries for use in callbacks (avoids stale closures)
+    const entriesRef = useRef<RehabEntry[]>(initialEntries);
+    
+    // Keep ref in sync with state
+    useEffect(() => {
+        entriesRef.current = entries;
+    }, [entries]);
 
     // Check for date in URL params on mount
     useEffect(() => {
@@ -223,14 +231,15 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
         await action();
     }, [isAuthenticated]);
 
-    const handlePinSuccess = () => {
+    const handlePinSuccess = async () => {
         setIsAuthenticated(true);
         setShowPinModal(false);
         
         // Execute pending action if any
         if (pendingAction) {
-            pendingAction();
+            const action = pendingAction;
             setPendingAction(null);
+            await action();
         }
     };
 
@@ -590,7 +599,8 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
 
         // Debounce the API call
         saveTimerRef.current = setTimeout(() => {
-            const currentEntry = entries.find(e => e.date === selectedDate);
+            // Use ref to get latest entries (avoids stale closure)
+            const currentEntry = entriesRef.current.find(e => e.date === selectedDate);
             if (!currentEntry) return;
 
             const updatedExercises = currentEntry.exercises.map(e =>
@@ -617,7 +627,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
                 console.error('Failed to update exercise:', error);
             });
         }, 300); // 300ms debounce
-    }, [selectedDate, entries]);
+    }, [selectedDate]);
 
     const handleRemoveExercise = useCallback((exerciseId: string) => {
         if (!selectedDate) return;

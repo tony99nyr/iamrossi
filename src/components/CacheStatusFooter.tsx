@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { css } from '@styled-system/css';
 import type { SyncStatus, CalendarSyncStatus } from '@/lib/kv';
+import PinEntryModal from '@/components/rehab/PinEntryModal';
 
 interface CacheStatusFooterProps {
   initialYouTubeStatus: SyncStatus;
@@ -20,6 +21,9 @@ export default function CacheStatusFooter({
   const [youtubeStatus, setYoutubeStatus] = useState<SyncStatus>(initialYouTubeStatus);
   const [calendarStatus, setCalendarStatus] = useState<CalendarSyncStatus>(initialCalendarStatus);
   const [enrichedGamesCache, setEnrichedGamesCache] = useState<{ lastUpdated: number | null }>({ lastUpdated: null });
+  const [showAdminPin, setShowAdminPin] = useState(false);
+  const [pendingSync, setPendingSync] = useState<'calendar' | 'youtube' | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const isRevalidating = youtubeStatus.isRevalidating || calendarStatus.isRevalidating;
 
@@ -95,6 +99,102 @@ export default function CacheStatusFooter({
     if (diffHours < 2) return '#4ade80'; // Green for recent (< 2 hours)
     if (diffHours < 24) return '#fbbf24'; // Yellow for old (< 24 hours)
     return '#f87171'; // Red for very old (> 24 hours)
+  };
+
+  const handleSyncClick = (type: 'calendar' | 'youtube') => {
+    // Check if already authenticated
+    const adminSecret = sessionStorage.getItem('admin_secret');
+    if (adminSecret) {
+      triggerSync(type, adminSecret);
+    } else {
+      setPendingSync(type);
+      setShowAdminPin(true);
+    }
+  };
+
+  const handlePinSuccess = async (token: string) => {
+    // Store the verified PIN/secret in sessionStorage
+    sessionStorage.setItem('admin_secret', token);
+    
+    // Close the modal and trigger the sync
+    setShowAdminPin(false);
+    if (pendingSync) {
+      const syncType = pendingSync;
+      setPendingSync(null);
+      triggerSync(syncType, token);
+    }
+  };
+
+  const handlePinCancel = () => {
+    setShowAdminPin(false);
+    setPendingSync(null);
+  };
+
+  const triggerSync = async (type: 'calendar' | 'youtube', secret: string) => {
+    setIsSyncing(true);
+    try {
+      const endpoint = type === 'calendar' ? '/api/admin/sync-schedule' : '/api/admin/sync-youtube';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${secret}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(`Sync failed: ${error.error || 'Unknown error'}`);
+        setIsSyncing(false);
+        return;
+      }
+
+      // Immediately update status to show revalidating
+      if (type === 'calendar') {
+        setCalendarStatus(prev => ({ ...prev, isRevalidating: true, lastError: null }));
+      } else {
+        setYoutubeStatus(prev => ({ ...prev, isRevalidating: true, lastError: null }));
+      }
+
+      // Poll for status updates
+      const pollInterval = setInterval(async () => {
+        try {
+          if (type === 'calendar') {
+            const statusResponse = await fetch('/api/admin/sync-schedule-status');
+            if (statusResponse.ok) {
+              const status = await statusResponse.json();
+              setCalendarStatus(status);
+              if (!status.isRevalidating) {
+                clearInterval(pollInterval);
+                setIsSyncing(false);
+              }
+            }
+          } else {
+            const statusResponse = await fetch('/api/admin/sync-youtube');
+            if (statusResponse.ok) {
+              const status = await statusResponse.json();
+              setYoutubeStatus(status);
+              if (!status.isRevalidating) {
+                clearInterval(pollInterval);
+                setIsSyncing(false);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to poll status:', error);
+        }
+      }, 2000);
+
+      // Clear polling after 5 minutes max
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        setIsSyncing(false);
+      }, 5 * 60 * 1000);
+    } catch (error) {
+      console.error('Sync failed:', error);
+      alert('Sync failed. Please try again.');
+      setIsSyncing(false);
+    }
   };
 
   return (
@@ -184,8 +284,32 @@ export default function CacheStatusFooter({
                   fontSize: '0.75rem',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
                 })}>
-                  Calendar Sync
+                  <span>Calendar Sync</span>
+                  <button
+                    onClick={() => handleSyncClick('calendar')}
+                    disabled={calendarStatus.isRevalidating || isSyncing}
+                    className={css({
+                      padding: '0.25rem 0.75rem',
+                      fontSize: '0.75rem',
+                      backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                      border: '1px solid rgba(59, 130, 246, 0.4)',
+                      borderRadius: '4px',
+                      color: '#60a5fa',
+                      cursor: calendarStatus.isRevalidating || isSyncing ? 'not-allowed' : 'pointer',
+                      opacity: calendarStatus.isRevalidating || isSyncing ? 0.5 : 1,
+                      transition: 'all 0.2s ease',
+                      _hover: calendarStatus.isRevalidating || isSyncing ? {} : {
+                        backgroundColor: 'rgba(59, 130, 246, 0.3)',
+                        borderColor: 'rgba(59, 130, 246, 0.6)',
+                      },
+                    })}
+                  >
+                    Sync
+                  </button>
                 </div>
                 <div className={css({
                   color: getStatusColor(calendarStatus.lastSyncTime, calendarStatus.isRevalidating),
@@ -222,8 +346,32 @@ export default function CacheStatusFooter({
                   fontSize: '0.75rem',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
                 })}>
-                  YouTube Sync
+                  <span>YouTube Sync</span>
+                  <button
+                    onClick={() => handleSyncClick('youtube')}
+                    disabled={youtubeStatus.isRevalidating || isSyncing}
+                    className={css({
+                      padding: '0.25rem 0.75rem',
+                      fontSize: '0.75rem',
+                      backgroundColor: 'rgba(220, 38, 38, 0.2)',
+                      border: '1px solid rgba(220, 38, 38, 0.4)',
+                      borderRadius: '4px',
+                      color: '#f87171',
+                      cursor: youtubeStatus.isRevalidating || isSyncing ? 'not-allowed' : 'pointer',
+                      opacity: youtubeStatus.isRevalidating || isSyncing ? 0.5 : 1,
+                      transition: 'all 0.2s ease',
+                      _hover: youtubeStatus.isRevalidating || isSyncing ? {} : {
+                        backgroundColor: 'rgba(220, 38, 38, 0.3)',
+                        borderColor: 'rgba(220, 38, 38, 0.6)',
+                      },
+                    })}
+                  >
+                    Sync
+                  </button>
                 </div>
                 <div className={css({
                   color: getStatusColor(youtubeStatus.lastSyncTime, youtubeStatus.isRevalidating),
@@ -273,6 +421,16 @@ export default function CacheStatusFooter({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Admin PIN Modal */}
+      {showAdminPin && (
+        <PinEntryModal
+          onSuccess={handlePinSuccess}
+          onCancel={handlePinCancel}
+          verifyEndpoint="/api/admin/verify"
+          pinFieldName="secret"
+        />
       )}
 
       <style>{`

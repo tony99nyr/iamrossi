@@ -79,17 +79,18 @@ export const fullScheduleStyle = css({
 // Game List Items
 export const listItemStyle = css({
     display: 'flex',
-    flexWrap: { base: 'wrap', sm: 'nowrap' },
+    flexWrap: 'nowrap',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '0.75rem 1rem',
+    padding: { base: '0.5rem 0.75rem', sm: '0.75rem 1rem' },
     background: 'rgba(255, 255, 255, 0.02)',
     borderRadius: '8px',
     transition: 'all 0.2s ease',
     cursor: 'pointer',
     border: '1px solid rgba(255, 255, 255, 0.05)',
-    gap: '1rem',
+    gap: { base: '0.5rem', sm: '1rem' },
     minWidth: 0, // Allow flex items to shrink below their content size
+    overflow: 'hidden',
     '&:hover': {
         background: 'rgba(255, 255, 255, 0.05)',
         borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -110,40 +111,41 @@ export const listItemActiveStyle = css({
 
 export const dateStyle = css({
     color: '#888',
-    width: { base: '50%', sm: '100px' },
-    minWidth: { base: '50%', sm: '100px' },
-    maxWidth: { base: '50%', sm: '100px' },
     fontFamily: 'var(--font-geist-mono)',
-    fontSize: '0.9rem',
-    whiteSpace: 'nowrap !important',
+    fontSize: { base: '0.8rem', sm: '0.9rem' },
+    whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
-    flexShrink: 0,
-    flexGrow: 0,
-    order: { base: 1, sm: 0 },
     lineHeight: '1.2',
+    flexShrink: 0,
 });
 
 export const opponentStyle = css({
     color: '#eee',
     flex: 1,
-    padding: { base: '0.5rem 0', sm: '0 1rem' },
+    padding: { base: '0', sm: '0 1rem' },
     fontWeight: '500',
-    width: { base: '100%', sm: 'auto' },
-    order: { base: 3, sm: 0 },
     display: 'flex',
-    flexDirection: { base: 'column', sm: 'row' },
-    alignItems: { base: 'flex-start', sm: 'center' },
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: { base: '0.25rem', sm: '0.5rem' },
+    fontSize: { base: '0.85rem', sm: '1rem' },
+    minWidth: 0,
+    overflow: 'hidden',
+    '& > span:first-child': {
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+    },
 });
 
 export const timeStyle = css({
     color: '#888',
-    textAlign: 'right',
     fontFamily: 'var(--font-geist-mono)',
-    fontSize: '0.9rem',
-    width: { base: '50%', sm: 'auto' },
-    order: { base: 2, sm: 0 },
+    fontSize: { base: '0.8rem', sm: '0.9rem' },
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+    textAlign: 'right',
 });
 
 // Badges

@@ -6,9 +6,11 @@ import { css, cx } from '@styled-system/css';
 interface PinEntryModalProps {
     onSuccess: (token: string) => void;
     onCancel?: () => void;
+    verifyEndpoint?: string;
+    pinFieldName?: string;
 }
 
-export default function PinEntryModal({ onSuccess, onCancel }: PinEntryModalProps) {
+export default function PinEntryModal({ onSuccess, onCancel, verifyEndpoint = '/api/rehab/verify-pin', pinFieldName = 'pin' }: PinEntryModalProps) {
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
     const [remainingAttempts, setRemainingAttempts] = useState(3);
@@ -53,16 +55,20 @@ export default function PinEntryModal({ onSuccess, onCancel }: PinEntryModalProp
         setError('');
 
         try {
-            const response = await fetch('/api/rehab/verify-pin', {
+            const requestBody = pinFieldName === 'pin' ? { pin } : { secret: pin };
+            const response = await fetch(verifyEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin }),
+                body: JSON.stringify(requestBody),
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                onSuccess(data.token);
+                // For admin verify, we use the pin itself as the token (it's the admin secret)
+                // For rehab verify, we use the token from the response
+                const token = data.token || pin;
+                onSuccess(token);
             } else if (response.status === 429) {
                 // Rate limited
                 setCooldownSeconds(data.cooldownSeconds || 300);

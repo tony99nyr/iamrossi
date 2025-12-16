@@ -125,6 +125,7 @@ export function getAdminSecret(): string {
 
 /**
  * Verifies admin authentication from request Authorization header
+ * Accepts either ADMIN_SECRET or WORKOUT_ADMIN_PIN
  */
 export function verifyAdminAuth(request: NextRequest): boolean {
     const authHeader = request.headers.get('authorization');
@@ -134,5 +135,6 @@ export function verifyAdminAuth(request: NextRequest): boolean {
         return false;
     }
 
-    return verifyAdminSecret(token);
+    // Accept either ADMIN_SECRET or WORKOUT_ADMIN_PIN
+    return verifyAdminSecret(token) || verifyPin(token);
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAdminSecret } from '@/lib/auth';
+import { verifyAdminSecret, verifyPin } from '@/lib/auth';
 import { adminVerifySchema, safeValidateRequest } from '@/lib/validation';
 import { logger } from '@/lib/logger';
 
@@ -17,7 +17,8 @@ export async function POST(request: NextRequest) {
 
     const { secret } = validation.data;
 
-    if (verifyAdminSecret(secret)) {
+    // Try ADMIN_SECRET first, then fall back to WORKOUT_ADMIN_PIN
+    if (verifyAdminSecret(secret) || verifyPin(secret)) {
       return NextResponse.json({ success: true, message: 'Authentication successful' });
     }
 

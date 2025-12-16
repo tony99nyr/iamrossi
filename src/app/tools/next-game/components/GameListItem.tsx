@@ -105,8 +105,6 @@ export default function GameListItem({
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         display: 'inline-block',
-                        maxWidth: '100px',
-                        flexShrink: 0,
                     }}
                 >
                     {displayDate}
