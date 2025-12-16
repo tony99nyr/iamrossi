@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { css } from '@styled-system/css';
-import { Game, StatSession } from '@/types';
+import { Game, Settings, StatSession } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+import { resolveOpponentFromScheduledGame } from '@/lib/stat-opponent';
 
 interface GameSetupProps {
   onStartSession: (session: StatSession) => void;
@@ -83,7 +84,13 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
   const [selectedGame, setSelectedGame] = useState<Game | 'custom' | null>(null);
   const [recorderName, setRecorderName] = useState('');
   const [customOpponent, setCustomOpponent] = useState('');
-  const [teamName, setTeamName] = useState('Our Team'); // Default, will fetch from settings
+  const [teamName, setTeamName] = useState('Jr Canes 10U Black'); // Default, will fetch from settings
+  const [identifiers, setIdentifiers] = useState<Settings['identifiers']>([
+    'Black',
+    'Jr Canes',
+    'Carolina',
+    'Jr',
+  ]);
 
   useEffect(() => {
     fetchSchedule();
@@ -142,6 +149,9 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
               if (data.teamName) {
                   setTeamName(data.teamName);
               }
+              if (Array.isArray(data.identifiers)) {
+                setIdentifiers(data.identifiers);
+              }
           }
       } catch (e) {
           console.error('Failed to load settings', e);
@@ -174,25 +184,11 @@ export default function GameSetup({ onStartSession }: GameSetupProps) {
         return;
       }
 
-      // Determine opponent based on who is not "Us"
-      // Since we don't have the "Us" logic fully wired with settings yet, 
-      // we'll assume the user selects the game and we can display both teams in the tracker
-      // and let them verify. 
-      // Actually, for the session object, we need "opponent".
-      // Let's assume we are Home or Visitor. 
-      // Ideally we check `identifiers` from settings against home/visitor names.
-      // For now, let's just use the "vs" logic: if home is us, visitor is opponent.
-      // But we don't know who "us" is without settings.
-      // I'll just store the game details and let the tracker handle display.
-      // But `StatSession` needs `opponent`.
-      // I'll use a placeholder or try to guess.
-      // Let's just use the game title or something.
-      // Actually, better: if selectedGame, use "Home vs Visitor" as opponent string for now?
-      // No, that's messy.
-      // Let's just ask the user to confirm opponent if it's ambiguous?
-      // Or just use the visitor name if we assume we are home?
-      // Let's use "Opponent" for now and fix it when we have settings.
-      opponent = selectedGame.visitor_team_name; // Fallback guess
+      opponent =
+        resolveOpponentFromScheduledGame(selectedGame, { teamName, identifiers }) ||
+        selectedGame.visitor_team_name ||
+        selectedGame.home_team_name ||
+        '';
       
       // Save gameId to link this session to the scheduled game
       // This makes it easier to combine data later for scores and other game information

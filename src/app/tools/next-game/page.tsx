@@ -4,6 +4,11 @@ import { matchVideosToGames } from '@/utils/videoMatcher';
 import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, setSyncStatus, setCalendarSyncStatus, getStatSessions } from '@/lib/kv';
 import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
+import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
+import { partitionNextGameSchedule } from '@/lib/next-game/partition-games';
+import { selectFeaturedStream } from '@/lib/next-game/featured-stream';
+import { mergeScheduleCandidates } from '@/lib/next-game/merge-schedule-candidates';
+import type { YouTubeVideo } from '@/lib/youtube-service';
 
 // Force dynamic rendering since we're reading from KV
 export const dynamic = 'force-dynamic';
@@ -43,6 +48,36 @@ export const metadata: Metadata = {
     }
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object';
+}
+
+function sanitizeGames(games: Game[]): Game[] {
+    // KV data can contain nulls/invalid entries; filter to objects only.
+    return (Array.isArray(games) ? games : []).filter((g): g is Game => isRecord(g));
+}
+
+function sanitizeYouTubeVideos(videos: Awaited<ReturnType<typeof getYouTubeVideos>>): YouTubeVideo[] {
+    // Keep only entries with required fields for downstream usage.
+    // KV historically stored entries without `videoType`; default those to 'regular' for type safety.
+    return (Array.isArray(videos) ? videos : [])
+        .filter((v) => {
+            if (!isRecord(v)) return false;
+            return typeof v.title === 'string' && typeof v.url === 'string';
+        })
+        .map((v) => {
+            const videoType = v.videoType;
+            const normalizedVideoType =
+                videoType === 'live' || videoType === 'upcoming' || videoType === 'regular'
+                    ? videoType
+                    : 'regular';
+            return {
+                ...v,
+                videoType: normalizedVideoType,
+            };
+        }) as YouTubeVideo[];
+}
+
 // async function triggerSync() {
 //     try {
 //         const headersList = await headers();
@@ -63,12 +98,38 @@ export const metadata: Metadata = {
 // If you need to trigger periodic syncs, implement a cron job or webhook
 
 export default async function NextGamePage() {
-    const schedule = await getSchedule();
-    const mhrSchedule = await getMHRSchedule();
-    const youtubeVideos = await getYouTubeVideos();
-    
+    let schedule: Game[] = [];
+    let mhrSchedule: Awaited<ReturnType<typeof getMHRSchedule>> = [];
+    let youtubeVideos: YouTubeVideo[] = [];
+
+    // KV reads can fail in production (missing env, transient Redis outage, bad data).
+    // This page should degrade gracefully instead of throwing a 500.
+    try {
+        schedule = sanitizeGames(await getSchedule());
+    } catch (error) {
+        console.error('[Next Game] Failed to load schedule from KV:', error);
+    }
+
+    try {
+        // MHR schedule is a looser shape; keep only object entries to avoid null derefs.
+        mhrSchedule = (await getMHRSchedule()).filter((g): g is (typeof mhrSchedule)[number] => isRecord(g));
+    } catch (error) {
+        console.error('[Next Game] Failed to load MHR schedule from KV:', error);
+    }
+
+    try {
+        youtubeVideos = sanitizeYouTubeVideos(await getYouTubeVideos());
+    } catch (error) {
+        console.error('[Next Game] Failed to load YouTube videos from KV:', error);
+    }
+
     // Read settings from KV
-    const settingsData = await getSettings();
+    let settingsData = null as Awaited<ReturnType<typeof getSettings>>;
+    try {
+        settingsData = await getSettings();
+    } catch (error) {
+        console.error('[Next Game] Failed to load settings from KV:', error);
+    }
     const settings = {
         mhrTeamId: settingsData?.mhrTeamId || '19758',
         mhrYear: settingsData?.mhrYear || '2025',
@@ -77,8 +138,20 @@ export default async function NextGamePage() {
     };
 
     // Check sync status and trigger background syncs if needed (every 2 hours)
-    const syncStatus = await getSyncStatus();
-    const calendarSyncStatus = await getCalendarSyncStatus();
+    let syncStatus = { lastSyncTime: null, isRevalidating: false, lastError: null } as Awaited<ReturnType<typeof getSyncStatus>>;
+    let calendarSyncStatus = { lastSyncTime: null, isRevalidating: false, lastError: null } as Awaited<ReturnType<typeof getCalendarSyncStatus>>;
+
+    try {
+        syncStatus = await getSyncStatus();
+    } catch (error) {
+        console.error('[Next Game] Failed to load YouTube sync status from KV:', error);
+    }
+
+    try {
+        calendarSyncStatus = await getCalendarSyncStatus();
+    } catch (error) {
+        console.error('[Next Game] Failed to load calendar sync status from KV:', error);
+    }
     const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
     const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
     const host = process.env.VERCEL_URL || 'localhost:3000';
@@ -149,44 +222,71 @@ export default async function NextGamePage() {
     }
 
     
-    // Filter for future games
+    // Filter for upcoming games.
+    // IMPORTANT: schedule times are Eastern; Vercel's server runtime is UTC.
+    // Keep games visible until 1 hour after puck drop.
     const now = new Date();
-    const futureGames = schedule.filter((game: Game) => {
-        const gameDateTime = new Date(`${game.game_date_format}T${game.game_time_format}`);
-        return gameDateTime >= now;
-    }).sort((a: Game, b: Game) => {
-        const dateA = new Date(`${a.game_date_format}T${a.game_time_format}`);
-        const dateB = new Date(`${b.game_date_format}T${b.game_time_format}`);
-        return dateA.getTime() - dateB.getTime();
+    const UPCOMING_GRACE_PERIOD_MS = 60 * 60 * 1000;
+    // Always union calendar-derived schedule + raw MHR schedule so we don't miss games
+    // that failed to merge into `admin:schedule` (common for same-day edits / title mismatches).
+    const combined = mergeScheduleCandidates(
+        sanitizeGames(mhrSchedule as unknown as Game[]),
+        schedule,
+        {
+            mhrTeamId: settings.mhrTeamId,
+            teamName: settings.teamName,
+            timeZone: EASTERN_TIME_ZONE,
+        }
+    );
+
+    const { futureGames } = partitionNextGameSchedule(combined, now, {
+        timeZone: EASTERN_TIME_ZONE,
+        upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
     });
 
-    // Filter for past games from MHR (current season only)
+    // Past games should come from MHR (source of truth for season history).
+    // This avoids accidentally treating calendar misc events as "past games".
+    const mhrGames = sanitizeGames(mhrSchedule as unknown as Game[]);
+    const { pastGames: pastFromMhr } = partitionNextGameSchedule(mhrGames, now, {
+        timeZone: EASTERN_TIME_ZONE,
+        upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
+    });
+    // Filter for past games (current season only)
     // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
     const mhrYear = settings.mhrYear || '2025';
     const seasonStartYear = mhrYear;
     const seasonEndYear = String(parseInt(mhrYear) + 1);
     const currentSeasonStart = new Date(`${seasonStartYear}-08-01T00:00:00`);
     const currentSeasonEnd = new Date(`${seasonEndYear}-03-01T23:59:59`);
-    const pastGames = (mhrSchedule as unknown as Game[]).filter((game: Game) => {
-        const gameDate = new Date(game.game_date_format || game.game_date);
+    const pastGames = pastFromMhr
+        .filter((game: Game) => {
+            // Keep placeholders out of the past games list (they're not "results").
+            if (game.isPlaceholder) return false;
 
-        // Must be from current season
-        if (gameDate < currentSeasonStart || gameDate >= currentSeasonEnd) return false;
+            // Must be from current season.
+            const dateStr = game.game_date_format || game.game_date;
+            const timeStr = game.game_time_format || game.game_time;
+            const startUtc = parseDateTimeInTimeZoneToUtc(dateStr, timeStr, EASTERN_TIME_ZONE);
+            if (!startUtc) return false;
+            if (startUtc < currentSeasonStart || startUtc >= currentSeasonEnd) return false;
 
-        // Must be in the past (before today)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return gameDate < today;
-    }).sort((a: Game, b: Game) => {
-        // Sort descending (most recent first)
-        const dateA = new Date(a.game_date_format || a.game_date);
-        const dateB = new Date(b.game_date_format || b.game_date);
-        return dateB.getTime() - dateA.getTime();
-    });
+            return true;
+        })
+        .sort((a: Game, b: Game) => {
+            // Sort descending (most recent first)
+            const dateA = parseDateTimeInTimeZoneToUtc(a.game_date_format || a.game_date, a.game_time_format || a.game_time, EASTERN_TIME_ZONE);
+            const dateB = parseDateTimeInTimeZoneToUtc(b.game_date_format || b.game_date, b.game_time_format || b.game_time, EASTERN_TIME_ZONE);
+            return (dateB?.getTime() ?? 0) - (dateA?.getTime() ?? 0);
+        });
 
     // Check cache for enriched games (video-matched)
     let enrichedPastGames: Game[];
-    const cachedEnrichedGames = await getEnrichedGames();
+    let cachedEnrichedGames: Awaited<ReturnType<typeof getEnrichedGames>> = null;
+    try {
+        cachedEnrichedGames = await getEnrichedGames();
+    } catch (error) {
+        console.error('[Next Game] Failed to load enriched games cache from KV:', error);
+    }
 
     if (cachedEnrichedGames && !isEnrichedGamesCacheStale(cachedEnrichedGames)) {
         // Use cached enriched games
@@ -194,21 +294,19 @@ export default async function NextGamePage() {
     } else {
         // Cache miss or stale - compute and cache
         enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
-        await setEnrichedGames(enrichedPastGames);
+        try {
+            await setEnrichedGames(enrichedPastGames);
+        } catch (error) {
+            console.error('[Next Game] Failed to write enriched games cache to KV:', error);
+        }
     }
 
     // Enrich past games with stat session scores when MHR scores are invalid
-    const statSessions = await getStatSessions();
-    console.log(`[Next Game] Loaded ${statSessions.length} stat sessions for matching`);
-    if (statSessions.length > 0) {
-      console.log(`[Next Game] Sample stat sessions:`, statSessions.slice(0, 3).map(s => ({
-        id: s.id,
-        gameId: s.gameId,
-        date: s.date,
-        opponent: s.opponent,
-        usGoals: s.usStats.goals,
-        themGoals: s.themStats.goals
-      })));
+    let statSessions: Awaited<ReturnType<typeof getStatSessions>> = [];
+    try {
+        statSessions = await getStatSessions();
+    } catch (error) {
+        console.error('[Next Game] Failed to load stat sessions from KV:', error);
     }
     enrichedPastGames = enrichPastGamesWithStatScores(
         enrichedPastGames,
@@ -216,26 +314,27 @@ export default async function NextGamePage() {
         settings.teamName
     );
 
-    // Enrich future games with upcoming/live video data
-    const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos);
+    // Enrich future games with upcoming/live video data.
+    // IMPORTANT: For upcoming games, we only want stream links (not VOD "full game"/"highlights" links).
+    const enrichedFutureGames = matchVideosToGames(futureGames as Game[], youtubeVideos, { includeVodLinks: false });
 
     // Check if there are any live games (games with live stream URLs)
     const liveGames = enrichedFutureGames.filter((game: Game) => (game as unknown as { liveStreamUrl?: string }).liveStreamUrl);
 
-    // Detect active live streams from YouTube videos (not just matched to games)
-    // Prioritize actually live streams over upcoming ones
-    const activeLiveStreams = youtubeVideos.filter((video): video is import('@/lib/youtube-service').YouTubeVideo => {
-        return video.videoType === 'live' || video.videoType === 'upcoming';
+    // Featured stream at top of page (live video first; else nearest game w/ stream)
+    const featuredStream = selectFeaturedStream({
+        now,
+        timeZone: EASTERN_TIME_ZONE,
+        futureGames: enrichedFutureGames,
+        youtubeVideos,
     });
 
-    // Get the most recent active live stream (prioritize live over upcoming)
-    const activeLiveStream = activeLiveStreams
-        .sort((a, b) => {
-            // Sort live streams first, then upcoming
-            if (a.videoType === 'live' && b.videoType !== 'live') return -1;
-            if (a.videoType !== 'live' && b.videoType === 'live') return 1;
-            return 0;
-        })[0] || null;
+    // Keep backwards-compatible prop for "standalone YouTube stream" alert.
+    // We ONLY set this for actual live streams; upcoming streams should be tied to the schedule.
+    const activeLiveStream =
+        featuredStream?.kind === 'youtube' && featuredStream.state === 'live'
+            ? featuredStream.video
+            : null;
 
     return <NextGameClient 
         futureGames={enrichedFutureGames} 
@@ -245,5 +344,6 @@ export default async function NextGamePage() {
         calendarSyncStatus={calendarSyncStatus} 
         liveGames={liveGames}
         activeLiveStream={activeLiveStream}
+        featuredStream={featuredStream}
     />;
 }

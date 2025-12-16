@@ -8,6 +8,7 @@ interface GameCardProps {
     title: string;
     game: Game | null;
     isHome?: boolean;
+    isPastGame?: boolean;
 }
 
 const LOGO_BLUR_DATA_URL =
@@ -275,7 +276,7 @@ const videoLinksContainerStyle = css({
     flexWrap: 'wrap'
 });
 
-export default function GameCard({ title, game }: GameCardProps) {
+export default function GameCard({ title, game, isPastGame = false }: GameCardProps) {
     const year = new Date().getFullYear();
 
     if (!game) {
@@ -409,8 +410,8 @@ export default function GameCard({ title, game }: GameCardProps) {
                     </div>
                 )}
 
-                {/* Video Links */}
-                {(game.highlightsUrl || game.fullGameUrl) && (
+                {/* Video Links (Past games only) */}
+                {isPastGame && (game.highlightsUrl || game.fullGameUrl) && (
                     <div className={videoLinksContainerStyle}>
                         {game.highlightsUrl && (
                             <a 
@@ -443,24 +444,28 @@ export default function GameCard({ title, game }: GameCardProps) {
                     </div>
                 )}
 
-                {/* Upcoming Stream Link */}
-                {game.upcomingStreamUrl && (
+                {/* Stream Link (live or scheduled) */}
+                {!isPastGame && (game.liveStreamUrl || game.upcomingStreamUrl) && (
                     <div className={css({
                         paddingTop: '0.5rem',
                         display: 'flex',
                         justifyContent: 'center'
                     })}>
                         <a 
-                            href={game.upcomingStreamUrl}
+                            href={game.liveStreamUrl || game.upcomingStreamUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={cx(actionLinkStyle, streamLinkStyle)}
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <circle cx="12" cy="12" r="10"></circle>
-                                <polyline points="12 6 12 12 16 14"></polyline>
+                                {game.liveStreamUrl ? (
+                                    <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                                ) : (
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                )}
                             </svg>
-                            Scheduled Stream
+                            {game.liveStreamUrl ? 'Watch Live Stream' : 'Scheduled Stream'}
                         </a>
                     </div>
                 )}

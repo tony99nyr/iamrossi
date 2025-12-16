@@ -115,6 +115,125 @@ describe('Transform Calendar Events', () => {
     expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
   });
 
+  it('should let (Away) override "vs" home/away inference', async () => {
+    const events = [
+      {
+        summary: 'Black vs Rangers (Away)',
+        start: new Date('2025-12-13T18:30:00'),
+        end: new Date('2025-12-13T19:30:00'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    // Normally "Black vs Rangers" would imply we're home.
+    // The explicit (Away) marker must override that.
+    expect(result[0].home_team_name).toBe('Rangers');
+    expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+  });
+
+  it('should treat (Home)/(Away) in calendar titles as an override and not create duplicates vs MHR', async () => {
+    const events = [
+      {
+        summary: 'Black vs Rangers (Away)',
+        // Dec 13 is EST (UTC-5). 6:30pm ET = 23:30Z.
+        start: new Date('2025-12-13T23:30:00.000Z'),
+        end: new Date('2025-12-14T00:30:00.000Z'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const mhrSchedule = [
+      {
+        game_nbr: 424242,
+        game_date: '2025-12-13',
+        game_time: '6:30 PM',
+        home_team_name: 'Carolina Junior Canes (Black) 10U AA',
+        visitor_team_name: 'Rangers',
+        home_team_score: 2,
+        visitor_team_score: 3,
+        rink_name: 'Test Rink',
+        home_team_id: '12345',
+        visitor_team_id: '99999',
+        opponent_team_id: '99999',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, mhrSchedule, '2025');
+
+    expect(result).toHaveLength(1);
+    // Calendar override wins.
+    expect(result[0].home_team_name).toBe('Rangers');
+    expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+    // But we still pull MHR data.
+    expect(result[0].game_nbr).toBe(424242);
+    expect(result[0].home_team_score).toBe(2);
+    expect(result[0].visitor_team_score).toBe(3);
+  });
+
+  it('should let (Home) override "@" away/home inference', async () => {
+    const events = [
+      {
+        summary: 'Black @ Rangers (Home)',
+        start: new Date('2025-12-13T18:30:00'),
+        end: new Date('2025-12-13T19:30:00'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    // Normally "Black @ Rangers" would imply we're away.
+    // The explicit (Home) marker must override that.
+    expect(result[0].home_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+    expect(result[0].visitor_team_name).toBe('Rangers');
+  });
+
+  it('should treat explicit (Away) titles without separators as games', async () => {
+    const events = [
+      {
+        summary: 'Rangers (Away)',
+        start: new Date('2025-12-14T14:00:00'),
+        end: new Date('2025-12-14T15:00:00'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].home_team_name).toBe('Rangers');
+    expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+  });
+
+  it('should treat explicit (AWAY)/(HOME) titles as overrides (case-insensitive)', async () => {
+    const events = [
+      {
+        summary: 'Rangers (AWAY)',
+        start: new Date('2025-12-14T14:00:00'),
+        end: new Date('2025-12-14T15:00:00'),
+        location: 'Test Rink',
+      },
+      {
+        summary: 'Rangers (HOME)',
+        start: new Date('2025-12-15T14:00:00'),
+        end: new Date('2025-12-15T15:00:00'),
+        location: 'Test Rink',
+      },
+    ];
+
+    const result = await transformCalendarEvents(events, [], '2025');
+
+    expect(result).toHaveLength(2);
+    expect(result[0].home_team_name).toBe('Rangers');
+    expect(result[0].visitor_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+    expect(result[1].home_team_name).toBe('Carolina Junior Canes (Black) 10U AA');
+    expect(result[1].visitor_team_name).toBe('Rangers');
+  });
+
   it('should merge MHR schedule data when available', async () => {
     const events = [
       {

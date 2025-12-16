@@ -11,6 +11,10 @@ export interface YouTubeVideo {
 
 const CHANNEL_HANDLE = process.env.YOUTUBE_CHANNEL_HANDLE || '@2015JuniorCanes';
 
+// Chromium version should match @sparticuz/chromium-min package version
+const CHROMIUM_VERSION = '143.0.0';
+const CHROMIUM_URL = `https://github.com/Sparticuz/chromium/releases/download/v${CHROMIUM_VERSION}/chromium-v${CHROMIUM_VERSION}-pack.x64.tar`;
+
 /**
  * Retry a page navigation with exponential backoff
  * Handles 429 rate limiting with longer backoff
@@ -95,6 +99,66 @@ async function retryNavigation(
 }
 
 /**
+ * Fallback extraction method using watch links when primary selectors fail
+ * This is more resilient to YouTube DOM changes
+ */
+async function extractVideosFromWatchLinks(page: Page): Promise<YouTubeVideo[]> {
+    debugLog('[YouTube] Using fallback extraction via watch links...');
+    
+    const videos = await page.evaluate(() => {
+        const results: YouTubeVideo[] = [];
+        const seenUrls = new Set<string>();
+        
+        // Find all watch links and extract video info from their parent containers
+        const watchLinks = document.querySelectorAll('a[href*="/watch"]');
+        
+        watchLinks.forEach((link) => {
+            try {
+                const href = (link as HTMLAnchorElement).href;
+                
+                // Skip duplicate URLs and non-video links
+                if (seenUrls.has(href) || !href.includes('/watch?v=')) return;
+                
+                // Try to find the video container (parent element with video info)
+                const container = link.closest('ytd-rich-item-renderer, ytd-rich-grid-media, ytd-grid-video-renderer, ytd-video-renderer');
+                if (!container) return;
+                
+                // Get title from the container
+                const titleElement = container.querySelector('#video-title, yt-formatted-string#video-title');
+                const title = titleElement?.textContent?.trim();
+                
+                // Skip if no title or title is just duration/metadata
+                if (!title || title.match(/^\d+:\d+$/)) return;
+                
+                // Get metadata
+                const metadataElement = container.querySelector('#metadata-line span');
+                const publishDate = metadataElement?.textContent?.trim();
+                
+                // Clean the URL (remove tracking params)
+                const cleanUrl = href.split('&pp=')[0];
+                
+                if (title && cleanUrl && !seenUrls.has(cleanUrl)) {
+                    seenUrls.add(cleanUrl);
+                    results.push({
+                        title,
+                        url: cleanUrl,
+                        videoType: 'regular' as const,
+                        publishDate
+                    });
+                }
+            } catch {
+                // Ignore individual element errors
+            }
+        });
+        
+        return results;
+    });
+    
+    debugLog(`[YouTube] Fallback extraction found ${videos.length} videos`);
+    return videos;
+}
+
+/**
  * Scrape videos from the YouTube channel's videos tab
  */
 async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
@@ -107,19 +171,27 @@ async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
     });
 
     // Wait for YouTube's JavaScript to fully render content
-    await page.waitForTimeout(2000);
+    // Increased wait time for serverless environments
+    await page.waitForTimeout(3000);
 
-    // Wait for video grid to load
-    await page.waitForSelector('ytd-rich-grid-media, ytd-grid-video-renderer', { timeout: 15000 });
+    // Try to wait for video grid, but don't fail if not found
+    let selectorFound = false;
+    try {
+        await page.waitForSelector('ytd-rich-grid-media, ytd-grid-video-renderer', { timeout: 20000 });
+        selectorFound = true;
+        debugLog('[YouTube] Video grid selector found');
+    } catch {
+        debugLog('[YouTube] Primary video grid selector not found, will try fallback');
+    }
 
     // Scroll to load more videos
     for (let i = 0; i < 3; i++) {
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
     }
 
-    // Extract video data
-    const videos = await page.evaluate(() => {
+    // Extract video data using primary method
+    let videos = await page.evaluate(() => {
         const videoElements = document.querySelectorAll('ytd-rich-grid-media, ytd-grid-video-renderer');
         const results: YouTubeVideo[] = [];
 
@@ -129,10 +201,15 @@ async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
                 const titleElement = element.querySelector('#video-title');
                 const title = titleElement?.textContent?.trim();
 
-                // Get URL
-                const linkElement = element.querySelector('a#video-title-link, a#thumbnail');
-                const href = linkElement?.getAttribute('href');
-                const url = href ? `https://www.youtube.com${href}` : null;
+                // Get URL - try multiple selectors
+                let href: string | null = null;
+                const linkSelectors = ['a#video-title-link', 'a#thumbnail', 'a[href*="/watch"]'];
+                for (const selector of linkSelectors) {
+                    const linkElement = element.querySelector(selector);
+                    href = linkElement?.getAttribute('href') ?? null;
+                    if (href) break;
+                }
+                const url = href ? `https://www.youtube.com${href.split('&pp=')[0]}` : null;
 
                 // Get metadata text (includes date)
                 const metadataElement = element.querySelector('#metadata-line span');
@@ -154,7 +231,14 @@ async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
         return results;
     });
 
-    debugLog(`[YouTube] Found ${videos.length} videos`);
+    debugLog(`[YouTube] Primary extraction found ${videos.length} videos`);
+    
+    // If primary extraction failed, try fallback
+    if (videos.length === 0 && !selectorFound) {
+        videos = await extractVideosFromWatchLinks(page);
+    }
+
+    debugLog(`[YouTube] Total videos from videos tab: ${videos.length}`);
     return videos;
 }
 
@@ -171,16 +255,17 @@ async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
     });
 
     // Wait for YouTube's JavaScript to fully render content
-    await page.waitForTimeout(2000);
+    // Increased wait time for serverless environments
+    await page.waitForTimeout(3000);
 
     // Scroll to load more content
     for (let i = 0; i < 2; i++) {
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
     }
 
     // Extract stream data
-    const streams = await page.evaluate(() => {
+    let streams = await page.evaluate(() => {
         const streamElements = document.querySelectorAll('ytd-rich-grid-media, ytd-grid-video-renderer');
         const results: YouTubeVideo[] = [];
 
@@ -190,27 +275,63 @@ async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
                 const titleElement = element.querySelector('#video-title');
                 const title = titleElement?.textContent?.trim();
 
-                // Get URL
-                const linkElement = element.querySelector('a#video-title-link, a#thumbnail');
-                const href = linkElement?.getAttribute('href');
-                const url = href ? `https://www.youtube.com${href}` : null;
+                // Get URL - try multiple selectors
+                let href: string | null = null;
+                const linkSelectors = ['a#video-title-link', 'a#thumbnail', 'a[href*="/watch"]'];
+                for (const selector of linkSelectors) {
+                    const linkElement = element.querySelector(selector);
+                    href = linkElement?.getAttribute('href') ?? null;
+                    if (href) break;
+                }
+                const url = href ? `https://www.youtube.com${href.split('&pp=')[0]}` : null;
 
-                // Check for live/upcoming badges
-                const badges = element.querySelectorAll('.badge-style-type-live-now, .badge-style-type-upcoming');
-                let videoType: 'live' | 'upcoming' | 'regular' = 'regular';
-                
-                badges.forEach((badge: Element) => {
-                    const badgeText = badge.textContent?.toLowerCase() || '';
-                    if (badgeText.includes('live')) {
-                        videoType = 'live';
-                    } else if (badgeText.includes('upcoming') || badgeText.includes('scheduled')) {
-                        videoType = 'upcoming';
+                // Get metadata line text (YouTube uses this for "Scheduled for …" and "Streamed …")
+                const metadataSpans = Array.from(element.querySelectorAll('#metadata-line span'))
+                    .map(s => s.textContent?.trim())
+                    .filter((s): s is string => Boolean(s));
+                const metadataText = metadataSpans.join(' • ');
+
+                // Detect live/upcoming. YouTube's markup changes frequently, so we use multiple signals:
+                // - thumbnail overlay status renderer (LIVE / UPCOMING)
+                // - badge classes (older markup)
+                // - metadata text ("Scheduled", "Streaming in", "Starts in")
+                let sawLive = false;
+                let sawUpcoming = false;
+
+                const overlayEls = element.querySelectorAll('ytd-thumbnail-overlay-time-status-renderer');
+                overlayEls.forEach((overlay) => {
+                    const overlayStyle = overlay.getAttribute('overlay-style')?.toLowerCase() || '';
+                    const overlayText = overlay.textContent?.toLowerCase() || '';
+
+                    if (overlayStyle.includes('live') || overlayText.includes('live')) {
+                        sawLive = true;
+                    }
+                    if (overlayStyle.includes('upcoming') || overlayText.includes('upcoming') || overlayText.includes('scheduled')) {
+                        sawUpcoming = true;
                     }
                 });
 
-                // Get metadata (date/time for upcoming, or streamed date for past)
-                const metadataElement = element.querySelector('#metadata-line span');
-                const publishDate = metadataElement?.textContent?.trim();
+                const legacyBadges = element.querySelectorAll('.badge-style-type-live-now, .badge-style-type-upcoming');
+                legacyBadges.forEach((badge) => {
+                    const badgeText = badge.textContent?.toLowerCase() || '';
+                    if (badgeText.includes('live')) sawLive = true;
+                    if (badgeText.includes('upcoming') || badgeText.includes('scheduled')) sawUpcoming = true;
+                });
+
+                const lowerMeta = metadataText.toLowerCase();
+                if (lowerMeta.includes('scheduled') || lowerMeta.includes('streaming in') || lowerMeta.includes('starts in')) {
+                    sawUpcoming = true;
+                }
+                if (lowerMeta.includes('watching') && lowerMeta.includes('now')) {
+                    sawLive = true;
+                }
+
+                const videoType: 'live' | 'upcoming' | 'regular' = sawLive ? 'live' : sawUpcoming ? 'upcoming' : 'regular';
+
+                // Prefer the most useful publishDate string for upcoming/live parsing.
+                const publishDate =
+                    metadataSpans.find((s) => /scheduled|streaming in|starts in|watching now/i.test(s)) ??
+                    metadataSpans[0];
 
                 if (title && url) {
                     results.push({
@@ -228,7 +349,15 @@ async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
         return results;
     });
 
-    debugLog(`[YouTube] Found ${streams.length} streams`);
+    debugLog(`[YouTube] Primary streams extraction found ${streams.length} streams`);
+    
+    // If primary extraction failed, try fallback
+    if (streams.length === 0) {
+        streams = await extractVideosFromWatchLinks(page);
+        // Mark these as regular since we can't detect live/upcoming without proper selectors
+    }
+
+    debugLog(`[YouTube] Total streams: ${streams.length}`);
     return streams;
 }
 
@@ -250,9 +379,10 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
         '--disable-gpu'
     ];
     
+    debugLog(`[YouTube] Using Chromium v${CHROMIUM_VERSION}`);
     const browser = await chromium.launch({
         args: browserArgs,
-        executablePath: await chromiumPkg.executablePath('https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar'),
+        executablePath: await chromiumPkg.executablePath(CHROMIUM_URL),
         headless: true,
     });
 
@@ -272,14 +402,32 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
         // Add delay between tabs to respect YouTube's rate limits
         let videos: YouTubeVideo[] = [];
         let streams: YouTubeVideo[] = [];
+        let videosError: string | null = null;
+        let streamsError: string | null = null;
         
         try {
             videos = await scrapeVideosTab(videosPage);
             debugLog(`[YouTube] Successfully scraped ${videos.length} videos`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            videosError = errorMessage;
             debugLog(`[YouTube] Error scraping videos tab: ${errorMessage}`);
             console.error('[YouTube] Error scraping videos tab:', error);
+            
+            // Capture diagnostic info when videos tab fails
+            try {
+                const diagnostics = await videosPage.evaluate(() => ({
+                    title: document.title,
+                    url: window.location.href,
+                    bodyLength: document.body?.innerHTML?.length ?? 0,
+                    hasConsentBanner: !!document.querySelector('[aria-label*="consent"], ytd-consent-bump-v2-lightbox'),
+                    watchLinksCount: document.querySelectorAll('a[href*="/watch"]').length,
+                    richGridCount: document.querySelectorAll('ytd-rich-grid-media').length
+                }));
+                console.error('[YouTube] Videos page diagnostics:', diagnostics);
+            } catch {
+                console.error('[YouTube] Could not capture diagnostics');
+            }
         }
         
         // Wait between requests to avoid rate limiting
@@ -290,6 +438,7 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
             debugLog(`[YouTube] Successfully scraped ${streams.length} streams`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            streamsError = errorMessage;
             debugLog(`[YouTube] Error scraping streams tab: ${errorMessage}`);
             console.error('[YouTube] Error scraping streams tab:', error);
         }
@@ -309,7 +458,13 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
         debugLog(`[YouTube] Total unique videos: ${uniqueVideos.length} (${videos.length} from videos tab, ${streams.length} from streams tab)`);
         
         if (videos.length === 0 && streams.length === 0) {
-            throw new Error('Failed to scrape any videos from both tabs. This may indicate YouTube is blocking the scraper or the channel structure has changed.');
+            // Include error details in the failure message
+            const errorDetails = [
+                videosError ? `Videos tab error: ${videosError}` : null,
+                streamsError ? `Streams tab error: ${streamsError}` : null
+            ].filter(Boolean).join('; ');
+            
+            throw new Error(`Failed to scrape any videos from both tabs. ${errorDetails || 'This may indicate YouTube is blocking the scraper or the channel structure has changed.'}`);
         }
         
         if (videos.length === 0) {

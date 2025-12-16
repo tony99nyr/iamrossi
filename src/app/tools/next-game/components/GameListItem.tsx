@@ -112,7 +112,7 @@ export default function GameListItem({
             {/* Accordion Content */}
             {isExpanded && !isPlaceholder && (
                 <div>
-                    <GameCard title="" game={game} isHome={isHomeGame} />
+                    <GameCard title="" game={game} isHome={isHomeGame} isPastGame={isPastGame} />
                 </div>
             )}
         </div>

@@ -27,6 +27,43 @@ function normalizeDateToEastern(dateStr: string): string {
     return `${dateStr.substring(0,4)}-${dateStr.substring(4,6)}-${dateStr.substring(6,8)}`;
 }
 
+function normalizeTimeToHHMM(timeStr: unknown): string | null {
+    if (typeof timeStr !== 'string') return null;
+    const trimmed = timeStr.trim();
+    if (!trimmed) return null;
+    if (trimmed.toUpperCase() === 'TBD') return null;
+
+    // Normalize whitespace and remove dots ("p.m."/"a.m.").
+    const cleaned = trimmed.replace(/\s+/g, ' ').replace(/\./g, '').toUpperCase();
+
+    const twelveHourMatch = cleaned.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/);
+    if (twelveHourMatch) {
+        const rawHour = Number(twelveHourMatch[1]);
+        const minute = Number(twelveHourMatch[2]);
+        if (!Number.isFinite(rawHour) || rawHour < 0 || rawHour > 23) return null;
+        if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+
+        // If a provider sends 24h time plus AM/PM (e.g. "18:30 PM"), treat as 24h.
+        if (rawHour > 12) return `${String(rawHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
+        const ampm = String(twelveHourMatch[4]).toUpperCase();
+        let hour = rawHour % 12;
+        if (ampm === 'PM') hour += 12;
+        return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+
+    const twentyFourMatch = cleaned.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (twentyFourMatch) {
+        const hour = Number(twentyFourMatch[1]);
+        const minute = Number(twentyFourMatch[2]);
+        if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+        if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+        return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+
+    return null;
+}
+
 interface CalendarEvent {
     summary: string;
     start: Date;
@@ -496,25 +533,37 @@ export async function transformCalendarEvents(
                 
                 if (localDateStr !== mhrDateStr) return false;
                 
-                // Match by opponent (check both home and visitor)
-                const mhrOpponent = isHomeGame ? mhrGame.visitor_team_name : mhrGame.home_team_name;
-                if (!mhrOpponent) return false;
-                
+                // Match by opponent name, but DO NOT rely on calendar-inferred home/away.
+                // Calendar titles can explicitly override (Home)/(Away), which may contradict
+                // MHR's home/away; we still want to match by "who are we playing?".
+                const mhrHomeName = String(mhrGame.home_team_name || '');
+                const mhrVisitorName = String(mhrGame.visitor_team_name || '');
+
                 // Normalize names for comparison
                 const normalizeOpponent = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
                 const calOpponent = normalizeOpponent(mhrData?.name || opponent);
-                const mhrOpp = normalizeOpponent(mhrOpponent);
-                
-                if (!mhrOpp.includes(calOpponent) && !calOpponent.includes(mhrOpp)) return false;
+                const mhrHomeNorm = normalizeOpponent(mhrHomeName);
+                const mhrVisitorNorm = normalizeOpponent(mhrVisitorName);
+
+                // Prefer comparing against the "other team" from MHR's perspective (whichever side isn't us).
+                const mhrUsHome = isUs(mhrHomeName, settings.identifiers);
+                const mhrUsVisitor = isUs(mhrVisitorName, settings.identifiers);
+                let mhrOpponentNorm: string | null = null;
+                if (mhrUsHome && !mhrUsVisitor) mhrOpponentNorm = mhrVisitorNorm;
+                else if (mhrUsVisitor && !mhrUsHome) mhrOpponentNorm = mhrHomeNorm;
+                else {
+                    // Fallback: match whichever side looks like the calendar opponent.
+                    if (mhrHomeNorm.includes(calOpponent) || calOpponent.includes(mhrHomeNorm)) mhrOpponentNorm = mhrHomeNorm;
+                    else if (mhrVisitorNorm.includes(calOpponent) || calOpponent.includes(mhrVisitorNorm)) mhrOpponentNorm = mhrVisitorNorm;
+                }
+
+                if (!mhrOpponentNorm) return false;
+                if (!mhrOpponentNorm.includes(calOpponent) && !calOpponent.includes(mhrOpponentNorm)) return false;
 
                 // Match by time (if available) to distinguish games on same day
-                if (gameTime && mhrGame.game_time_format) {
-                    // gameTime is HH:MM:SS or HH:MM
-                    // mhrGame.game_time_format is HH:MM
-                    const calTime = gameTime.substring(0, 5);
-                    const mhrTime = mhrGame.game_time_format.substring(0, 5);
-                    if (calTime !== mhrTime) return false;
-                }
+                const calTime = normalizeTimeToHHMM(gameTime);
+                const mhrTime = normalizeTimeToHHMM(mhrGame.game_time_format || mhrGame.game_time);
+                if (calTime && mhrTime && calTime !== mhrTime) return false;
 
                 return true;
             });
@@ -664,9 +713,14 @@ export async function transformCalendarEvents(
                 opponentTeamId = String(matchedGame.opponent_team_id);
                 debugLog(`[MHR] Using opponent_team_id from matched game: ${opponentTeamId}`);
             } else if (matchedGame.home_team_id && matchedGame.visitor_team_id) {
-                // Determine based on which team is the opponent
-                opponentTeamId = isHomeGame ? String(matchedGame.visitor_team_id) : String(matchedGame.home_team_id);
-                debugLog(`[MHR] Using team ID from matched game (${isHomeGame ? 'visitor' : 'home'}): ${opponentTeamId}`);
+                // Determine based on which team is NOT us (independent of calendar overrides).
+                const ourId = settings.mhrTeamId ? String(settings.mhrTeamId) : '';
+                const homeId = String(matchedGame.home_team_id);
+                const visitorId = String(matchedGame.visitor_team_id);
+                if (ourId && homeId === ourId) opponentTeamId = visitorId;
+                else if (ourId && visitorId === ourId) opponentTeamId = homeId;
+                else opponentTeamId = isHomeGame ? visitorId : homeId;
+                debugLog(`[MHR] Using team ID from matched game (resolved opponent): ${opponentTeamId}`);
             }
         }
         
@@ -1032,11 +1086,23 @@ function parseEventSummary(summary: string, identifiers: string[]): { opponent: 
             }
         }
     } else {
-        // No separator found - check if the title is just an opponent name
-        // If the summary doesn't contain any of our team identifiers, treat it as opponent
-        if (!isUs(cleanSummary, identifiers)) {
-            // Title is likely just the opponent name
-            // Default to home game (common convention when only opponent is listed)
+        // No separator found.
+        //
+        // Historically we treated any non-"us" title as an opponent name, but that
+        // causes non-game calendar entries (Team Photo, Breakfast, Concussion Testing, etc.)
+        // to be misclassified as games.
+        //
+        // New rule: if there's no explicit separator, only treat it as a game when:
+        // - The title includes one of our identifiers (e.g. "Jr Canes Black"), OR
+        // - The title explicitly includes (Home) or (Away), which is a user override.
+        //
+        // This preserves safety (don't misclassify random events), while allowing
+        // explicit calendar overrides like "Opponent (Away)" to be treated as games
+        // even when our team name isn't present in the title.
+        if (explicitHomeAway && cleanSummary && !isUs(cleanSummary, identifiers)) {
+            opponent = cleanSummary;
+            isHome = explicitHomeAway === 'home';
+        } else if (isUs(cleanSummary, identifiers)) {
             opponent = cleanSummary;
             isHome = true;
         }

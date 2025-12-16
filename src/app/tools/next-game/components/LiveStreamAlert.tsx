@@ -9,6 +9,37 @@ interface LiveStreamAlertProps {
     liveGame?: EnrichedGame;
     liveStream?: YouTubeVideo;
     isStandalone?: boolean;
+    ourTeamName?: string;
+    identifiers?: string[];
+}
+
+function isUsTeam(name: string | undefined, ourTeamName?: string, identifiers?: string[]): boolean {
+    if (!name) return false;
+    const lower = name.toLowerCase();
+
+    if (ourTeamName && lower.includes(ourTeamName.toLowerCase())) return true;
+
+    if (Array.isArray(identifiers)) {
+        for (const id of identifiers) {
+            if (typeof id === 'string' && id.trim() && lower.includes(id.toLowerCase())) return true;
+        }
+    }
+
+    return false;
+}
+
+function getOpponentLabel(game: EnrichedGame, ourTeamName?: string, identifiers?: string[]): string {
+    const home = game.home_team_name;
+    const visitor = game.visitor_team_name;
+
+    const usHome = isUsTeam(home, ourTeamName, identifiers);
+    const usVisitor = isUsTeam(visitor, ourTeamName, identifiers);
+
+    if (usHome && !usVisitor) return visitor || 'Game';
+    if (usVisitor && !usHome) return home ? `@ ${home}` : 'Game';
+
+    if (visitor && home) return `${visitor} @ ${home}`;
+    return visitor || home || 'Game';
 }
 
 /**
@@ -69,7 +100,7 @@ function parseScheduledTime(publishDate?: string): Date | null {
     return null;
 }
 
-export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = false }: LiveStreamAlertProps) {
+export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = false, ourTeamName, identifiers }: LiveStreamAlertProps) {
     const [isScheduledTimePassed, setIsScheduledTimePassed] = useState(false);
 
     // Check if scheduled time has passed for upcoming streams
@@ -250,8 +281,9 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
     // Handle game-matched live stream
     if (!liveGame) return null;
     
-    const opponent = liveGame.opponent || 'Game';
-    const streamUrl = liveGame.liveStreamUrl;
+    const opponent = getOpponentLabel(liveGame, ourTeamName, identifiers);
+    const streamUrl = liveGame.liveStreamUrl ?? liveGame.upcomingStreamUrl;
+    const isLive = Boolean(liveGame.liveStreamUrl);
 
     if (!streamUrl) return null;
 
@@ -280,11 +312,15 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
             `}</style>
             
             <div className={cx('live-stream-alert', css({
-                background: 'linear-gradient(135deg, #dc2626 0%, #ea580c 100%)',
+                background: isLive
+                    ? 'linear-gradient(135deg, #dc2626 0%, #ea580c 100%)'
+                    : 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
                 borderRadius: '16px',
                 padding: '20px 24px',
                 marginBottom: '24px',
-                boxShadow: '0 8px 32px rgba(220, 38, 38, 0.3)',
+                boxShadow: isLive
+                    ? '0 8px 32px rgba(220, 38, 38, 0.3)'
+                    : '0 8px 32px rgba(37, 99, 235, 0.3)',
                 border: '2px solid rgba(255, 255, 255, 0.1)',
                 animation: 'slideDown 0.5s ease-out',
                 position: 'relative',
@@ -313,21 +349,23 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
                         alignItems: 'flex-start',
                     }
                 })}>
-                    {/* Live indicator and text */}
+                    {/* Live/Upcoming indicator and text */}
                     <div className={css({
                         display: 'flex',
                         alignItems: 'center',
                         gap: '12px',
                     })}>
-                        {/* Pulsing red dot */}
-                        <div className={css({
-                            width: '12px',
-                            height: '12px',
-                            backgroundColor: '#fff',
-                            borderRadius: '50%',
-                            animation: 'pulse 1.5s ease-in-out infinite',
-                            boxShadow: '0 0 0 0 rgba(255, 255, 255, 0.7)',
-                        })} />
+                        {/* Pulsing dot (only for live) */}
+                        {isLive && (
+                            <div className={css({
+                                width: '12px',
+                                height: '12px',
+                                backgroundColor: '#fff',
+                                borderRadius: '50%',
+                                animation: 'pulse 1.5s ease-in-out infinite',
+                                boxShadow: '0 0 0 0 rgba(255, 255, 255, 0.7)',
+                            })} />
+                        )}
                         
                         <div>
                             <div className={css({
@@ -338,7 +376,7 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
                                 letterSpacing: '0.05em',
                                 marginBottom: '4px',
                             })}>
-                                🔴 LIVE NOW
+                                {isLive ? '🔴 LIVE NOW' : '⏰ UPCOMING STREAM'}
                             </div>
                             <div className={css({
                                 fontSize: '18px',
@@ -361,7 +399,7 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
                             gap: '8px',
                             padding: '12px 24px',
                             backgroundColor: '#fff',
-                            color: '#dc2626',
+                            color: isLive ? '#dc2626' : '#2563eb',
                             fontSize: '16px',
                             fontWeight: '700',
                             borderRadius: '8px',
@@ -369,7 +407,7 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
                             transition: 'all 0.2s ease',
                             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
                             _hover: {
-                                backgroundColor: '#fef2f2',
+                                backgroundColor: isLive ? '#fef2f2' : '#eff6ff',
                                 transform: 'translateY(-2px)',
                                 boxShadow: '0 6px 16px rgba(0, 0, 0, 0.2)',
                             },
@@ -383,7 +421,7 @@ export default function LiveStreamAlert({ liveGame, liveStream, isStandalone = f
                         })}
                     >
                         <span>▶</span>
-                        Watch Stream
+                        {isLive ? 'Watch Stream' : 'View Stream'}
                     </a>
                 </div>
             </div>

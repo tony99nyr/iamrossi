@@ -17,6 +17,7 @@ import { containerStyle } from './styles';
 import type { EnrichedGame } from '@/utils/videoMatcher';
 import type { YouTubeVideo } from '@/lib/youtube-service';
 import type { CalendarSyncStatus } from '@/lib/kv';
+import type { FeaturedStream } from '@/lib/next-game/featured-stream';
 
 interface NextGameClientProps {
     futureGames: Game[];
@@ -31,9 +32,10 @@ interface NextGameClientProps {
     calendarSyncStatus: CalendarSyncStatus;
     liveGames: EnrichedGame[];
     activeLiveStream: YouTubeVideo | null;
+    featuredStream: FeaturedStream;
 }
 
-export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, calendarSyncStatus, liveGames, activeLiveStream }: NextGameClientProps) {
+export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, calendarSyncStatus, liveGames, activeLiveStream, featuredStream }: NextGameClientProps) {
     // State for accordion - first game expanded by default
     const [expandedGameId, setExpandedGameId] = useState<string | number | null>(
         futureGames.length > 0 ? (futureGames[0].game_nbr ?? null) : null
@@ -88,33 +90,27 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 onInfoClick={() => setIsCacheModalOpen(true)}
             />
             
-            {/* Active live stream alert - show above YouTube channel link if there's an active live/upcoming stream */}
-            {activeLiveStream && (
-                <LiveStreamAlert
-                    liveStream={activeLiveStream}
-                    isStandalone={true}
-                />
+            {/* Featured stream alert */}
+            {featuredStream?.kind === 'youtube' && (
+                <LiveStreamAlert liveStream={featuredStream.video} isStandalone={true} />
+            )}
+            {featuredStream?.kind === 'game' && (
+                <LiveStreamAlert liveGame={featuredStream.game} ourTeamName={settings.teamName} identifiers={settings.identifiers} />
             )}
 
             <SocialLinks streamState={
-                activeLiveStream?.videoType === 'live' || 
-                liveGames.some(game => {
-                    const enrichedGame = game as unknown as EnrichedGame;
-                    return enrichedGame.liveStreamUrl !== undefined;
-                })
+                featuredStream?.kind === 'youtube' && featuredStream.video.videoType === 'live'
                     ? 'live'
-                    : activeLiveStream?.videoType === 'upcoming' || 
-                      futureGames.some(game => {
-                          const enrichedGame = game as unknown as EnrichedGame;
-                          return enrichedGame.upcomingStreamUrl !== undefined;
-                      })
-                    ? 'upcoming'
-                    : null
+                    : featuredStream?.kind === 'game' && featuredStream.state === 'live'
+                        ? 'live'
+                        : featuredStream?.kind === 'game' && featuredStream.state === 'upcoming'
+                            ? 'upcoming'
+                            : null
             } />
 
             {/* Live stream alert - show if any live games (matched to games) */}
             {liveGames.length > 0 && !activeLiveStream && (
-                <LiveStreamAlert liveGame={liveGames[0]} />
+                <LiveStreamAlert liveGame={liveGames[0]} ourTeamName={settings.teamName} identifiers={settings.identifiers} />
             )}
 
             <UpcomingGamesList

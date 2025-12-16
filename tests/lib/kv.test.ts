@@ -8,12 +8,15 @@ import {
   setSettings,
   getSchedule,
   setSchedule,
+  getStatSessions,
+  saveStatSession,
   type Exercise,
   type RehabEntry,
   type Settings,
   type Game,
+  type StatSession,
 } from '@/lib/kv';
-import { resetMockStore } from '../mocks/redis.mock';
+import { resetMockStore, seedMockStore, getMockStore } from '../mocks/redis.mock';
 
 describe('KV Operations', () => {
   beforeEach(() => {
@@ -200,5 +203,83 @@ describe('KV Operations', () => {
 
     // Note: Full retry testing would require more complex mocking
     // This validates the happy path works correctly
+  });
+
+  describe('Stat Session operations', () => {
+    it('should return empty array when no sessions exist', async () => {
+      const sessions = await getStatSessions();
+      expect(sessions).toEqual([]);
+    });
+
+    it('should coerce legacy/malformed sessions instead of throwing', async () => {
+      seedMockStore({
+        'game:stats': [
+          {
+            id: 's1',
+            date: '2025-12-01T18:00:00.000Z',
+            opponent: 'Opponent',
+            recorderName: 'Recorder',
+            // Legacy: missing usStats/themStats/events
+            isCustomGame: true,
+            startTime: 1733076000000,
+          },
+        ],
+      });
+
+      const sessions = await getStatSessions();
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]?.id).toBe('s1');
+      expect(sessions[0]?.usStats.goals).toBe(0);
+      expect(sessions[0]?.themStats.goals).toBe(0);
+      expect(Array.isArray(sessions[0]?.events)).toBe(true);
+    });
+
+    it('should infer startTime from date when missing', async () => {
+      seedMockStore({
+        'game:stats': [
+          {
+            id: 's2',
+            date: '2025-12-01T18:00:00.000Z',
+            opponent: 'Opponent',
+            recorderName: 'Recorder',
+            isCustomGame: true,
+            usStats: { goals: 2 },
+            themStats: { goals: 1 },
+            events: [],
+          },
+        ],
+      });
+
+      const sessions = await getStatSessions();
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]?.startTime).toBeGreaterThan(0);
+    });
+
+    it('should drop completely invalid entries and still allow saving new sessions', async () => {
+      seedMockStore({
+        'game:stats': [
+          // Missing required fields like id/opponent/etc.
+          { nope: true },
+        ],
+      });
+
+      const newSession: StatSession = {
+        id: 'new',
+        date: '2025-12-02T18:00:00.000Z',
+        opponent: 'New Opponent',
+        recorderName: 'Recorder',
+        usStats: { shots: 0, faceoffWins: 0, faceoffLosses: 0, faceoffTies: 0, chances: 0, goals: 0 },
+        themStats: { shots: 0, faceoffWins: 0, faceoffLosses: 0, faceoffTies: 0, chances: 0, goals: 0 },
+        events: [],
+        isCustomGame: true,
+        startTime: 1733162400000,
+      };
+
+      await saveStatSession(newSession);
+
+      const stored = getMockStore('game:stats') as unknown;
+      expect(Array.isArray(stored)).toBe(true);
+      expect((stored as StatSession[]).some((s) => s.id === 'new')).toBe(true);
+    });
   });
 });

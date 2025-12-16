@@ -1,5 +1,6 @@
 import { createClient } from 'redis';
 import type { Exercise, RehabEntry, Settings, Game, WebVitalSample, Player, StatSession, MHRScheduleGame } from '@/types';
+import { statSessionSchema } from '@/lib/validation';
 
 // Create Redis client
 // Use TEST_REDIS_URL in test environments to avoid wiping production data
@@ -402,7 +403,68 @@ export async function setRoster(roster: Player[]): Promise<void> {
 export async function getStatSessions(): Promise<StatSession[]> {
   await ensureConnected();
   const data = await redis.get(KV_KEYS.STATS);
-  return data ? JSON.parse(data) : [];
+  if (!data) return [];
+
+  try {
+    const parsed: unknown = JSON.parse(data);
+    if (!Array.isArray(parsed)) return [];
+
+    const validSessions: StatSession[] = [];
+
+    for (const raw of parsed) {
+      const coerced = coerceStatSession(raw);
+      if (coerced) validSessions.push(coerced);
+    }
+
+    return validSessions;
+  } catch (error) {
+    console.error('[KV] Failed to parse stat sessions:', error);
+    return [];
+  }
+}
+
+function coerceStatSession(raw: unknown): StatSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const obj = raw as Record<string, unknown>;
+
+  const date = typeof obj.date === 'string' ? obj.date : '';
+  const inferredStartTime = (() => {
+    if (typeof obj.startTime === 'number') return obj.startTime;
+    if (typeof obj.startTime === 'string') {
+      const n = Number(obj.startTime);
+      if (Number.isFinite(n)) return n;
+    }
+    if (typeof date === 'string' && date.trim()) {
+      const t = new Date(date).getTime();
+      return Number.isFinite(t) ? t : undefined;
+    }
+    return undefined;
+  })();
+
+  const candidate: unknown = {
+    ...obj,
+    // Common legacy coercions
+    gameId: obj.gameId === undefined || obj.gameId === null ? undefined : String(obj.gameId),
+    endTime: typeof obj.endTime === 'number'
+      ? obj.endTime
+      : typeof obj.endTime === 'string'
+        ? Number(obj.endTime)
+        : undefined,
+    startTime: inferredStartTime,
+    events: Array.isArray(obj.events) ? obj.events : [],
+    usStats: obj.usStats && typeof obj.usStats === 'object' ? obj.usStats : {},
+    themStats: obj.themStats && typeof obj.themStats === 'object' ? obj.themStats : {},
+  };
+
+  const result = statSessionSchema.safeParse(candidate);
+  if (!result.success) return null;
+  return result.data;
+}
+
+export async function setStatSessions(sessions: StatSession[]): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.STATS, JSON.stringify(sessions));
 }
 
 export async function saveStatSession(session: StatSession): Promise<void> {
