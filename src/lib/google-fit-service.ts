@@ -230,10 +230,14 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
     const accessToken = await getAccessToken();
     
     // Check if there are workout sessions on this date before fetching HR data
+    // For today, always fetch HR data even if no sessions found (workout may be syncing)
     const workoutSessions = await getWorkoutSessionsForDate(accessToken, date);
+    console.log(`[Google Fit] Found ${workoutSessions.length} workout sessions for ${date}`);
     
-    // Only fetch HR data if there are workout sessions on this date
-    if (workoutSessions.length === 0) {
+    // Only skip HR fetch for past dates with no workout sessions
+    // For today, always fetch HR data (workout may have been logged but sessions not synced yet)
+    if (workoutSessions.length === 0 && !isToday) {
+      console.log(`[Google Fit] No workout sessions found for past date ${date}, skipping HR fetch`);
       // Return empty data structure (no workouts, so no HR data)
       // Cache this result to avoid checking sessions repeatedly
       const emptyHeartRate: GoogleFitHeartRate = {
@@ -241,7 +245,7 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
         lastSynced: new Date().toISOString(),
       };
       
-      const cacheDuration = isToday ? 15 * 60 : 24 * 60 * 60;
+      const cacheDuration = 24 * 60 * 60; // 24 hours for past dates
       try {
         await kvSet(cacheKey, emptyHeartRate, { ex: cacheDuration });
       } catch (error) {
@@ -254,16 +258,19 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
     const heartRateStreamId = await getMergedHeartRateStreamId(accessToken);
 
     // Convert date to start and end of day in nanoseconds
-    const dateObj = new Date(`${date}T00:00:00`);
-    const startOfDay = new Date(dateObj);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(dateObj);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Use UTC to avoid timezone issues (Google Fit API expects UTC timestamps)
+    const [year, month, day] = date.split('-').map(Number);
+    const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const endOfDay = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
 
     const startNs = `${Math.trunc(startOfDay.getTime())}000000`;
     const endNs = `${Math.trunc(endOfDay.getTime())}000000`;
 
+    console.log(`[Google Fit] Fetching HR data for ${date}: ${startNs} to ${endNs} (${startOfDay.toISOString()} to ${endOfDay.toISOString()})`);
+    
     const values = await getHeartRatePoints(accessToken, heartRateStreamId, startNs, endNs);
+    console.log(`[Google Fit] Found ${values.length} heart rate samples for ${date}`);
+    
     const stats = computeStats(values);
 
     const heartRate: GoogleFitHeartRate = {

@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const date = searchParams.get('date');
+    const forceRefresh = searchParams.get('forceRefresh') === 'true';
     
     if (!date) {
       return NextResponse.json(
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    const heartRate = await getDailyHeartRate(date);
+    const heartRate = await getDailyHeartRate(date, forceRefresh);
     return NextResponse.json(heartRate);
   } catch (error) {
     console.error('Error fetching Google Fit heart rate:', error);
