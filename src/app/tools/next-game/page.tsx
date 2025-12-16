@@ -57,12 +57,6 @@ function sanitizeGames(games: Game[]): Game[] {
     return (Array.isArray(games) ? games : []).filter((g): g is Game => isRecord(g));
 }
 
-/**
- * Normalize team name for matching (strips non-alphanumeric, lowercases)
- */
-function normalizeTeamName(name: string | undefined): string {
-    return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
 
 /**
  * Safely enrich a past game with rating data from the combined schedule.

@@ -29,7 +29,20 @@ export default function GameListItem({
     onGameClick 
 }: GameListItemProps) {
     const isPlaceholder = game.isPlaceholder;
-    const displayDate = game.game_date_format_pretty;
+    
+    // Format date more compactly for list view (remove weekday to save space)
+    let displayDate = game.game_date_format_pretty;
+    if (displayDate) {
+        // Remove any line breaks or extra whitespace
+        displayDate = displayDate.replace(/\s+/g, ' ').trim();
+        // Remove weekday prefix (e.g., "Mon, Oct 24" -> "Oct 24")
+        if (displayDate.includes(',')) {
+            const parts = displayDate.split(',');
+            if (parts.length > 1) {
+                displayDate = parts.slice(1).join(',').trim();
+            }
+        }
+    }
 
     // For past games, calculate score
     // Check both possible field name variations from MHR
@@ -85,7 +98,19 @@ export default function GameListItem({
                 onClick={(e) => !isPlaceholder && onGameClick(game.game_nbr, e)}
                 style={{ cursor: isPlaceholder ? 'default' : 'pointer' }}
             >
-                <span className={cx('game-date', dateStyle)}>{displayDate}</span>
+                <span 
+                    className={cx('game-date', dateStyle)}
+                    style={{
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        display: 'inline-block',
+                        maxWidth: '100px',
+                        flexShrink: 0,
+                    }}
+                >
+                    {displayDate}
+                </span>
                 <span className={cx('game-opponent', opponentStyle)}>
                     <span>{displayOpponent}</span>
                     {!isPlaceholder && !isPastGame && (

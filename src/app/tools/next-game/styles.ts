@@ -81,13 +81,15 @@ export const listItemStyle = css({
     display: 'flex',
     flexWrap: { base: 'wrap', sm: 'nowrap' },
     justifyContent: 'space-between',
-    alignItems: { base: 'center', sm: 'center' },
+    alignItems: 'center',
     padding: '0.75rem 1rem',
     background: 'rgba(255, 255, 255, 0.02)',
     borderRadius: '8px',
     transition: 'all 0.2s ease',
     cursor: 'pointer',
     border: '1px solid rgba(255, 255, 255, 0.05)',
+    gap: '1rem',
+    minWidth: 0, // Allow flex items to shrink below their content size
     '&:hover': {
         background: 'rgba(255, 255, 255, 0.05)',
         borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -108,12 +110,18 @@ export const listItemActiveStyle = css({
 
 export const dateStyle = css({
     color: '#888',
-    width: { base: '50%', sm: '120px' },
+    width: { base: '50%', sm: '100px' },
+    minWidth: { base: '50%', sm: '100px' },
+    maxWidth: { base: '50%', sm: '100px' },
     fontFamily: 'var(--font-geist-mono)',
     fontSize: '0.9rem',
-    paddingRight: { base: '0', sm: '1.5rem' },
-    whiteSpace: 'nowrap',
+    whiteSpace: 'nowrap !important',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    flexShrink: 0,
+    flexGrow: 0,
     order: { base: 1, sm: 0 },
+    lineHeight: '1.2',
 });
 
 export const opponentStyle = css({

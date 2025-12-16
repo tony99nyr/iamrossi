@@ -10,6 +10,7 @@ import HeroSection from './components/HeroSection';
 import SocialLinks from './components/SocialLinks';
 import UpcomingGamesList from './components/UpcomingGamesList';
 import PastGamesSection from './components/PastGamesSection';
+import RatingMathTable from './components/RatingMathTable';
 import SyncStatusIndicator from '@/components/SyncStatusIndicator';
 import CacheStatusFooter from '@/components/CacheStatusFooter';
 import LiveStreamAlert from './components/LiveStreamAlert';
@@ -33,6 +34,24 @@ interface NextGameClientProps {
     liveGames: EnrichedGame[];
     activeLiveStream: YouTubeVideo | null;
     featuredStream: FeaturedStream;
+}
+
+/**
+ * Get current team rating from the most recent game with a rating
+ */
+function getCurrentTeamRating(games: Game[], ourTeamId: string): number | null {
+    // Find the most recent game where we have a rating
+    for (const game of games) {
+        const isHome = String(game.game_home_team) === String(ourTeamId);
+        const ourRating = isHome 
+            ? (game.home_team_rating ? parseFloat(String(game.home_team_rating)) : null)
+            : (game.visitor_team_rating ? parseFloat(String(game.visitor_team_rating)) : null);
+        
+        if (ourRating !== null && !isNaN(ourRating)) {
+            return ourRating;
+        }
+    }
+    return null;
 }
 
 export default function NextGameClient({ futureGames, pastGames, settings, syncStatus, calendarSyncStatus, liveGames, activeLiveStream, featuredStream }: NextGameClientProps) {
@@ -125,6 +144,12 @@ export default function NextGameClient({ futureGames, pastGames, settings, syncS
                 expandedGameId={expandedGameId}
                 onGameClick={handleGameClick}
                 mhrTeamId={settings.mhrTeamId}
+            />
+
+            <RatingMathTable
+                games={pastGames}
+                ourTeamId={settings.mhrTeamId}
+                ourCurrentRating={getCurrentTeamRating(pastGames, settings.mhrTeamId)}
             />
             
             <CacheStatusFooter 
