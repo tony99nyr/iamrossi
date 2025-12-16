@@ -61,9 +61,10 @@ export default function GameListItem({
     const won = hasValidScores && ourScore > theirScore;
 
     const opponentName = isHomeGame ? game.visitor_team_name : game.home_team_name;
+    // For past games, don't show "@ " prefix - just show opponent name
     const displayOpponent = isPlaceholder 
         ? (game.placeholderLabel || 'Event')
-        : (isHomeGame ? opponentName : '@ ' + opponentName);
+        : (isPastGame ? opponentName : (isHomeGame ? opponentName : '@ ' + opponentName));
 
     const isLocalRink = game.rink_name?.toLowerCase().includes('raleigh') ||
                        game.rink_name?.toLowerCase().includes('wake') ||
@@ -87,7 +88,7 @@ export default function GameListItem({
                 <span className={cx('game-date', dateStyle)}>{displayDate}</span>
                 <span className={cx('game-opponent', opponentStyle)}>
                     <span>{displayOpponent}</span>
-                    {!isPlaceholder && (
+                    {!isPlaceholder && !isPastGame && (
                         <span className={cx('badges-container', badgesContainerStyle)}>
                             {isHomeGame && <span className={cx('home-badge', homeBadgeSmallStyle)}>HOME</span>}
                             {isLocalRink && <span className={cx('local-badge', localBadgeSmallStyle)}>LOCAL</span>}
@@ -108,6 +109,7 @@ export default function GameListItem({
                     </span>
                 )}
             </div>
+
 
             {/* Accordion Content */}
             {isExpanded && !isPlaceholder && (

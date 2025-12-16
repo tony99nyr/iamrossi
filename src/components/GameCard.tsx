@@ -276,7 +276,72 @@ const videoLinksContainerStyle = css({
     flexWrap: 'wrap'
 });
 
-export default function GameCard({ title, game, isPastGame = false }: GameCardProps) {
+// Styles for rating differential display
+const ratingDiffContainerStyle = css({
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '1rem',
+    padding: '0.5rem 0.75rem',
+    margin: '0.5rem 0',
+    background: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    flexWrap: 'wrap',
+    maxWidth: 'fit-content',
+    marginInline: 'auto',
+});
+
+const diffItemStyle = css({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    fontFamily: 'var(--font-geist-mono)',
+    fontSize: '0.9rem',
+});
+
+const diffLabelStyle = css({
+    color: '#666',
+    fontSize: '0.75rem',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    fontWeight: '600',
+});
+
+const diffValueStyle = css({
+    color: '#aaa',
+    fontWeight: '600',
+});
+
+const performanceBadgeStyle = css({
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '4px',
+    fontSize: '0.8rem',
+    fontWeight: '700',
+    letterSpacing: '0.5px',
+});
+
+const performancePositiveStyle = css({
+    background: 'rgba(74, 222, 128, 0.15)',
+    color: '#4ade80',
+    border: '1px solid rgba(74, 222, 128, 0.3)',
+});
+
+const performanceNegativeStyle = css({
+    background: 'rgba(248, 113, 113, 0.15)',
+    color: '#f87171',
+    border: '1px solid rgba(248, 113, 113, 0.3)',
+});
+
+const performanceNeutralStyle = css({
+    background: 'rgba(250, 204, 21, 0.15)',
+    color: '#facc15',
+    border: '1px solid rgba(250, 204, 21, 0.3)',
+});
+
+export default function GameCard({ title, game, isHome = false, isPastGame = false }: GameCardProps) {
     const year = new Date().getFullYear();
 
     if (!game) {
@@ -288,6 +353,86 @@ export default function GameCard({ title, game, isPastGame = false }: GameCardPr
         );
     }
 
+    // For past games, we always show our team on the right side regardless of home/away
+    // This simplifies the display since home/away doesn't matter for historical results
+    // We swap the display if we're the visitor (not home) to put us on the right
+    const shouldSwapForDisplay = isPastGame && !isHome;
+    
+    // Determine which team data to show on each side
+    const leftTeam = shouldSwapForDisplay ? {
+        name: game.home_team_name,
+        logo: game.home_team_logo,
+        teamId: game.game_home_team,
+        record: game.home_team_record,
+        rating: game.home_team_rating,
+    } : {
+        name: game.visitor_team_name,
+        logo: game.visitor_team_logo,
+        teamId: game.game_visitor_team,
+        record: game.visitor_team_record,
+        rating: game.visitor_team_rating,
+    };
+    
+    const rightTeam = shouldSwapForDisplay ? {
+        name: game.visitor_team_name,
+        logo: game.visitor_team_logo,
+        teamId: game.game_visitor_team,
+        record: game.visitor_team_record,
+        rating: game.visitor_team_rating,
+    } : {
+        name: game.home_team_name,
+        logo: game.home_team_logo,
+        teamId: game.game_home_team,
+        record: game.home_team_record,
+        rating: game.home_team_rating,
+    };
+
+    // Calculate rating differential
+    const parseRating = (rating: string | number | undefined): number | null => {
+        if (rating === undefined || rating === null) return null;
+        const num = typeof rating === 'number' ? rating : parseFloat(String(rating));
+        return isNaN(num) ? null : num;
+    };
+
+    const ourRating = isHome ? parseRating(game.home_team_rating) : parseRating(game.visitor_team_rating);
+    const opponentRating = isHome ? parseRating(game.visitor_team_rating) : parseRating(game.home_team_rating);
+    const hasRatings = ourRating !== null && opponentRating !== null;
+    const ratingDiff = hasRatings ? ourRating - opponentRating : null;
+    const expectedGoalDiff = ratingDiff !== null ? Math.round(ratingDiff) : null;
+
+    // For past games, calculate actual goal differential
+    // Check both field name variations (MHR uses game_home_score, transformed uses home_team_score)
+    const gameWithScores = game as Game & { game_home_score?: number; game_visitor_score?: number };
+    const homeScore = game.home_team_score ?? gameWithScores.game_home_score;
+    const visitorScore = game.visitor_team_score ?? gameWithScores.game_visitor_score;
+    const hasValidScores = isPastGame && 
+        homeScore !== undefined && visitorScore !== undefined &&
+        typeof homeScore === 'number' && typeof visitorScore === 'number' &&
+        !(homeScore === 0 && visitorScore === 0) &&
+        !(homeScore === 999 && visitorScore === 999) &&
+        homeScore >= 0 && homeScore <= 50 && visitorScore >= 0 && visitorScore <= 50;
+    
+    const ourScore = isHome ? homeScore : visitorScore;
+    const theirScore = isHome ? visitorScore : homeScore;
+    const actualGoalDiff = hasValidScores ? (ourScore as number) - (theirScore as number) : null;
+    
+    // Performance vs expectation
+    const performanceDiff = (actualGoalDiff !== null && expectedGoalDiff !== null) 
+        ? actualGoalDiff - expectedGoalDiff 
+        : null;
+
+    const formatDiff = (diff: number): string => {
+        if (diff > 0) return `+${diff}`;
+        return `${diff}`;
+    };
+
+    const getPerformanceStyle = () => {
+        if (performanceDiff === null) return null;
+        if (performanceDiff > 0) return performancePositiveStyle;
+        if (performanceDiff < 0) return performanceNegativeStyle;
+        return performanceNeutralStyle;
+    };
+
     return (
         <div className={cx('game-card', cardStyle, game.isPlaceholder && placeholderCardStyle)}>
             <div className={cx('game-content', contentStyle)}>
@@ -297,96 +442,123 @@ export default function GameCard({ title, game, isPastGame = false }: GameCardPr
                 </div>
                 
                 <div className={cx('matchup', matchupStyle)}>
+                    {/* Left side team (opponent for past games, visitor for upcoming) */}
                     <div className={cx('team', teamStyle)}>
-                        {game.game_visitor_team ? (
+                        {leftTeam.teamId ? (
                             <a 
-                                href={`https://myhockeyrankings.com/team-info/${game.game_visitor_team}/${year}`}
+                                href={`https://myhockeyrankings.com/team-info/${leftTeam.teamId}/${year}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={cx('team-link', teamLinkStyle)}
                             >
-                                {isValidLogoUrl(game.visitor_team_logo) && (
+                                {isValidLogoUrl(leftTeam.logo) && (
                                     <NextImage
-                                        src={game.visitor_team_logo!}
-                                        alt="Visitor Logo"
+                                        src={leftTeam.logo!}
+                                        alt="Team Logo"
                                         className={logoStyle}
                                         {...TEAM_LOGO_PROPS}
                                     />
                                 )}
-                                <span className={teamNameStyle}>{game.visitor_team_name}</span>
+                                <span className={teamNameStyle}>{leftTeam.name}</span>
                             </a>
                         ) : (
                             <div className={cx('team-link', teamLinkStyle, teamLinkDisabledStyle)}>
-                                {isValidLogoUrl(game.visitor_team_logo) && (
+                                {isValidLogoUrl(leftTeam.logo) && (
                                     <NextImage
-                                        src={game.visitor_team_logo!}
-                                        alt="Visitor Logo"
+                                        src={leftTeam.logo!}
+                                        alt="Team Logo"
                                         className={cx('team-logo', logoStyle)}
                                         {...TEAM_LOGO_PROPS}
                                     />
                                 )}
-                                <span className={cx('team-name', teamNameStyle)}>{game.visitor_team_name}</span>
+                                <span className={cx('team-name', teamNameStyle)}>{leftTeam.name}</span>
                             </div>
                         )}
                         <div className={statsContainerStyle}>
-                            {game.visitor_team_record && (
+                            {leftTeam.record && (
                                 <div className={statValueStyle}>
-                                    <span className={statLabelStyle}>Record:</span> {game.visitor_team_record}
+                                    <span className={statLabelStyle}>Record:</span> {leftTeam.record}
                                 </div>
                             )}
-                            {game.visitor_team_rating && (
+                            {leftTeam.rating && (
                                 <div className={statValueStyle}>
-                                    <span className={statLabelStyle}>Rating:</span> {game.visitor_team_rating}
+                                    <span className={statLabelStyle}>Rating:</span> {leftTeam.rating}
                                 </div>
                             )}
                         </div>
                     </div>
-                    <div className={cx('vs-label', vsStyle)}>AT</div>
+                    {/* VS/AT label - show VS for past games, AT for upcoming */}
+                    <div className={cx('vs-label', vsStyle)}>{isPastGame ? 'VS' : 'AT'}</div>
+                    {/* Right side team (our team for past games, home team for upcoming) */}
                     <div className={cx('team', teamStyle)}>
-                        {game.game_home_team ? (
+                        {rightTeam.teamId ? (
                             <a 
-                                href={`https://myhockeyrankings.com/team-info/${game.game_home_team}/${year}`}
+                                href={`https://myhockeyrankings.com/team-info/${rightTeam.teamId}/${year}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={cx('team-link', teamLinkStyle)}
                             >
-                                {isValidLogoUrl(game.home_team_logo) && (
+                                {isValidLogoUrl(rightTeam.logo) && (
                                     <NextImage
-                                        src={game.home_team_logo!}
-                                        alt="Home Logo"
+                                        src={rightTeam.logo!}
+                                        alt="Team Logo"
                                         className={cx('team-logo', logoStyle)}
                                         {...TEAM_LOGO_PROPS}
                                     />
                                 )}
-                                <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
+                                <span className={cx('team-name', teamNameStyle)}>{rightTeam.name}</span>
                             </a>
                         ) : (
                             <div className={cx('team-link', teamLinkStyle, teamLinkDisabledStyle)}>
-                                {isValidLogoUrl(game.home_team_logo) && (
+                                {isValidLogoUrl(rightTeam.logo) && (
                                     <NextImage
-                                        src={game.home_team_logo!}
-                                        alt="Home Logo"
+                                        src={rightTeam.logo!}
+                                        alt="Team Logo"
                                         className={cx('team-logo', logoStyle)}
                                         {...TEAM_LOGO_PROPS}
                                     />
                                 )}
-                                <span className={cx('team-name', teamNameStyle)}>{game.home_team_name}</span>
+                                <span className={cx('team-name', teamNameStyle)}>{rightTeam.name}</span>
                             </div>
                         )}
                         <div className={statsContainerStyle}>
-                            {game.home_team_record && (
+                            {rightTeam.record && (
                                 <div className={statValueStyle}>
-                                    <span className={statLabelStyle}>Record:</span> {game.home_team_record}
+                                    <span className={statLabelStyle}>Record:</span> {rightTeam.record}
                                 </div>
                             )}
-                            {game.home_team_rating && (
+                            {rightTeam.rating && (
                                 <div className={statValueStyle}>
-                                    <span className={statLabelStyle}>Rating:</span> {game.home_team_rating}
+                                    <span className={statLabelStyle}>Rating:</span> {rightTeam.rating}
                                 </div>
                             )}
                         </div>
                     </div>
                 </div>
+
+                {/* Rating Differential Analysis */}
+                {hasRatings && expectedGoalDiff !== null && (
+                    <div className={cx('rating-diff-container', ratingDiffContainerStyle)}>
+                        <div className={cx('diff-item', diffItemStyle)}>
+                            <span className={cx('diff-label', diffLabelStyle)}>Expected:</span>
+                            <span className={cx('diff-value', diffValueStyle)}>{formatDiff(expectedGoalDiff)}</span>
+                        </div>
+                        {isPastGame && actualGoalDiff !== null && (
+                            <>
+                                <span style={{ color: '#444' }}>→</span>
+                                <div className={cx('diff-item', diffItemStyle)}>
+                                    <span className={cx('diff-label', diffLabelStyle)}>Actual:</span>
+                                    <span className={cx('diff-value', diffValueStyle)}>{formatDiff(actualGoalDiff)}</span>
+                                </div>
+                                {performanceDiff !== null && (
+                                    <span className={cx('performance-badge', performanceBadgeStyle, getPerformanceStyle())}>
+                                        {performanceDiff > 0 ? `+${performanceDiff}` : performanceDiff === 0 ? '=' : `${performanceDiff}`}
+                                    </span>
+                                )}
+                            </>
+                        )}
+                    </div>
+                )}
 
                 <div className={cx('location', locationStyle)}>
                     <span className={cx('rink-label', rinkLabelStyle)}>Rink:</span>

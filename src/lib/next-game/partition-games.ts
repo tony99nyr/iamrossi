@@ -40,6 +40,21 @@ function getGameStartUtc(game: Game, timeZone: string): Date | null {
   return parseDateTimeInTimeZoneToUtc(dateStr, timeStr, timeZone);
 }
 
+/**
+ * For games with unknown time, check if the DATE is clearly in the past.
+ * Returns end-of-day UTC for the game date if valid, null otherwise.
+ */
+function getGameDateEndUtc(game: Game, timeZone: string): Date | null {
+  if (game.isPlaceholder) return null;
+
+  const dateStr = game.game_date_format || game.game_date;
+  if (typeof dateStr !== 'string') return null;
+
+  // Parse end-of-day (23:59:59) to be conservative - game could have been late
+  const endOfDay = parseDateTimeInTimeZoneToUtc(dateStr, '23:59:59', timeZone);
+  return endOfDay;
+}
+
 function getPlaceholderEndUtc(game: Game): Date | null {
   if (!game.isPlaceholder) return null;
   if (typeof game.placeholderEndDate !== 'string' || !game.placeholderEndDate.trim()) return null;
@@ -65,7 +80,8 @@ export function partitionNextGameSchedule(
     const placeholderEndUtc = getPlaceholderEndUtc(game);
     const placeholderStartUtc = getPlaceholderStartUtc(game);
     const startUtc = getGameStartUtc(game, options.timeZone);
-    return { game, startUtc, placeholderEndUtc, placeholderStartUtc };
+    const dateEndUtc = getGameDateEndUtc(game, options.timeZone);
+    return { game, startUtc, placeholderEndUtc, placeholderStartUtc, dateEndUtc };
   });
 
   const future: typeof entries = [];
@@ -79,9 +95,15 @@ export function partitionNextGameSchedule(
       continue;
     }
 
-    // Unknown-time games stay upcoming (we can't reliably classify them as past).
+    // For games with unknown time but valid date: check if the DATE is clearly in the past.
+    // If the end of the game date has passed (plus grace), treat it as past.
     if (!entry.startUtc) {
-      future.push(entry);
+      if (entry.dateEndUtc && now.getTime() >= entry.dateEndUtc.getTime() + options.upcomingGracePeriodMs) {
+        past.push(entry);
+      } else {
+        // Date is today/future or couldn't parse date - keep in upcoming
+        future.push(entry);
+      }
       continue;
     }
 
@@ -92,11 +114,11 @@ export function partitionNextGameSchedule(
     }
   }
 
-  // Sort: future ascending (unknown-time last), past descending.
+  // Sort: future ascending (unknown-time games use dateEndUtc, then last), past descending.
   // For placeholders, use placeholderStartUtc for chronological ordering.
   future.sort((a, b) => {
-    const aTime = a.startUtc ?? a.placeholderStartUtc;
-    const bTime = b.startUtc ?? b.placeholderStartUtc;
+    const aTime = a.startUtc ?? a.placeholderStartUtc ?? a.dateEndUtc;
+    const bTime = b.startUtc ?? b.placeholderStartUtc ?? b.dateEndUtc;
     if (!aTime && !bTime) return 0;
     if (!aTime) return 1;
     if (!bTime) return -1;
@@ -104,8 +126,8 @@ export function partitionNextGameSchedule(
   });
 
   past.sort((a, b) => {
-    const aTime = a.startUtc?.getTime() ?? a.placeholderStartUtc?.getTime() ?? a.placeholderEndUtc?.getTime() ?? 0;
-    const bTime = b.startUtc?.getTime() ?? b.placeholderStartUtc?.getTime() ?? b.placeholderEndUtc?.getTime() ?? 0;
+    const aTime = a.startUtc?.getTime() ?? a.placeholderStartUtc?.getTime() ?? a.dateEndUtc?.getTime() ?? a.placeholderEndUtc?.getTime() ?? 0;
+    const bTime = b.startUtc?.getTime() ?? b.placeholderStartUtc?.getTime() ?? b.dateEndUtc?.getTime() ?? b.placeholderEndUtc?.getTime() ?? 0;
     return bTime - aTime;
   });
 

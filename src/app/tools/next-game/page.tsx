@@ -57,6 +57,88 @@ function sanitizeGames(games: Game[]): Game[] {
     return (Array.isArray(games) ? games : []).filter((g): g is Game => isRecord(g));
 }
 
+/**
+ * Normalize team name for matching (strips non-alphanumeric, lowercases)
+ */
+function normalizeTeamName(name: string | undefined): string {
+    return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Safely enrich a past game with rating data from the combined schedule.
+ * 
+ * IMPORTANT: MHR data is the source of truth for game results.
+ * This function ONLY adds rating data - it NEVER modifies:
+ * - Team names
+ * - Team IDs (game_home_team, game_visitor_team)
+ * - Scores
+ * - Game info (date, time, location, etc.)
+ * 
+ * Ratings are matched by team name to ensure correct assignment.
+ */
+export function enrichPastGameWithRatings(
+    mhrGame: Game,
+    enrichedGame: Game,
+    ourTeamId: string
+): Game {
+    // Start with unchanged MHR game
+    const result: Game = { ...mhrGame };
+    
+    // Determine which team is "us" in each game using team IDs
+    const mhrHomeId = String(mhrGame.game_home_team || '');
+    const mhrVisitorId = String(mhrGame.game_visitor_team || '');
+    const enrichedHomeId = String(enrichedGame.game_home_team || '');
+    const enrichedVisitorId = String(enrichedGame.game_visitor_team || '');
+    
+    // Find where "us" is in each game
+    const mhrWeAreHome = mhrHomeId === ourTeamId;
+    const mhrWeAreVisitor = mhrVisitorId === ourTeamId;
+    const enrichedWeAreHome = enrichedHomeId === ourTeamId;
+    const enrichedWeAreVisitor = enrichedVisitorId === ourTeamId;
+    
+    // Get our rating and opponent rating from enriched data
+    let ourRatingFromEnriched: string | undefined;
+    let ourRecordFromEnriched: string | undefined;
+    let opponentRatingFromEnriched: string | undefined;
+    let opponentRecordFromEnriched: string | undefined;
+    
+    if (enrichedWeAreHome) {
+        ourRatingFromEnriched = enrichedGame.home_team_rating;
+        ourRecordFromEnriched = enrichedGame.home_team_record;
+        opponentRatingFromEnriched = enrichedGame.visitor_team_rating;
+        opponentRecordFromEnriched = enrichedGame.visitor_team_record;
+    } else if (enrichedWeAreVisitor) {
+        ourRatingFromEnriched = enrichedGame.visitor_team_rating;
+        ourRecordFromEnriched = enrichedGame.visitor_team_record;
+        opponentRatingFromEnriched = enrichedGame.home_team_rating;
+        opponentRecordFromEnriched = enrichedGame.home_team_record;
+    }
+    
+    // Apply ratings to result based on where "us" is in MHR data
+    if (mhrWeAreHome) {
+        result.home_team_rating = mhrGame.home_team_rating || ourRatingFromEnriched;
+        result.home_team_record = mhrGame.home_team_record || ourRecordFromEnriched;
+        result.visitor_team_rating = mhrGame.visitor_team_rating || opponentRatingFromEnriched;
+        result.visitor_team_record = mhrGame.visitor_team_record || opponentRecordFromEnriched;
+    } else if (mhrWeAreVisitor) {
+        result.visitor_team_rating = mhrGame.visitor_team_rating || ourRatingFromEnriched;
+        result.visitor_team_record = mhrGame.visitor_team_record || ourRecordFromEnriched;
+        result.home_team_rating = mhrGame.home_team_rating || opponentRatingFromEnriched;
+        result.home_team_record = mhrGame.home_team_record || opponentRecordFromEnriched;
+    }
+    
+    // Also set opponent_rating/opponent_record for convenience
+    if (mhrWeAreHome) {
+        result.opponent_rating = result.visitor_team_rating;
+        result.opponent_record = result.visitor_team_record;
+    } else if (mhrWeAreVisitor) {
+        result.opponent_rating = result.home_team_rating;
+        result.opponent_record = result.home_team_record;
+    }
+    
+    return result;
+}
+
 function sanitizeYouTubeVideos(videos: Awaited<ReturnType<typeof getYouTubeVideos>>): YouTubeVideo[] {
     // Keep only entries with required fields for downstream usage.
     // KV historically stored entries without `videoType`; default those to 'regular' for type safety.
@@ -251,6 +333,17 @@ export default async function NextGamePage() {
         timeZone: EASTERN_TIME_ZONE,
         upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
     });
+    
+    // Create a map from combined schedule to enrich past games with rating data
+    // The combined schedule has ratings from calendar sync that raw MHR doesn't have
+    // IMPORTANT: Normalize game_nbr to string to ensure consistent lookups (number vs string)
+    const combinedByGameNbr = new Map<string, Game>();
+    for (const game of combined) {
+        if (game.game_nbr) {
+            combinedByGameNbr.set(String(game.game_nbr), game);
+        }
+    }
+    
     // Filter for past games (current season only)
     // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
     const mhrYear = settings.mhrYear || '2025';
@@ -266,19 +359,47 @@ export default async function NextGamePage() {
             // Must be from current season.
             const dateStr = game.game_date_format || game.game_date;
             const timeStr = game.game_time_format || game.game_time;
-            const startUtc = parseDateTimeInTimeZoneToUtc(dateStr, timeStr, EASTERN_TIME_ZONE);
+            // Try to parse full date+time first
+            let startUtc = typeof timeStr === 'string' && timeStr.trim() 
+                ? parseDateTimeInTimeZoneToUtc(dateStr, timeStr, EASTERN_TIME_ZONE)
+                : null;
+            // For games with unknown/empty time, use end-of-day to check season bounds
+            if (!startUtc && typeof dateStr === 'string') {
+                startUtc = parseDateTimeInTimeZoneToUtc(dateStr, '23:59:59', EASTERN_TIME_ZONE);
+            }
             if (!startUtc) return false;
             if (startUtc < currentSeasonStart || startUtc >= currentSeasonEnd) return false;
 
             return true;
         })
+        .map((game: Game) => {
+            // Enrich with rating data from combined schedule if available
+            // MHR data is source of truth for game results - NEVER modify team names/scores/IDs
+            // Match ratings using team IDs rather than team names (names can vary between sources)
+            if (game.game_nbr) {
+                const enriched = combinedByGameNbr.get(String(game.game_nbr));
+                if (enriched) {
+                    return enrichPastGameWithRatings(game, enriched, settings.mhrTeamId);
+                }
+            }
+            return game;
+        })
         .sort((a: Game, b: Game) => {
             // Sort descending (most recent first)
-            const dateA = parseDateTimeInTimeZoneToUtc(a.game_date_format || a.game_date, a.game_time_format || a.game_time, EASTERN_TIME_ZONE);
-            const dateB = parseDateTimeInTimeZoneToUtc(b.game_date_format || b.game_date, b.game_time_format || b.game_time, EASTERN_TIME_ZONE);
+            const getGameTime = (g: Game) => {
+                const date = g.game_date_format || g.game_date;
+                const time = g.game_time_format || g.game_time;
+                if (typeof time === 'string' && time.trim()) {
+                    return parseDateTimeInTimeZoneToUtc(date, time, EASTERN_TIME_ZONE);
+                }
+                // For unknown times, use end-of-day
+                return parseDateTimeInTimeZoneToUtc(date, '23:59:59', EASTERN_TIME_ZONE);
+            };
+            const dateA = getGameTime(a);
+            const dateB = getGameTime(b);
             return (dateB?.getTime() ?? 0) - (dateA?.getTime() ?? 0);
         });
-
+    
     // Check cache for enriched games (video-matched)
     let enrichedPastGames: Game[];
     let cachedEnrichedGames: Awaited<ReturnType<typeof getEnrichedGames>> = null;
@@ -288,11 +409,18 @@ export default async function NextGamePage() {
         console.error('[Next Game] Failed to load enriched games cache from KV:', error);
     }
 
-    if (cachedEnrichedGames && !isEnrichedGamesCacheStale(cachedEnrichedGames)) {
+    const cacheIsStale = cachedEnrichedGames ? isEnrichedGamesCacheStale(cachedEnrichedGames) : true;
+    // Invalidate cache if game count changed (e.g., games moved from future to past)
+    const cacheCountMismatch = cachedEnrichedGames && cachedEnrichedGames.games.length !== pastGames.length;
+    // Also treat cache as invalid if it has no games but we have games to process
+    const cacheIsEmpty = (cachedEnrichedGames?.games?.length ?? 0) === 0 && pastGames.length > 0;
+    const shouldUseCache = cachedEnrichedGames && !cacheIsStale && !cacheIsEmpty && !cacheCountMismatch;
+
+    if (shouldUseCache && cachedEnrichedGames) {
         // Use cached enriched games
         enrichedPastGames = cachedEnrichedGames.games;
     } else {
-        // Cache miss or stale - compute and cache
+        // Cache miss, stale, or empty - compute and cache
         enrichedPastGames = matchVideosToGames(pastGames as Game[], youtubeVideos);
         try {
             await setEnrichedGames(enrichedPastGames);
@@ -300,6 +428,18 @@ export default async function NextGamePage() {
             console.error('[Next Game] Failed to write enriched games cache to KV:', error);
         }
     }
+    
+    // Ensure past games have rating data from combined schedule
+    // This uses the same safe enrichment function that matches by team name
+    enrichedPastGames = enrichedPastGames.map((game: Game) => {
+        if (game.game_nbr) {
+            const enriched = combinedByGameNbr.get(String(game.game_nbr));
+            if (enriched) {
+                return enrichPastGameWithRatings(game, enriched, settings.mhrTeamId);
+            }
+        }
+        return game;
+    });
 
     // Enrich past games with stat session scores when MHR scores are invalid
     let statSessions: Awaited<ReturnType<typeof getStatSessions>> = [];
