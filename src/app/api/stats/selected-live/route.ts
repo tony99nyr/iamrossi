@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStatSessions, setSelectedLiveSession, getSelectedLiveSession } from '@/lib/kv';
-import { verifyAuthToken } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
 export async function GET(_request: NextRequest) {
@@ -20,12 +19,6 @@ export async function GET(_request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // Verify auth for setting selected session
-  const isAuth = await verifyAuthToken(request);
-  if (!isAuth) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
     const body = await request.json();
     const sessionId = body.sessionId;

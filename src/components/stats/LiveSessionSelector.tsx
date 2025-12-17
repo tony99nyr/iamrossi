@@ -78,18 +78,10 @@ export default function LiveSessionSelector({ onSessionChange }: LiveSessionSele
     setSaving(true);
     
     try {
-      // Get auth token from sessionStorage
-      const token = sessionStorage.getItem('admin_token');
-      if (!token) {
-        alert('Authentication required. Please log in.');
-        return;
-      }
-
       const res = await fetch('/api/stats/selected-live', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ sessionId: newSelectedId }),
       });
