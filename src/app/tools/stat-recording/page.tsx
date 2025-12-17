@@ -6,6 +6,7 @@ import { css } from '@styled-system/css';
 import { StatSession } from '@/types';
 import GameSetup from '@/components/stats/GameSetup';
 import SessionHistory from '@/components/stats/SessionHistory';
+import LiveSessionSelector from '@/components/stats/LiveSessionSelector';
 import HeroSection from '../next-game/components/HeroSection';
 import CacheStatusFooter from '@/components/CacheStatusFooter';
 import SyncStatusIndicator from '@/components/SyncStatusIndicator';
@@ -123,6 +124,7 @@ export default function StatRecordingPage() {
       {view === 'setup' && (
         <>
           <GameSetup onStartSession={handleStartSession} />
+          <LiveSessionSelector />
           <div className={css({ width: '100%', maxWidth: '800px', marginTop: '2rem' })}>
             <SessionHistory showTitle={true} />
           </div>

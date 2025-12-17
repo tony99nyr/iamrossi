@@ -70,6 +70,7 @@ const KV_KEYS = {
   SYNC_STATUS: 'sync:status',
   CALENDAR_SYNC_STATUS: 'sync:calendar-status',
   HOME_IP: 'admin:home-ip',
+  SELECTED_LIVE_SESSION: 'stats:selected-live-session',
 } as const;
 
 // Exercise operations
@@ -486,6 +487,22 @@ export async function deleteStatSession(id: string): Promise<void> {
   const sessions = await getStatSessions();
   const filtered = sessions.filter(s => s.id !== id);
   await redis.set(KV_KEYS.STATS, JSON.stringify(filtered));
+}
+
+// Selected live session operations
+export async function getSelectedLiveSession(): Promise<string | null> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.SELECTED_LIVE_SESSION);
+  return data || null;
+}
+
+export async function setSelectedLiveSession(sessionId: string | null): Promise<void> {
+  await ensureConnected();
+  if (sessionId) {
+    await redis.set(KV_KEYS.SELECTED_LIVE_SESSION, sessionId);
+  } else {
+    await redis.del(KV_KEYS.SELECTED_LIVE_SESSION);
+  }
 }
 
 // Home IP operations
