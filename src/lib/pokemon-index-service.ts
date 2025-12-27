@@ -873,7 +873,7 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
     configuredCardIds.has(snap.cardId) || snap.date !== today
   );
   
-  console.log(`[Pokemon] refreshTodaySnapshots: Filtered ${existing.length} snapshots to ${validSnapshots.length} valid snapshots (removed ${existing.length - validSnapshots.length} test/placeholder snapshots)`);
+  debugLog(`[Pokemon] refreshTodaySnapshots: Filtered ${existing.length} snapshots to ${validSnapshots.length} valid snapshots`);
   
   const byCardAndDate = new Map<string, PokemonCardPriceSnapshot>();
   for (const snap of validSnapshots) {
@@ -889,9 +889,28 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
 
   for (const card of settings.cards) {
     const key = `${card.id}:${today}`;
-    if (byCardAndDate.has(key)) {
-      debugLog(`[Pokemon] Card ${card.id} (${card.name}) already has today's (${today}) data, skipping`);
-      continue; // Already have today's data for this card
+    const existingSnapshot = byCardAndDate.get(key);
+    
+    // Check if we have a snapshot AND it has the required price field for this card's condition type
+    if (existingSnapshot) {
+      const hasRequiredPrice = 
+        (card.conditionType === 'ungraded' && existingSnapshot.ungradedPrice !== undefined) ||
+        (card.conditionType === 'psa10' && existingSnapshot.psa10Price !== undefined) ||
+        (card.conditionType === 'both' && (existingSnapshot.ungradedPrice !== undefined || existingSnapshot.psa10Price !== undefined));
+      
+      if (hasRequiredPrice) {
+        debugLog(`[Pokemon] Card ${card.id} (${card.name}) already has today's (${today}) data with required price, skipping`);
+        continue; // Already have today's data with the required price for this card
+      } else {
+        // Snapshot exists but doesn't have the required price - need to scrape
+        debugLog(`[Pokemon] Card ${card.id} (${card.name}) has snapshot but missing required price (conditionType: ${card.conditionType}), will scrape`);
+        // Remove the incomplete snapshot so we can replace it
+        const index = updated.findIndex(s => s.cardId === card.id && s.date === today);
+        if (index !== -1) {
+          updated.splice(index, 1);
+        }
+        byCardAndDate.delete(key);
+      }
     }
 
     debugLog(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name})`);
@@ -953,24 +972,20 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
   // Always save if we attempted to scrape (even if all failed)
   // This ensures we track attempts and don't keep retrying the same cards
   const newCount = updated.length - validSnapshots.length;
-  console.log(`[Pokemon] refreshTodaySnapshots summary: existing=${existing.length}, valid=${validSnapshots.length}, updated=${updated.length}, new=${newCount}, addedToday=${addedToday}, scrapedCount=${scrapedCount}, errorCount=${errorCount}`);
+  debugLog(`[Pokemon] refreshTodaySnapshots summary: scraped=${scrapedCount}, errors=${errorCount}, new=${newCount}, addedToday=${addedToday}`);
   
   if (addedToday || newCount > 0) {
     debugLog(`[Pokemon] Saving ${updated.length} total snapshots (${newCount} new for today)`);
-    console.log(`[Pokemon] About to save: existing=${existing.length}, valid=${validSnapshots.length}, updated=${updated.length}, new=${newCount}, addedToday=${addedToday}`);
     try {
       await setPokemonCardPriceSnapshots(updated);
       debugLog(`[Pokemon] Successfully saved today's (${today}) price data`);
-      console.log(`[Pokemon] ✅ Successfully saved ${updated.length} snapshots to Redis`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`[Pokemon] ❌ Failed to save today's snapshots:`, errorMsg);
-      console.error(`[Pokemon] Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
+      console.error(`[Pokemon] Failed to save today's snapshots:`, errorMsg);
       throw error;
     }
   } else {
     debugLog(`[Pokemon] All cards already have today's (${today}) price data, skipping save`);
-    console.log(`[Pokemon] ⚠️  No new data to save: addedToday=${addedToday}, scrapedCount=${scrapedCount}, errorCount=${errorCount}`);
   }
   
   return updated;
@@ -1263,7 +1278,7 @@ export async function ensurePokemonIndexUpToDate(
     configuredCardIds.has(snap.cardId) || snap.date !== today
   );
   
-  console.log(`[Pokemon] ensurePokemonIndexUpToDate: Filtered ${snapshots.length} snapshots to ${validSnapshots.length} valid snapshots (removed test/placeholder snapshots)`);
+  debugLog(`[Pokemon] ensurePokemonIndexUpToDate: Filtered ${snapshots.length} snapshots to ${validSnapshots.length} valid snapshots`);
   
   // Check if all configured cards have snapshots for today
   // If any card is missing today's snapshot, we need to refresh
@@ -1286,21 +1301,13 @@ export async function ensurePokemonIndexUpToDate(
     return !hasRequiredPrice; // Missing if snapshot doesn't have the required price
   });
 
-  console.log(`[Pokemon] ensurePokemonIndexUpToDate: ${missingCards.length} cards missing today's data out of ${settings.cards.length} configured cards`);
-  if (missingCards.length > 0) {
-    console.log(`[Pokemon] Missing cards: ${missingCards.map(c => `${c.id} (${c.name})`).join(', ')}`);
-  }
-
   let updatedSnapshots = validSnapshots;
   if (missingCards.length > 0) {
-    console.log(`[Pokemon] ensurePokemonIndexUpToDate: Calling refreshTodaySnapshots for ${missingCards.length} missing cards`);
-    debugLog(`[Pokemon] ensurePokemonIndexUpToDate: Calling refreshTodaySnapshots for ${missingCards.length} missing cards`);
+    debugLog(`[Pokemon] ensurePokemonIndexUpToDate: ${missingCards.length} cards missing today's data, refreshing`);
     // Refresh snapshots - this will only scrape cards that don't have today's data
     updatedSnapshots = await refreshTodaySnapshots(settings);
-    console.log(`[Pokemon] ensurePokemonIndexUpToDate: refreshTodaySnapshots returned ${updatedSnapshots.length} snapshots`);
     debugLog(`[Pokemon] ensurePokemonIndexUpToDate: refreshTodaySnapshots returned ${updatedSnapshots.length} snapshots`);
   } else {
-    console.log(`[Pokemon] ensurePokemonIndexUpToDate: All cards have today's data, skipping refresh`);
     debugLog(`[Pokemon] ensurePokemonIndexUpToDate: All cards have today's data, skipping refresh`);
   }
 
