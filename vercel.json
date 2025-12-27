@@ -3,6 +3,10 @@
         {
             "path": "/api/backup",
             "schedule": "0 2 * * *"
+        },
+        {
+            "path": "/api/pokemon-index/prices?refresh=1",
+            "schedule": "0 3 * * *"
         }
     ]
 }

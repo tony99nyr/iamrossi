@@ -1,16 +1,72 @@
+// CRITICAL: Load .env.local FIRST before any other imports
+// This ensures REDIS_URL is available when the Redis client is created
+// This ensures all scripts and the API use the correct Redis URL
+import * as dotenv from 'dotenv';
+import path from 'path';
+
+// Load .env.local if it exists (only in non-test environments)
+// In test environments, TEST_REDIS_URL should be set explicitly
+// Use process.cwd() which works in both CommonJS and ESM
+if (process.env.NODE_ENV !== 'test') {
+  try {
+    const envPath = path.resolve(process.cwd(), '.env.local');
+    dotenv.config({ path: envPath });
+  } catch (error) {
+    // If .env.local doesn't exist or can't be loaded, that's OK
+    // REDIS_URL might be set via environment variables or Vercel
+  }
+}
+
 import { createClient } from 'redis';
-import type { Exercise, RehabEntry, Settings, Game, WebVitalSample, Player, StatSession, MHRScheduleGame } from '@/types';
+import type {
+  Exercise,
+  RehabEntry,
+  Settings,
+  Game,
+  WebVitalSample,
+  Player,
+  StatSession,
+  MHRScheduleGame,
+  PokemonIndexSettings,
+  PokemonCardPriceSnapshot,
+  PokemonIndexPoint,
+} from '@/types';
 import { statSessionSchema } from '@/lib/validation';
 
 // Create Redis client
 // Use TEST_REDIS_URL in test environments to avoid wiping production data
-const redisUrl = process.env.NODE_ENV === 'test' && process.env.TEST_REDIS_URL
-  ? process.env.TEST_REDIS_URL
-  : process.env.REDIS_URL;
+// Note: REDIS_URL should now be loaded from .env.local above
+function getRedisUrl(): string | undefined {
+  if (process.env.NODE_ENV === 'test' && process.env.TEST_REDIS_URL) {
+    return process.env.TEST_REDIS_URL;
+  }
+  return process.env.REDIS_URL;
+}
+
+// Create Redis client with dynamic URL resolution
+// CRITICAL: The Redis client is created at module load time, so if REDIS_URL isn't set yet,
+// it will use undefined and potentially connect to localhost. This is why the backfill script
+// and API might use different Redis instances.
+// 
+// The client URL is set at creation time, but we can't change it dynamically.
+// If REDIS_URL changes after module load, the client will still use the original URL.
+const redisUrlForClient = getRedisUrl();
+if (!redisUrlForClient) {
+  console.error('[KV] ERROR: REDIS_URL is not set! Cannot create Redis client.');
+  console.error('[KV] Make sure .env.local exists and contains REDIS_URL');
+  console.error('[KV] This will cause the client to use localhost, which may not match cloud Redis!');
+}
 
 const redis = createClient({
-  url: redisUrl
+  url: redisUrlForClient || 'redis://localhost:6379' // Fallback only for development (will log warning)
 });
+
+// Log which URL the client was created with (for debugging)
+if (redisUrlForClient) {
+  console.log(`[KV] Redis client created with URL: ${redisUrlForClient.substring(0, 30)}...`);
+} else {
+  console.warn('[KV] WARNING: Redis client created with undefined URL - will use localhost fallback!');
+}
 
 // Connect to Redis (lazy connection with retry logic)
 let isConnected = false;
@@ -18,11 +74,24 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 
 async function ensureConnected(retries = 0): Promise<void> {
-  if (isConnected) {
+  // Always check if connection is actually open, not just the flag
+  if (isConnected && redis.isOpen) {
     return;
   }
 
+  // Reset flag if connection is closed
+  if (!redis.isOpen) {
+    isConnected = false;
+  }
+
   try {
+    // Check if Redis URL has changed (e.g., environment variables loaded after module init)
+    const currentUrl = getRedisUrl();
+    if (currentUrl && redis.options?.url !== currentUrl) {
+      console.warn(`[KV] Redis URL mismatch! Client URL: ${redis.options?.url?.substring(0, 30)}..., Current: ${currentUrl.substring(0, 30)}...`);
+      // If URL changed, we need to recreate the client (but this is complex, so just warn for now)
+    }
+
     if (!redis.isOpen) {
       await redis.connect();
     }
@@ -71,6 +140,9 @@ const KV_KEYS = {
   CALENDAR_SYNC_STATUS: 'sync:calendar-status',
   HOME_IP: 'admin:home-ip',
   SELECTED_LIVE_SESSION: 'stats:selected-live-session',
+  POKEMON_INDEX_SETTINGS: 'pokemon:index:settings',
+  POKEMON_CARD_PRICES: 'pokemon:index:card-prices',
+  POKEMON_INDEX_SERIES: 'pokemon:index:series',
 } as const;
 
 // Exercise operations
@@ -563,5 +635,90 @@ export async function kvDel(...keys: string[]): Promise<void> {
 export async function kvKeys(pattern: string): Promise<string[]> {
   await ensureConnected();
   return await redis.keys(pattern);
+}
+
+// ============================================================================
+// Pokemon Price Index operations
+// ============================================================================
+
+export async function getPokemonIndexSettings(): Promise<PokemonIndexSettings | null> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.POKEMON_INDEX_SETTINGS);
+  return data ? JSON.parse(data) as PokemonIndexSettings : null;
+}
+
+export async function setPokemonIndexSettings(settings: PokemonIndexSettings): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.POKEMON_INDEX_SETTINGS, JSON.stringify(settings));
+}
+
+export async function getPokemonCardPriceSnapshots(): Promise<PokemonCardPriceSnapshot[]> {
+  await ensureConnected();
+  
+  // Force a fresh connection if we're not open
+  if (!redis.isOpen) {
+    await redis.connect();
+  }
+  
+  const data = await redis.get(KV_KEYS.POKEMON_CARD_PRICES);
+  const snapshots = data ? JSON.parse(data) as PokemonCardPriceSnapshot[] : [];
+  
+  // Debug: log if we're getting fewer snapshots than expected
+  if (snapshots.length > 0 && snapshots.length < 50) {
+    console.log(`[KV] getPokemonCardPriceSnapshots: Warning - only ${snapshots.length} snapshots found (expected more)`);
+    console.log(`[KV] Redis URL: ${process.env.REDIS_URL?.substring(0, 20)}...`);
+    console.log(`[KV] Redis isOpen: ${redis.isOpen}`);
+  }
+  
+  return snapshots;
+}
+
+export async function setPokemonCardPriceSnapshots(snapshots: PokemonCardPriceSnapshot[]): Promise<void> {
+  await ensureConnected();
+  
+  // Safety check: warn if we're saving a suspiciously small number of snapshots
+  // This might indicate we're about to overwrite historical data
+  // BUT: Only block if the new dataset is significantly smaller than existing (likely data loss)
+  // Allow small datasets if they're building up (e.g., daily updates when starting fresh)
+  if (snapshots.length > 0 && snapshots.length < 20) {
+    const existing = await getPokemonCardPriceSnapshots();
+    // Only block if existing is much larger (more than 3x) - indicates potential data loss
+    // If existing is also small, it's probably just a new/fresh dataset
+    if (existing.length > snapshots.length * 3 && existing.length > 50) {
+      console.warn(`[KV] Warning: About to save ${snapshots.length} snapshots, but ${existing.length} exist. This might overwrite historical data!`);
+      console.warn(`[KV] Aborting save to prevent data loss. Please investigate.`);
+      throw new Error(`Prevented data loss: Attempted to save ${snapshots.length} snapshots when ${existing.length} exist. This would overwrite historical data.`);
+    }
+  }
+  
+  console.log(`[KV] setPokemonCardPriceSnapshots: Saving ${snapshots.length} snapshots to Redis`);
+  const currentRedisUrl = getRedisUrl();
+  console.log(`[KV] Redis URL: ${currentRedisUrl ? currentRedisUrl.substring(0, 50) + '...' : 'undefined'}`);
+  console.log(`[KV] Redis isOpen: ${redis.isOpen}, Key: ${KV_KEYS.POKEMON_CARD_PRICES}`);
+  
+  await redis.set(KV_KEYS.POKEMON_CARD_PRICES, JSON.stringify(snapshots));
+  
+  // Verify the save worked by reading it back
+  const verify = await redis.get(KV_KEYS.POKEMON_CARD_PRICES);
+  const verifyCount = verify ? JSON.parse(verify).length : 0;
+  console.log(`[KV] setPokemonCardPriceSnapshots: Verification - ${verifyCount} snapshots in Redis after save`);
+  
+  if (verifyCount !== snapshots.length) {
+    console.error(`[KV] ERROR: Save verification failed! Expected ${snapshots.length}, but Redis has ${verifyCount}`);
+    throw new Error(`Save verification failed: Expected ${snapshots.length} snapshots, but Redis has ${verifyCount}`);
+  }
+  
+  console.log(`[KV] setPokemonCardPriceSnapshots: Successfully saved to ${KV_KEYS.POKEMON_CARD_PRICES}`);
+}
+
+export async function getPokemonIndexSeries(): Promise<PokemonIndexPoint[]> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.POKEMON_INDEX_SERIES);
+  return data ? JSON.parse(data) as PokemonIndexPoint[] : [];
+}
+
+export async function setPokemonIndexSeries(series: PokemonIndexPoint[]): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.POKEMON_INDEX_SERIES, JSON.stringify(series));
 }
 

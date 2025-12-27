@@ -212,6 +212,23 @@ export const webVitalSchema = z.object({
 });
 
 // ============================================================================
+// Pokemon Price Index Schemas
+// ============================================================================
+
+export const pokemonCardConfigSchema = z.object({
+  id: z.string().min(1, 'Card ID is required'),
+  name: z.string().min(1, 'Card name is required'),
+  conditionType: z.enum(['ungraded', 'psa10', 'both']).default('ungraded'),
+  weight: z.number().positive().default(1),
+  source: z.literal('pricecharting'),
+});
+
+export const pokemonIndexSettingsSchema = z.object({
+  cards: z.array(pokemonCardConfigSchema).max(20, 'Maximum of 20 cards allowed'),
+  refreshIntervalHours: z.number().int().positive().max(48).default(24),
+});
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 

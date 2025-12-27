@@ -139,7 +139,7 @@ describe('/api/google-fit', () => {
 
       expect(response.status).toBe(200);
       expect(data).toEqual(mockHeartRate);
-      expect(googleFitService.getDailyHeartRate).toHaveBeenCalledWith('2024-01-15');
+      expect(googleFitService.getDailyHeartRate).toHaveBeenCalledWith('2024-01-15', false);
     });
 
     it('should return empty heart rate data when no workouts exist', async () => {

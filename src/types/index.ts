@@ -275,3 +275,47 @@ export interface StatSession {
   gameType?: string; // Game type (e.g., "Regular Season", "Playoff", etc.)
 }
 
+// ============================================================================
+// Pokemon Price Index Types
+// ============================================================================
+
+export type PokemonPriceSource = 'pricecharting';
+
+export type PokemonConditionType = 'ungraded' | 'psa10' | 'both';
+
+export interface PokemonCardConfig {
+  id: string; // External ID (e.g., PriceCharting product ID)
+  name: string;
+  conditionType: PokemonConditionType;
+  weight: number;
+  source: PokemonPriceSource;
+}
+
+export interface PokemonIndexSettings {
+  cards: PokemonCardConfig[];
+  refreshIntervalHours: number;
+}
+
+export interface PokemonCardPriceSnapshot {
+  cardId: string;
+  date: string; // YYYY-MM-DD
+  ungradedPrice?: number;
+  psa10Price?: number;
+  source: PokemonPriceSource;
+  currency: 'USD';
+  ignored?: boolean; // True if this snapshot contains anomalous prices that should be ignored from calculations
+}
+
+export interface PokemonIndexPoint {
+  date: string; // YYYY-MM-DD
+  indexValue: number;
+  ma7?: number; // 7-day moving average (short-term momentum)
+  ma30?: number; // 30-day moving average
+  ma120?: number; // 120-day moving average (long-term trend)
+  macd?: number; // MACD line (12-day EMA - 26-day EMA)
+  macdSignal?: number; // MACD signal line (9-day EMA of MACD)
+  macdHistogram?: number; // MACD histogram (MACD - Signal)
+  roc7?: number; // Rate of Change over 7 days (percentage)
+  roc30?: number; // Rate of Change over 30 days (percentage)
+}
+

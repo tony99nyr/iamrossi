@@ -62,6 +62,16 @@ export default async function HomePage() {
                             </Link>
                         </li>
 
+                        <li>
+                            <Link href="/tools/pokemon-price-index" className={toolLinkStyle}>
+                                <span className={toolIconStyle}>🃏</span>
+                                <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 })}>
+                                    <strong className={toolNameStyle}>Pokemon Card Price Index</strong>
+                                    <span className={toolDescStyle}>Track a custom index of Pokemon card prices and trends</span>
+                                </div>
+                            </Link>
+                        </li>
+
                        
                     </ul>
                 </section>

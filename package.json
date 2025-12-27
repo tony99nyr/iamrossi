@@ -18,7 +18,8 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "validate": "pnpm type:check && pnpm test && pnpm lint && pnpm build",
-    "redis": "npx tsx scripts/redis-cli.ts"
+    "redis": "npx tsx scripts/redis-cli.ts",
+    "pokemon:backfill": "npx tsx scripts/backfill-pokemon-prices.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -31,7 +32,7 @@
     "@vercel/speed-insights": "^1.3.1",
     "framer-motion": "^12.23.26",
     "googleapis": "^169.0.0",
-    "next": "16.0.10",
+    "next": "16.1.1",
     "node-ical": "^0.22.1",
     "playwright-core": "^1.57.0",
     "react": "19.2.3",
@@ -45,8 +46,8 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@next/bundle-analyzer": "^16.0.10",
-    "@pandacss/dev": "^1.7.1",
+    "@next/bundle-analyzer": "^16.1.1",
+    "@pandacss/dev": "^1.7.2",
     "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -56,7 +57,7 @@
     "babel-plugin-react-compiler": "1.0.0",
     "dotenv": "^17.2.3",
     "eslint": "^9",
-    "eslint-config-next": "16.0.10",
+    "eslint-config-next": "16.1.1",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.7.4",
     "typescript": "^5",
