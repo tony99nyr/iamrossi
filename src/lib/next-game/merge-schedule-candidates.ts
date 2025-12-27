@@ -108,7 +108,7 @@ function getTeamsKey(game: Game): string | null {
   return [home, visitor].sort().join('|');
 }
 
-function getMergeKey(game: Game, timeZone: string): string | null {
+function getMergeKey(game: Game): string | null {
   const dateStr = normalizeDateString(game.game_date_format || game.game_date);
   if (!dateStr) return null;
   const teamsKey = getTeamsKey(game);
@@ -200,7 +200,7 @@ export function mergeScheduleCandidates(
       return;
     }
 
-    const key = getMergeKey(game, options.timeZone);
+    const key = getMergeKey(game);
     if (!key) {
       passthrough.push(game);
       return;

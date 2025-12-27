@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getStatSessions, getSelectedLiveSession } from '@/lib/kv';
 import { logger } from '@/lib/logger';
 
