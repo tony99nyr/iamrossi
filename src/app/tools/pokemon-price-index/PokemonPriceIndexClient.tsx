@@ -502,6 +502,13 @@ interface SimpleIndexChartProps {
 }
 
 function SimpleIndexChart({ series, timeRange }: SimpleIndexChartProps & { timeRange: 'all' | 'ytd' | '6m' | '3m' | '1m' }) {
+    // Hooks must be called unconditionally - move before early returns
+    const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+    const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+    const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
+    const svgRef = useRef<SVGSVGElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    
     // Filter series based on time range
     const filteredSeries = (() => {
         if (timeRange === 'all') return series;
@@ -539,11 +546,6 @@ function SimpleIndexChart({ series, timeRange }: SimpleIndexChartProps & { timeR
             </div>
         );
     }
-    const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-    const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-    const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
-    const svgRef = useRef<SVGSVGElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
     
     // Use filtered series for all calculations
     const displaySeries = filteredSeries;

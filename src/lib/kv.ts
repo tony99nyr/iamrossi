@@ -11,7 +11,7 @@ if (process.env.NODE_ENV !== 'test') {
   try {
     const envPath = path.resolve(process.cwd(), '.env.local');
     dotenv.config({ path: envPath });
-  } catch (error) {
+  } catch {
     // If .env.local doesn't exist or can't be loaded, that's OK
     // REDIS_URL might be set via environment variables or Vercel
   }

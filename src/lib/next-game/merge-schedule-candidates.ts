@@ -83,7 +83,7 @@ function parseClockTimeToMinutes(timeStr: unknown): number | null {
   return null;
 }
 
-function getStartBucketKey(game: Game, _timeZone: string): string {
+function getStartBucketKey(game: Game): string {
   // Merge keys should be robust across sources: calendar times tend to be 24h ("18:30:00"),
   // while MHR can be 12h ("6:30 PM") or other variants. We bucket by local clock-time,
   // and pair it with the local date string in `getMergeKey`.
@@ -113,7 +113,7 @@ function getMergeKey(game: Game, timeZone: string): string | null {
   if (!dateStr) return null;
   const teamsKey = getTeamsKey(game);
   if (!teamsKey) return null;
-  const startBucket = getStartBucketKey(game, timeZone);
+  const startBucket = getStartBucketKey(game);
   return `${dateStr}|${startBucket}|${teamsKey}`;
 }
 

@@ -61,9 +61,10 @@ export async function scrapePriceChartingForCard(
     // Wait for VGPC object to be available (it's set by inline script)
     try {
       await page.waitForFunction(() => {
+        // VGPC is a dynamic property added by the page's JavaScript
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return typeof (globalThis as any).VGPC !== 'undefined' && 
-               (globalThis as any).VGPC?.chart_data !== undefined;
+        const vgpc = (globalThis as any).VGPC;
+        return typeof vgpc !== 'undefined' && vgpc?.chart_data !== undefined;
       }, { timeout: 5000 });
     } catch {
       // VGPC might not be available, continue with DOM-based extraction
@@ -270,14 +271,13 @@ export async function scrapeHistoricalPricesForCard(
     }
 
     // Wait for VGPC object to be available
-    let vgpcAvailable = false;
     try {
       await page.waitForFunction(() => {
+        // VGPC is a dynamic property added by the page's JavaScript
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return typeof (globalThis as any).VGPC !== 'undefined' && 
-               (globalThis as any).VGPC?.chart_data !== undefined;
+        const vgpc = (globalThis as any).VGPC;
+        return typeof vgpc !== 'undefined' && vgpc?.chart_data !== undefined;
       }, { timeout: 20000 }); // Increased to 20s
-      vgpcAvailable = true;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
@@ -1080,7 +1080,6 @@ export function buildIndexSeriesFromSnapshots(
 
   for (const date of dates) {
     let dailySum = 0;
-    let cardsWithData = 0;
 
     for (const card of settings.cards) {
       // Only include cards that are in the base (have data at some point)
@@ -1108,9 +1107,6 @@ export function buildIndexSeriesFromSnapshots(
 
       if (priceForDate !== undefined && card.weight > 0) {
         dailySum += card.weight * priceForDate;
-        if (priceForDate !== basePrices.get(card.id)) {
-          cardsWithData++;
-        }
         // Track last known actual price (not base price) for reference
         if (priceForDate !== basePrices.get(card.id)) {
           lastKnown.set(card.id, priceForDate);

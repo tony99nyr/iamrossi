@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStatSessions, getSelectedLiveSession } from '@/lib/kv';
 import { logger } from '@/lib/logger';
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const sessions = await getStatSessions();
     

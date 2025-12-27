@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPokemonIndexSettings } from '@/lib/kv';
 import { ensurePokemonIndexUpToDate, getOrBuildPokemonIndexSeries } from '@/lib/pokemon-index-service';
 import { logger } from '@/lib/logger';
+import type { PokemonIndexPoint } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const forceRefresh = searchParams.get('refresh') === '1';
 
-    let series: any[];
+    let series: PokemonIndexPoint[];
     try {
       series = forceRefresh
         ? await ensurePokemonIndexUpToDate(settings)
