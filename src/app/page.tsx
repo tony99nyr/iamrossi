@@ -72,6 +72,16 @@ export default async function HomePage() {
                             </Link>
                         </li>
 
+                        <li>
+                            <Link href="/tools/eth-trading-bot" className={toolLinkStyle}>
+                                <span className={toolIconStyle}>📈</span>
+                                <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 })}>
+                                    <strong className={toolNameStyle}>ETH Trading Bot</strong>
+                                    <span className={toolDescStyle}>Algorithmic trading bot with strategy comparison and backtesting</span>
+                                </div>
+                            </Link>
+                        </li>
+
                        
                     </ul>
                 </section>

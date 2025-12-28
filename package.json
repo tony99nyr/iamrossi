@@ -19,7 +19,12 @@
     "test:coverage": "vitest run --coverage",
     "validate": "pnpm type:check && pnpm test && pnpm lint && pnpm build",
     "redis": "npx tsx scripts/redis-cli.ts",
-    "pokemon:backfill": "npx tsx scripts/backfill-pokemon-prices.ts"
+    "pokemon:backfill": "npx tsx scripts/backfill-pokemon-prices.ts",
+    "eth:populate-data": "npx tsx scripts/populate-historical-data.ts",
+    "eth:organize-data": "npx tsx scripts/organize-historical-data.ts",
+    "eth:test-regime": "npx tsx scripts/test-regime-detector.ts",
+    "eth:save-config": "npx tsx scripts/save-strategy-config.ts",
+    "redis:analyze": "npx tsx scripts/analyze-redis-memory.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

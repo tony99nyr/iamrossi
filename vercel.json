@@ -7,6 +7,10 @@
         {
             "path": "/api/pokemon-index/prices?refresh=1",
             "schedule": "0 3 * * *"
+        },
+        {
+            "path": "/api/trading/paper/cron-update",
+            "schedule": "*/5 * * * *"
         }
     ]
 }

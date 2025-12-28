@@ -24,6 +24,26 @@ function todayIsoDate(): string {
 }
 
 
+/**
+ * Check if an error is retryable (timeout, network, rate limit)
+ */
+function isRetryableError(error: unknown): boolean {
+  const errorMsg = error instanceof Error ? error.message : String(error);
+  const lowerMsg = errorMsg.toLowerCase();
+  
+  return (
+    lowerMsg.includes('timeout') ||
+    lowerMsg.includes('network') ||
+    lowerMsg.includes('econnrefused') ||
+    lowerMsg.includes('enotfound') ||
+    lowerMsg.includes('429') ||
+    lowerMsg.includes('rate limit') ||
+    lowerMsg.includes('too many requests') ||
+    lowerMsg.includes('page load timeout') ||
+    lowerMsg.includes('vgpc object timeout')
+  );
+}
+
 export async function scrapePriceChartingForCard(
   card: PokemonCardConfig,
 ): Promise<Omit<PokemonCardPriceSnapshot, 'cardId' | 'date'>> {
@@ -33,199 +53,307 @@ export async function scrapePriceChartingForCard(
 
   debugLog(`[Pokemon] Scraping PriceCharting for card ${card.name} (${card.id}) -> ${url}`);
 
-  const browser = await chromium.launch({
-    args: chromiumPkg.args,
-    executablePath: await chromiumPkg.executablePath(
-      'https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar',
-    ),
-    headless: true,
-  });
+  const MAX_RETRIES = 3;
+  let lastError: Error | null = null;
 
-  try {
-    const context = await browser.newContext({
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0 Safari/537.36',
-    });
-    const page = await context.newPage();
-
-    // Increased timeout for API routes - Playwright can be slow in serverless environments
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 }); // 60 seconds
+  // Retry logic with exponential backoff
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
     
-    // Wait for the price table to be visible
     try {
-      await page.waitForSelector('#price_data', { timeout: 10000 });
-    } catch {
-      // Continue even if selector doesn't appear - might be a different page structure
-    }
-    
-    // Wait for VGPC object to be available (it's set by inline script)
-    try {
-      await page.waitForFunction(() => {
-        // VGPC is a dynamic property added by the page's JavaScript
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const vgpc = (globalThis as any).VGPC;
-        return typeof vgpc !== 'undefined' && vgpc?.chart_data !== undefined;
-      }, { timeout: 5000 });
-    } catch {
-      // VGPC might not be available, continue with DOM-based extraction
-      debugLog('[Pokemon] VGPC object not found, using DOM-based extraction');
-    }
-    
-    // Give a moment for any remaining JavaScript to finish executing
-    await page.waitForTimeout(1000);
+      if (attempt > 1) {
+        const backoffMs = Math.pow(2, attempt - 2) * 2000; // 2s, 4s, 8s
+        debugLog(`[Pokemon] Retry attempt ${attempt}/${MAX_RETRIES} for card ${card.id} after ${backoffMs}ms backoff`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
 
-    const { ungraded, psa10, debugInfo } = await page.evaluate(() => {
-      let ungradedPrice: number | undefined;
-      let psa10Price: number | undefined;
+      browser = await chromium.launch({
+        args: chromiumPkg.args,
+        executablePath: await chromiumPkg.executablePath(
+          'https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar',
+        ),
+        headless: true,
+      });
 
-      const parse = (text: string | null | undefined): number | undefined => {
-        if (!text) return undefined;
-        const cleaned = text.replace(/[^0-9.]/g, '');
-        const value = Number.parseFloat(cleaned);
-        return Number.isFinite(value) ? value : undefined;
+      const context = await browser.newContext({
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: { width: 1920, height: 1080 },
+        extraHTTPHeaders: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+        },
+      });
+      const page = await context.newPage();
+
+      // Set up response listener to detect 429 rate limit errors
+      let rateLimited = false;
+      const responseHandler = (response: { status?: () => number }) => {
+        if (response && response.status?.() === 429) {
+          rateLimited = true;
+        }
       };
+      page.on('response', responseHandler);
 
-      // Method 1: Extract from DOM table cells (most reliable - shows current displayed price)
-      const usedPriceCell = document.querySelector('#used_price .price.js-price');
-      if (usedPriceCell) {
-        ungradedPrice = parse(usedPriceCell.textContent);
-      }
-
-      const manualOnlyPriceCell = document.querySelector('#manual_only_price .price.js-price');
-      if (manualOnlyPriceCell) {
-        psa10Price = parse(manualOnlyPriceCell.textContent);
-      }
-      
-      // Store these for debug info later
-      const usedPriceText = usedPriceCell?.textContent || null;
-      const manualOnlyPriceText = manualOnlyPriceCell?.textContent || null;
-
-      // Method 2: Fall back to VGPC.chart_data JavaScript object if DOM extraction failed
-      // Note: Prices in chart_data can be in cents (large integers) or dollars (decimals > 100)
-      if (ungradedPrice === undefined || psa10Price === undefined) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const VGPC = (globalThis as any).VGPC;
-          if (VGPC && VGPC.chart_data) {
-            const chartData = VGPC.chart_data;
-            
-            // Helper function to convert price (same logic as historical scraper)
-            const convertPrice = (rawPrice: number): number => {
-              const isInteger = Number.isInteger(rawPrice);
-              const hasDecimals = rawPrice % 1 !== 0;
-              
-              if (isInteger && rawPrice > 1000) {
-                // Large integer (e.g., 55001) = cents
-                return rawPrice / 100;
-              } else if (hasDecimals && rawPrice > 100) {
-                // Decimal > 100 (e.g., 550.01) = already in dollars
-                return rawPrice;
-              } else if (hasDecimals && rawPrice < 100) {
-                // Small decimal - check if reasonable
-                return rawPrice > 1 ? rawPrice : rawPrice / 100;
-              } else {
-                // Integer < 1000 - check magnitude
-                return rawPrice > 100 ? rawPrice / 100 : rawPrice;
-              }
-            };
-            
-            // Extract latest "used" price (ungraded)
-            if (ungradedPrice === undefined && chartData.used && Array.isArray(chartData.used) && chartData.used.length > 0) {
-              const latestUsed = chartData.used[chartData.used.length - 1];
-              if (Array.isArray(latestUsed) && latestUsed.length >= 2) {
-                const rawPrice = latestUsed[1];
-                if (typeof rawPrice === 'number' && rawPrice > 0) {
-                  ungradedPrice = convertPrice(rawPrice);
-                }
-              }
-            }
-            
-            // Extract latest "manual-only" price (PSA 10)
-            if (psa10Price === undefined && chartData['manual-only'] && Array.isArray(chartData['manual-only']) && chartData['manual-only'].length > 0) {
-              const latestManualOnly = chartData['manual-only'][chartData['manual-only'].length - 1];
-              if (Array.isArray(latestManualOnly) && latestManualOnly.length >= 2) {
-                const rawPrice = latestManualOnly[1];
-                if (typeof rawPrice === 'number' && rawPrice > 0) {
-                  psa10Price = convertPrice(rawPrice);
-                }
-              }
-            }
-          }
-        } catch {
-          // Fall through to generic table matching
-        }
-      }
-
-      // Method 3: Last resort - try generic table row matching (original approach)
-      if (ungradedPrice === undefined || psa10Price === undefined) {
-        const rows = Array.from(document.querySelectorAll('table tr'));
-        for (const row of rows) {
-          const cells = row.querySelectorAll('th,td');
-          if (cells.length < 2) continue;
-
-          const label = cells[0]?.textContent?.toLowerCase().trim() || '';
-          const priceText = cells[1]?.textContent || '';
-
-          if (ungradedPrice === undefined && (label.includes('ungraded') || label.includes('loose'))) {
-            ungradedPrice = parse(priceText);
-          }
-          if (
-            psa10Price === undefined &&
-            (label.includes('psa 10') ||
-              label.includes('psa10') ||
-              label.includes('graded 10') ||
-              label.includes('bgs 10'))
-          ) {
-            psa10Price = parse(priceText);
-          }
-        }
-      }
-
-      const debug: Record<string, unknown> = {};
-      
-      // Collect debug info
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const VGPC = (globalThis as any).VGPC;
-        debug.hasVGPC = !!VGPC;
-        debug.hasChartData = !!(VGPC && VGPC.chart_data);
-        if (VGPC && VGPC.chart_data) {
-          debug.chartDataKeys = Object.keys(VGPC.chart_data);
-          debug.usedData = VGPC.chart_data.used;
-          debug.manualOnlyData = VGPC.chart_data['manual-only'];
+        // Increased timeout for API routes - Playwright can be slow in serverless environments
+        const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 }); // 90 seconds
+        
+        // Check for 429 rate limit response
+        if (response && response.status() === 429) {
+          rateLimited = true;
+          const retryAfter = response.headers()['retry-after'];
+          if (retryAfter) {
+            const waitTime = parseInt(retryAfter, 10) * 1000;
+            debugLog(`[Pokemon] Rate limited (429) for card ${card.id}, Retry-After: ${retryAfter}s`);
+            if (attempt < MAX_RETRIES) {
+              await page.waitForTimeout(waitTime);
+              page.off('response', responseHandler);
+              await browser.close();
+              continue; // Retry after waiting
+            }
+          }
         }
-      } catch {
-        debug.vgpcError = true;
+        
+        if (rateLimited && attempt < MAX_RETRIES) {
+          const waitTime = Math.pow(2, attempt) * 5000; // 10s, 20s, 40s for rate limits
+          debugLog(`[Pokemon] Rate limited for card ${card.id}, waiting ${waitTime}ms before retry`);
+          await page.waitForTimeout(waitTime);
+          page.off('response', responseHandler);
+          await browser.close();
+          continue;
+        }
+        
+        // Wait for the price table to be visible
+        try {
+          await page.waitForSelector('#price_data', { timeout: 20000 }); // Increased to 20s
+        } catch {
+          // Continue even if selector doesn't appear - might be a different page structure
+          debugLog(`[Pokemon] Price table selector not found for card ${card.id}, continuing with extraction`);
+        }
+        
+        // Wait for VGPC object to be available (it's set by inline script)
+        try {
+          await page.waitForFunction(() => {
+            // VGPC is a dynamic property added by the page's JavaScript
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const vgpc = (globalThis as any).VGPC;
+            return typeof vgpc !== 'undefined' && vgpc?.chart_data !== undefined;
+          }, { timeout: 15000 }); // Increased to 15s
+        } catch {
+          // VGPC might not be available, continue with DOM-based extraction
+          debugLog(`[Pokemon] VGPC object not found for card ${card.id}, using DOM-based extraction`);
+        }
+        
+        // Give a moment for any remaining JavaScript to finish executing
+        await page.waitForTimeout(1000);
+
+        const { ungraded, psa10, debugInfo } = await page.evaluate(() => {
+          let ungradedPrice: number | undefined;
+          let psa10Price: number | undefined;
+
+          const parse = (text: string | null | undefined): number | undefined => {
+            if (!text) return undefined;
+            const cleaned = text.replace(/[^0-9.]/g, '');
+            const value = Number.parseFloat(cleaned);
+            return Number.isFinite(value) ? value : undefined;
+          };
+
+          // Method 1: Extract from DOM table cells (most reliable - shows current displayed price)
+          const usedPriceCell = document.querySelector('#used_price .price.js-price');
+          if (usedPriceCell) {
+            ungradedPrice = parse(usedPriceCell.textContent);
+          }
+
+          const manualOnlyPriceCell = document.querySelector('#manual_only_price .price.js-price');
+          if (manualOnlyPriceCell) {
+            psa10Price = parse(manualOnlyPriceCell.textContent);
+          }
+          
+          // Store these for debug info later
+          const usedPriceText = usedPriceCell?.textContent || null;
+          const manualOnlyPriceText = manualOnlyPriceCell?.textContent || null;
+
+          // Method 2: Fall back to VGPC.chart_data JavaScript object if DOM extraction failed
+          // Note: Prices in chart_data can be in cents (large integers) or dollars (decimals > 100)
+          if (ungradedPrice === undefined || psa10Price === undefined) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const VGPC = (globalThis as any).VGPC;
+              if (VGPC && VGPC.chart_data) {
+                const chartData = VGPC.chart_data;
+                
+                // Helper function to convert price (same logic as historical scraper)
+                const convertPrice = (rawPrice: number): number => {
+                  const isInteger = Number.isInteger(rawPrice);
+                  const hasDecimals = rawPrice % 1 !== 0;
+                  
+                  if (isInteger && rawPrice > 1000) {
+                    // Large integer (e.g., 55001) = cents
+                    return rawPrice / 100;
+                  } else if (hasDecimals && rawPrice > 100) {
+                    // Decimal > 100 (e.g., 550.01) = already in dollars
+                    return rawPrice;
+                  } else if (hasDecimals && rawPrice < 100) {
+                    // Small decimal - check if reasonable
+                    return rawPrice > 1 ? rawPrice : rawPrice / 100;
+                  } else {
+                    // Integer < 1000 - check magnitude
+                    return rawPrice > 100 ? rawPrice / 100 : rawPrice;
+                  }
+                };
+                
+                // Extract latest "used" price (ungraded)
+                if (ungradedPrice === undefined && chartData.used && Array.isArray(chartData.used) && chartData.used.length > 0) {
+                  const latestUsed = chartData.used[chartData.used.length - 1];
+                  if (Array.isArray(latestUsed) && latestUsed.length >= 2) {
+                    const rawPrice = latestUsed[1];
+                    if (typeof rawPrice === 'number' && rawPrice > 0) {
+                      ungradedPrice = convertPrice(rawPrice);
+                    }
+                  }
+                }
+                
+                // Extract latest "manual-only" price (PSA 10)
+                if (psa10Price === undefined && chartData['manual-only'] && Array.isArray(chartData['manual-only']) && chartData['manual-only'].length > 0) {
+                  const latestManualOnly = chartData['manual-only'][chartData['manual-only'].length - 1];
+                  if (Array.isArray(latestManualOnly) && latestManualOnly.length >= 2) {
+                    const rawPrice = latestManualOnly[1];
+                    if (typeof rawPrice === 'number' && rawPrice > 0) {
+                      psa10Price = convertPrice(rawPrice);
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Fall through to generic table matching
+            }
+          }
+
+          // Method 3: Last resort - try generic table row matching (original approach)
+          if (ungradedPrice === undefined || psa10Price === undefined) {
+            const rows = Array.from(document.querySelectorAll('table tr'));
+            for (const row of rows) {
+              const cells = row.querySelectorAll('th,td');
+              if (cells.length < 2) continue;
+
+              const label = cells[0]?.textContent?.toLowerCase().trim() || '';
+              const priceText = cells[1]?.textContent || '';
+
+              if (ungradedPrice === undefined && (label.includes('ungraded') || label.includes('loose'))) {
+                ungradedPrice = parse(priceText);
+              }
+              if (
+                psa10Price === undefined &&
+                (label.includes('psa 10') ||
+                  label.includes('psa10') ||
+                  label.includes('graded 10') ||
+                  label.includes('bgs 10'))
+              ) {
+                psa10Price = parse(priceText);
+              }
+            }
+          }
+
+          const debug: Record<string, unknown> = {};
+          
+          // Collect debug info
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const VGPC = (globalThis as any).VGPC;
+            debug.hasVGPC = !!VGPC;
+            debug.hasChartData = !!(VGPC && VGPC.chart_data);
+            if (VGPC && VGPC.chart_data) {
+              debug.chartDataKeys = Object.keys(VGPC.chart_data);
+              debug.usedData = VGPC.chart_data.used;
+              debug.manualOnlyData = VGPC.chart_data['manual-only'];
+            }
+          } catch {
+            debug.vgpcError = true;
+          }
+          
+          debug.usedPriceCellExists = !!usedPriceCell;
+          debug.manualOnlyPriceCellExists = !!manualOnlyPriceCell;
+          debug.priceTableExists = !!document.querySelector('#price_data');
+          debug.usedPriceText = usedPriceText;
+          debug.manualOnlyPriceText = manualOnlyPriceText;
+
+          return { ungraded: ungradedPrice, psa10: psa10Price, debugInfo: debug };
+        });
+
+        page.off('response', responseHandler);
+        await browser.close();
+        browser = null;
+
+        debugLog(`[Pokemon] Successfully scraped prices for card ${card.id} (attempt ${attempt}/${MAX_RETRIES})`, { 
+          card: card.id, 
+          ungraded, 
+          psa10, 
+          debugInfo 
+        });
+
+        return {
+          ungradedPrice: ungraded,
+          psa10Price: psa10,
+          source: 'pricecharting',
+          currency: 'USD',
+        };
+      } catch (error) {
+        page.off('response', responseHandler);
+        if (browser) {
+          await browser.close();
+          browser = null;
+        }
+        
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const errorMsg = lastError.message;
+        const isRetryable = isRetryableError(lastError);
+        
+        debugLog(`[Pokemon] Scraping attempt ${attempt}/${MAX_RETRIES} failed for card ${card.id}: ${errorMsg}`, {
+          isRetryable,
+          rateLimited,
+        });
+        
+        if (attempt < MAX_RETRIES && (isRetryable || rateLimited)) {
+          // Will retry on next iteration
+          continue;
+        }
+        
+        // Final attempt failed or non-retryable error
+        throw lastError;
+      }
+    } catch (error) {
+      if (browser) {
+        await browser.close();
       }
       
-      debug.usedPriceCellExists = !!usedPriceCell;
-      debug.manualOnlyPriceCellExists = !!manualOnlyPriceCell;
-      debug.priceTableExists = !!document.querySelector('#price_data');
-      debug.usedPriceText = usedPriceText;
-      debug.manualOnlyPriceText = manualOnlyPriceText;
-
-      return { ungraded: ungradedPrice, psa10: psa10Price, debugInfo: debug };
-    });
-
-    debugLog('[Pokemon] Scraped prices', { card: card.id, ungraded, psa10, debugInfo });
-
-    return {
-      ungradedPrice: ungraded,
-      psa10Price: psa10,
-      source: 'pricecharting',
-      currency: 'USD',
-    };
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error(`[Pokemon] Error scraping PriceCharting card ${card.id} (${card.name}):`, errorMsg);
-    debugLog(`[Pokemon] Scraping error details: ${errorMsg}`);
-    
-    // Re-throw the error so refreshTodaySnapshots can handle it
-    // This allows us to see which cards are failing and why
-    throw new Error(`Failed to scrape card ${card.id}: ${errorMsg}`);
-  } finally {
-    await browser.close();
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const errorMsg = lastError.message;
+      const isRetryable = isRetryableError(lastError);
+      
+      if (attempt < MAX_RETRIES && isRetryable) {
+        // Will retry on next iteration
+        continue;
+      }
+      
+      // Final attempt failed or non-retryable error
+      console.error(`[Pokemon] Error scraping PriceCharting card ${card.id} (${card.name}) after ${attempt} attempts:`, errorMsg);
+      debugLog(`[Pokemon] Scraping error details (final attempt): ${errorMsg}`, {
+        isRetryable,
+        attempt,
+        maxRetries: MAX_RETRIES,
+      });
+      
+      throw new Error(`Failed to scrape card ${card.id} after ${attempt} attempts: ${errorMsg}`);
+    }
   }
+
+  // Should never reach here, but TypeScript needs it
+  throw lastError || new Error(`Failed to scrape card ${card.id}: Max retries exceeded`);
 }
 
 /**
@@ -887,9 +1015,18 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
   let scrapedCount = 0;
   let errorCount = 0;
 
-  for (const card of settings.cards) {
+  for (let i = 0; i < settings.cards.length; i++) {
+    const card = settings.cards[i]!;
     const key = `${card.id}:${today}`;
     const existingSnapshot = byCardAndDate.get(key);
+    
+    // Add delay between card scrapes (except for the first one) to avoid bot detection
+    if (i > 0) {
+      // Random delay between 2-5 seconds
+      const delayMs = 2000 + Math.random() * 3000;
+      debugLog(`[Pokemon] Waiting ${Math.round(delayMs)}ms before scraping next card (${i + 1}/${settings.cards.length})`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
     
     // Check if we have a snapshot AND it has the required price field for this card's condition type
     if (existingSnapshot) {
@@ -913,7 +1050,7 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
       }
     }
 
-    debugLog(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name})`);
+    debugLog(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name}) [${i + 1}/${settings.cards.length}]`);
     try {
       scrapedCount++;
       const scraped = await scrapePriceChartingForCard(card);
