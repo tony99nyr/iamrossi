@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const { name } = validation.data;
 
     // Get config from Redis or use default
-    let config = await getAdaptiveStrategyConfig();
+    const config = await getAdaptiveStrategyConfig();
 
     if (!config) {
       return NextResponse.json(

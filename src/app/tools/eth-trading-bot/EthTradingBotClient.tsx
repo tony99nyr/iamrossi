@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { css } from '@styled-system/css';
 import { stack, flex } from '@styled-system/patterns';
@@ -29,13 +29,8 @@ export default function EthTradingBotClient() {
     };
   };
 
-  // Check authentication on mount by attempting to fetch status
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
   // Check authentication by attempting to fetch status
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     try {
       const res = await fetch('/api/trading/paper/status', {
         headers: getAuthHeaders(),
@@ -54,13 +49,18 @@ export default function EthTradingBotClient() {
         setIsAuthenticated(false);
         setShowPinModal(true);
       }
-    } catch (err) {
+    } catch {
       setIsAuthenticated(false);
       setShowPinModal(true);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Check authentication on mount by attempting to fetch status
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   // Handle PIN success - token is now in HTTP-only cookie, no need to store it
   const handlePinSuccess = () => {
@@ -443,7 +443,7 @@ export default function EthTradingBotClient() {
               No active paper trading session
             </p>
             <p className={css({ fontSize: 'sm' })}>
-              Click "Start Paper Trading" to begin using the enhanced adaptive strategy
+              Click &quot;Start Paper Trading&quot; to begin using the enhanced adaptive strategy
             </p>
           </div>
         )}

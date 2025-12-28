@@ -51,7 +51,7 @@ export interface EnhancedAdaptiveBacktestResult {
 export async function runEnhancedAdaptiveBacktest(
   options: EnhancedAdaptiveBacktestOptions
 ): Promise<EnhancedAdaptiveBacktestResult> {
-  const { startDate, endDate, config, runName } = options;
+  const { startDate, endDate, config, runName, saveRun } = options;
 
   const candles = await fetchPriceCandles('ETHUSDT', config.bullishStrategy.timeframe, startDate, endDate);
   if (candles.length === 0) {
@@ -235,9 +235,10 @@ export async function runEnhancedAdaptiveBacktest(
     tradeIds: trades.map(t => t.id),
   };
 
-  if (saveRun) {
-    await saveStrategyRun(run);
-  }
+  // Note: saveRun functionality removed - strategy runs are no longer persisted
+  // if (saveRun) {
+  //   await saveStrategyRun(run);
+  // }
 
   return {
     run,

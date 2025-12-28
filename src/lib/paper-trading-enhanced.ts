@@ -4,7 +4,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { Trade, PortfolioSnapshot, Portfolio, PriceCandle, TradingSignal } from '@/types';
+import type { Trade, PortfolioSnapshot, Portfolio, PriceCandle, TradingSignal, TradingConfig } from '@/types';
 import type { MarketRegimeSignal } from './market-regime-detector-cached';
 import type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
 import { fetchLatestPrice, fetchPriceCandles } from './eth-price-service';
@@ -25,7 +25,7 @@ export interface EnhancedPaperTradingSession {
   // Enhanced fields
   currentRegime: MarketRegimeSignal;
   currentIndicators: Record<string, number>;
-  lastSignal: TradingSignal & { regime: MarketRegimeSignal; activeStrategy: any; momentumConfirmed: boolean; positionSizeMultiplier: number };
+  lastSignal: TradingSignal & { regime: MarketRegimeSignal; activeStrategy: TradingConfig | null; momentumConfirmed: boolean; positionSizeMultiplier: number };
   lastPrice: number;
   lastUpdate: number;
 }
@@ -67,6 +67,26 @@ export class PaperTradingService {
     const currentIndex = candles.length - 1;
     const initialSignal = generateEnhancedAdaptiveSignal(candles, config, currentIndex);
 
+    // Populate portfolioHistory with historical price data from candles
+    // This gives the chart historical context even before the session has many updates
+    const initialCapital = config.bullishStrategy.initialCapital;
+    const portfolioHistory: PortfolioSnapshot[] = candles.map(candle => ({
+      timestamp: candle.timestamp,
+      usdcBalance: initialCapital, // Historical snapshots show starting balance
+      ethBalance: 0,
+      totalValue: initialCapital,
+      ethPrice: candle.close,
+    }));
+
+    // Add current snapshot with actual current price
+    portfolioHistory.push({
+      timestamp: Date.now(),
+      usdcBalance: initialCapital,
+      ethBalance: 0,
+      totalValue: initialCapital,
+      ethPrice: initialPrice,
+    });
+
     // Create session
     const session: EnhancedPaperTradingSession = {
       id: uuidv4(),
@@ -75,18 +95,12 @@ export class PaperTradingService {
       startedAt: Date.now(),
       isActive: true,
       trades: [],
-      portfolioHistory: [{
-        timestamp: Date.now(),
-        usdcBalance: config.bullishStrategy.initialCapital,
-        ethBalance: 0,
-        totalValue: config.bullishStrategy.initialCapital,
-        ethPrice: initialPrice,
-      }],
+      portfolioHistory,
       portfolio: {
-        usdcBalance: config.bullishStrategy.initialCapital,
+        usdcBalance: initialCapital,
         ethBalance: 0,
-        totalValue: config.bullishStrategy.initialCapital,
-        initialCapital: config.bullishStrategy.initialCapital,
+        totalValue: initialCapital,
+        initialCapital,
         totalReturn: 0,
         tradeCount: 0,
         winCount: 0,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useMemo } from 'react';
 import { css } from '@styled-system/css';
 import type { PortfolioSnapshot, Trade } from '@/types';
 
@@ -15,9 +15,10 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = '7d' 
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Filter history based on time range
-  const filteredHistory = (() => {
+  const filteredHistory = useMemo(() => {
     if (timeRange === 'all') return portfolioHistory;
     
+    // eslint-disable-next-line react-hooks/purity -- Date.now() is safe in useMemo
     const now = Date.now();
     const cutoffTime = now - (
       timeRange === '24h' ? 24 * 60 * 60 * 1000 :
@@ -26,7 +27,7 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = '7d' 
     );
     
     return portfolioHistory.filter(p => p.timestamp >= cutoffTime);
-  })();
+  }, [portfolioHistory, timeRange]);
 
   if (filteredHistory.length === 0) {
     return (
