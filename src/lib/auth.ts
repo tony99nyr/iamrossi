@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { logger } from './logger';
 
 const COOKIE_NAME = 'rehab_auth';
+const ADMIN_COOKIE_NAME = 'admin_auth';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 
 /**
@@ -82,6 +83,18 @@ export const AUTH_COOKIE_CONFIG = {
 };
 
 /**
+ * Cookie configuration for admin authentication
+ */
+export const ADMIN_AUTH_COOKIE_CONFIG = {
+    name: ADMIN_COOKIE_NAME,
+    maxAge: COOKIE_MAX_AGE,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+};
+
+/**
  * Verifies the admin secret from environment variable using constant-time comparison
  * to prevent timing attacks
  */
@@ -124,10 +137,48 @@ export function getAdminSecret(): string {
 }
 
 /**
- * Verifies admin authentication from request Authorization header
- * Accepts either ADMIN_SECRET or WORKOUT_ADMIN_PIN
+ * Gets client IP address from request (for rate limiting)
  */
-export function verifyAdminAuth(request: NextRequest): boolean {
+export function getClientIdentifier(request: NextRequest): string {
+    const forwarded = request.headers.get('x-forwarded-for');
+    const ip = forwarded ? forwarded.split(',')[0] : request.headers.get('x-real-ip') || 'unknown';
+    return ip;
+}
+
+/**
+ * Verifies admin authentication from request (cookie or Authorization header)
+ * Accepts either ADMIN_SECRET, WORKOUT_ADMIN_PIN, or valid session token
+ */
+export async function verifyAdminAuth(request: NextRequest): Promise<boolean> {
+    // Check for admin auth cookie first
+    const cookieHeader = request.headers.get('cookie') || '';
+    const adminCookie = cookieHeader.split(';').find(c => c.trim().startsWith(`${ADMIN_COOKIE_NAME}=`));
+    
+    if (adminCookie) {
+        // Extract token from cookie
+        const token = adminCookie.split('=')[1]?.trim();
+        if (token) {
+            // Check if it's a session token stored in Redis
+            try {
+                const { redis, ensureConnected } = await import('./kv');
+                await ensureConnected();
+                const sessionKey = `admin:session:${token}`;
+                const sessionExists = await redis.exists(sessionKey);
+                if (sessionExists) {
+                    return true;
+                }
+            } catch {
+                // If Redis check fails, fall through to secret/PIN check
+            }
+            
+            // Fall back to direct secret/PIN verification (for backward compatibility)
+            if (verifyAdminSecret(token) || verifyPin(token)) {
+                return true;
+            }
+        }
+    }
+
+    // Fall back to Authorization header
     const authHeader = request.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
@@ -135,6 +186,19 @@ export function verifyAdminAuth(request: NextRequest): boolean {
         return false;
     }
 
-    // Accept either ADMIN_SECRET or WORKOUT_ADMIN_PIN
+    // Check if it's a session token
+    try {
+        const { redis, ensureConnected } = await import('./kv');
+        await ensureConnected();
+        const sessionKey = `admin:session:${token}`;
+        const sessionExists = await redis.exists(sessionKey);
+        if (sessionExists) {
+            return true;
+        }
+    } catch {
+        // If Redis check fails, fall through to secret/PIN check
+    }
+
+    // Accept either ADMIN_SECRET or WORKOUT_ADMIN_PIN (for backward compatibility)
     return verifyAdminSecret(token) || verifyPin(token);
 }

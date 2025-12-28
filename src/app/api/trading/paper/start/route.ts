@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminAuth } from '@/lib/auth';
 import { PaperTradingService } from '@/lib/paper-trading-enhanced';
 import { getAdaptiveStrategyConfig } from '@/lib/kv';
+import { tradingStartSchema, safeValidateRequest } from '@/lib/validation';
 
 /**
  * POST /api/trading/paper/start
@@ -10,9 +11,22 @@ import { getAdaptiveStrategyConfig } from '@/lib/kv';
 export async function POST(request: NextRequest) {
   try {
     // Verify authentication
-    if (!verifyAdminAuth(request)) {
+    if (!(await verifyAdminAuth(request))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Validate request body
+    const body = await request.json().catch(() => ({}));
+    const validation = safeValidateRequest(tradingStartSchema, body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.issues[0]?.message || 'Invalid request body' },
+        { status: 400 }
+      );
+    }
+
+    const { name } = validation.data;
 
     // Get config from Redis or use default
     let config = await getAdaptiveStrategyConfig();
@@ -23,10 +37,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    // Optional: Allow override via request body
-    const body = await request.json().catch(() => ({}));
-    const name = body.name;
 
     // Start session
     const session = await PaperTradingService.startSession(config, name);

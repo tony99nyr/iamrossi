@@ -25,6 +25,11 @@ export default function StrategyComparisonTable({ runIds }: StrategyComparisonTa
           credentials: 'include',
         });
         if (!res.ok) {
+          if (res.status === 404) {
+            // Endpoint not implemented yet - gracefully handle
+            setError('Comparison feature not available');
+            return;
+          }
           throw new Error('Failed to fetch comparison data');
         }
         const data = await res.json();

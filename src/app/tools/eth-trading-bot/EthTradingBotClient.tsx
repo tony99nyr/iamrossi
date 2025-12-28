@@ -10,9 +10,6 @@ import PortfolioDisplay from './components/PortfolioDisplay';
 import RegimeDisplay from './components/RegimeDisplay';
 import PriceChart from './components/PriceChart';
 
-const AUTH_STORAGE_KEY = 'trading_bot_auth';
-const SECRET_STORAGE_KEY = 'trading_bot_secret';
-
 export default function EthTradingBotClient() {
   const [session, setSession] = useState<EnhancedPaperTradingSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,44 +22,48 @@ export default function EthTradingBotClient() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
 
-  // Get auth token from storage
-  const getAuthToken = (): string | null => {
-    if (typeof window === 'undefined') return null;
-    return sessionStorage.getItem(SECRET_STORAGE_KEY);
-  };
-
-  // Get auth headers
+  // Get auth headers - cookies are automatically sent with credentials: 'include'
   const getAuthHeaders = (): HeadersInit => {
-    const token = getAuthToken();
-    const headers: HeadersInit = {
+    return {
       'Content-Type': 'application/json',
     };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    return headers;
   };
 
-  // Check authentication on mount
+  // Check authentication on mount by attempting to fetch status
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const auth = sessionStorage.getItem(AUTH_STORAGE_KEY);
-      if (auth === 'true') {
-        setIsAuthenticated(true);
-        fetchStatus();
-      } else {
-        setShowPinModal(true);
-        setIsLoading(false);
-      }
-    }
+    checkAuth();
   }, []);
 
-  // Handle PIN success
-  const handlePinSuccess = (token: string) => {
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
-      sessionStorage.setItem(SECRET_STORAGE_KEY, token);
+  // Check authentication by attempting to fetch status
+  const checkAuth = async () => {
+    try {
+      const res = await fetch('/api/trading/paper/status', {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
+      
+      if (res.ok) {
+        setIsAuthenticated(true);
+        const data = await res.json();
+        setSession(data.session);
+        setLastUpdate(new Date());
+      } else if (res.status === 401) {
+        setIsAuthenticated(false);
+        setShowPinModal(true);
+      } else {
+        setIsAuthenticated(false);
+        setShowPinModal(true);
+      }
+    } catch (err) {
+      setIsAuthenticated(false);
+      setShowPinModal(true);
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  // Handle PIN success - token is now in HTTP-only cookie, no need to store it
+  const handlePinSuccess = () => {
     setIsAuthenticated(true);
     setShowPinModal(false);
     fetchStatus();
@@ -70,7 +71,8 @@ export default function EthTradingBotClient() {
 
   // Handle PIN cancel
   const handlePinCancel = () => {
-    setShowPinModal(false);
+    // Don't allow canceling - user must authenticate
+    // Could redirect to home page if needed
   };
 
   // Fetch session status
@@ -87,10 +89,6 @@ export default function EthTradingBotClient() {
         if (res.status === 401) {
           setIsAuthenticated(false);
           setShowPinModal(true);
-          if (typeof window !== 'undefined') {
-            sessionStorage.removeItem(AUTH_STORAGE_KEY);
-            sessionStorage.removeItem(SECRET_STORAGE_KEY);
-          }
           throw new Error('Unauthorized. Please authenticate first.');
         }
         throw new Error('Failed to fetch session status');
@@ -184,22 +182,29 @@ export default function EthTradingBotClient() {
     }
   };
 
-  // Initial load
+  // Auto-refresh every 5 minutes if session is active (only when tab is visible)
   useEffect(() => {
-    fetchStatus();
-  }, []);
+    if (!session?.isActive || !isAuthenticated) return;
 
-  // Auto-refresh every 5 minutes if session is active
-  useEffect(() => {
-    if (!session?.isActive) return;
+    const handleVisibilityChange = () => {
+      // Pause/resume refresh based on tab visibility
+    };
 
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
     const interval = setInterval(() => {
-      updateSession();
+      // Only refresh if tab is visible
+      if (!document.hidden) {
+        updateSession();
+      }
     }, 5 * 60 * 1000); // 5 minutes
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.isActive]);
+  }, [session?.isActive, isAuthenticated]);
 
   const formatTimeAgo = (date: Date | null) => {
     if (!date) return 'Never';
@@ -218,6 +223,22 @@ export default function EthTradingBotClient() {
     margin: '0 auto',
     color: '#c9d1d9',
   });
+
+  // Don't render UI until authenticated - show only PIN modal
+  if (!isAuthenticated) {
+    return (
+      <>
+        {showPinModal && (
+          <PinEntryModal
+            onSuccess={handlePinSuccess}
+            onCancel={handlePinCancel}
+            verifyEndpoint="/api/admin/verify"
+            pinFieldName="secret"
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className={containerStyles}>
@@ -447,16 +468,6 @@ export default function EthTradingBotClient() {
           </Link>
         </div>
       </div>
-
-      {/* PIN Entry Modal */}
-      {showPinModal && (
-        <PinEntryModal
-          onSuccess={handlePinSuccess}
-          onCancel={handlePinCancel}
-          verifyEndpoint="/api/admin/verify"
-          pinFieldName="secret"
-        />
-      )}
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { PaperTradingService } from '@/lib/paper-trading-enhanced';
 export async function POST(request: NextRequest) {
   try {
     // Verify authentication
-    if (!verifyAdminAuth(request)) {
+    if (!(await verifyAdminAuth(request))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

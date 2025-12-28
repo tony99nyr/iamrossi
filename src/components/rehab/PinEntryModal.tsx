@@ -65,10 +65,11 @@ export default function PinEntryModal({ onSuccess, onCancel, verifyEndpoint = '/
             const data = await response.json();
 
             if (response.ok) {
-                // For admin verify, we use the pin itself as the token (it's the admin secret)
-                // For rehab verify, we use the token from the response
-                const token = data.token || pin;
-                onSuccess(token);
+                // Token is now stored in HTTP-only cookie by the server
+                // For admin verify, the token is returned in the response
+                // For rehab verify, the token is also returned in the response
+                // We don't need to pass the token to onSuccess since it's in a cookie
+                onSuccess(data.token || '');
             } else if (response.status === 429) {
                 // Rate limited
                 setCooldownSeconds(data.cooldownSeconds || 300);
