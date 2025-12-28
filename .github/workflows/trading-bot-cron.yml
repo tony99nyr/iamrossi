@@ -14,24 +14,113 @@ jobs:
     
     steps:
       - name: Call Trading Bot Update API
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          VERCEL_URL: ${{ secrets.VERCEL_URL }}
         run: |
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -X GET \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.VERCEL_URL }}/api/trading/paper/cron-update")
+          set -e
           
-          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
-          BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS")
-          
-          echo "Response Status: $HTTP_STATUS"
-          echo "Response Body: $BODY"
-          
-          if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 401 ]; then
-            echo "✅ Trading bot update completed successfully"
-            exit 0
-          else
-            echo "❌ Trading bot update failed with status $HTTP_STATUS"
-            echo "$BODY"
+          # Validate required secrets
+          if [ -z "$VERCEL_URL" ]; then
+            echo "❌ Error: VERCEL_URL secret is not set in GitHub Secrets"
             exit 1
           fi
+          
+          if [ -z "$CRON_SECRET" ]; then
+            echo "❌ Error: CRON_SECRET secret is not set in GitHub Secrets"
+            exit 1
+          fi
+          
+          # Ensure VERCEL_URL has protocol
+          if [[ ! "$VERCEL_URL" =~ ^https?:// ]]; then
+            VERCEL_URL="https://${VERCEL_URL}"
+          fi
+          
+          # Construct the API endpoint URL
+          API_ENDPOINT="${VERCEL_URL}/api/trading/paper/cron-update"
+          
+          echo "🔗 Calling API: ${API_ENDPOINT}"
+          echo "🔐 Using CRON_SECRET: ${CRON_SECRET:0:4}... (hidden)"
+          
+          # Retry logic: try up to 3 times with exponential backoff
+          MAX_RETRIES=3
+          RETRY_DELAY=5
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Use a temporary file to capture both response and exit code
+            TEMP_FILE=$(mktemp)
+            HTTP_CODE_FILE=$(mktemp)
+            
+            # Run curl with better error handling
+            CURL_EXIT_CODE=0
+            curl -f -s -w "\nHTTP_STATUS:%{http_code}" \
+              --max-time 30 \
+              --connect-timeout 10 \
+              -X GET \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              "${API_ENDPOINT}" \
+              > "$TEMP_FILE" 2>&1 || CURL_EXIT_CODE=$?
+            
+            # Extract HTTP status code and body
+            HTTP_STATUS=$(grep "HTTP_STATUS" "$TEMP_FILE" | cut -d: -f2 || echo "")
+            BODY=$(grep -v "HTTP_STATUS" "$TEMP_FILE" || echo "")
+            
+            # Check if curl succeeded
+            if [ $CURL_EXIT_CODE -eq 0 ] && [ -n "$HTTP_STATUS" ]; then
+              echo "✅ Response received (HTTP $HTTP_STATUS)"
+              echo "Response Body: $BODY"
+              
+              # Check HTTP status
+              if [ "$HTTP_STATUS" -eq 200 ]; then
+                echo "✅ Trading bot update completed successfully"
+                rm -f "$TEMP_FILE" "$HTTP_CODE_FILE"
+                exit 0
+              elif [ "$HTTP_STATUS" -eq 401 ]; then
+                echo "⚠️  Unauthorized (401) - CRON_SECRET may be incorrect or endpoint requires different auth"
+                echo "Response Body: $BODY"
+                rm -f "$TEMP_FILE" "$HTTP_CODE_FILE"
+                exit 0  # Don't fail on 401 - might be expected if no active session
+              elif [ "$HTTP_STATUS" -eq 500 ]; then
+                echo "❌ Server error (500) - API endpoint encountered an error"
+                echo "Response Body: $BODY"
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                  echo "🔄 Retrying in ${RETRY_DELAY} seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+                  sleep $RETRY_DELAY
+                  RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+                fi
+              else
+                echo "❌ Trading bot update failed with status $HTTP_STATUS"
+                echo "Response Body: $BODY"
+                rm -f "$TEMP_FILE" "$HTTP_CODE_FILE"
+                exit 1
+              fi
+            else
+              # Curl failed (network error, timeout, etc.)
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "❌ Network error (curl exit code: $CURL_EXIT_CODE)"
+              echo "Error details: $BODY"
+              
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "🔄 Retrying in ${RETRY_DELAY} seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+                sleep $RETRY_DELAY
+                RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+              else
+                echo "❌ Failed after $MAX_RETRIES attempts"
+                echo "💡 Troubleshooting tips:"
+                echo "   1. Verify VERCEL_URL is correct in GitHub Secrets"
+                echo "   2. Ensure the Vercel deployment is accessible"
+                echo "   3. Check if the API endpoint path is correct"
+                echo "   4. Verify network connectivity from GitHub Actions"
+                rm -f "$TEMP_FILE" "$HTTP_CODE_FILE"
+                exit 1
+              fi
+            fi
+            
+            rm -f "$TEMP_FILE" "$HTTP_CODE_FILE"
+          done
+          
+          # Should not reach here, but just in case
+          exit 1
 
