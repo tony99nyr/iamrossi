@@ -4,7 +4,15 @@ import { PaperTradingService } from '@/lib/paper-trading-enhanced';
 /**
  * GET /api/trading/paper/cron-update
  * Background cron job to update paper trading session
- * Called by Vercel cron every 5 minutes
+ * 
+ * NOTE: Vercel Hobby plan only allows daily cron jobs, so this endpoint
+ * is available for manual triggering or external cron services.
+ * 
+ * For automatic updates, use:
+ * - UI auto-refresh (every 5 minutes when tab is open)
+ * - Manual "Refresh Now" button
+ * - External cron service (e.g., cron-job.org) calling this endpoint
+ * - Upgrade to Vercel Pro for scheduled cron jobs
  */
 export async function GET(request: NextRequest) {
   try {
