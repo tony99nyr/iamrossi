@@ -319,3 +319,119 @@ export interface PokemonIndexPoint {
   roc30?: number; // Rate of Change over 30 days (percentage)
 }
 
+// ============================================================================
+// ETH Trading Bot Types
+// ============================================================================
+
+export interface PriceCandle {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface IndicatorConfig {
+  type: 'sma' | 'ema' | 'macd' | 'rsi' | 'bollinger';
+  weight: number; // 0-1, sum should be ~1.0
+  params: Record<string, number>; // e.g., { period: 20 }
+}
+
+export interface TradingConfig {
+  name?: string; // Optional strategy name
+  description?: string; // Optional strategy description
+  timeframe: '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+  indicators: IndicatorConfig[];
+  buyThreshold: number;
+  sellThreshold: number;
+  maxPositionPct: number;
+  initialCapital: number;
+}
+
+export interface TradingSignal {
+  timestamp: number;
+  signal: number; // -1 to +1
+  confidence: number; // 0 to 1
+  indicators: Record<string, number>;
+  action: 'buy' | 'sell' | 'hold';
+}
+
+export interface Trade {
+  id: string;
+  timestamp: number;
+  type: 'buy' | 'sell';
+  ethPrice: number;
+  ethAmount: number;
+  usdcAmount: number;
+  signal: number;
+  confidence: number;
+  portfolioValue: number; // Total value after trade
+}
+
+export interface Portfolio {
+  usdcBalance: number;
+  ethBalance: number;
+  totalValue: number; // in USDC
+  initialCapital: number;
+  totalReturn: number; // percentage
+  tradeCount: number;
+  winCount: number;
+}
+
+export interface PortfolioSnapshot {
+  timestamp: number;
+  usdcBalance: number;
+  ethBalance: number;
+  totalValue: number;
+  ethPrice: number;
+}
+
+export interface StrategyResults {
+  initialCapital: number;
+  finalValue: number;
+  totalReturn: number; // Percentage
+  totalReturnUsd: number; // Absolute USD
+  tradeCount: number;
+  winCount: number;
+  lossCount: number;
+  winRate: number; // Percentage
+  avgWin: number;
+  avgLoss: number;
+  profitFactor: number; // Total wins / total losses
+  largestWin: number;
+  largestLoss: number;
+}
+
+export interface RiskMetrics {
+  sharpeRatio: number; // Risk-adjusted return
+  maxDrawdown: number; // Maximum peak-to-trough decline (percentage)
+  maxDrawdownDuration: number; // Days in max drawdown
+  volatility: number; // Standard deviation of returns
+  calmarRatio: number; // Return / max drawdown
+  sortinoRatio: number; // Downside risk-adjusted return
+  winLossRatio: number; // Avg win / avg loss
+  expectancy: number; // Expected value per trade
+}
+
+export interface StrategyRun {
+  id: string;
+  name?: string; // Optional user-friendly name
+  type: 'backtest' | 'paper';
+  createdAt: number; // Timestamp
+  startDate?: string; // For backtests
+  endDate?: string; // For backtests
+  
+  // Parameters used in this run
+  config: TradingConfig;
+  
+  // Results
+  results: StrategyResults;
+  
+  // Risk metrics
+  riskMetrics: RiskMetrics;
+  
+  // Trade history (optional, can be stored separately for large runs)
+  tradeIds?: string[]; // References to trades stored separately
+}
+

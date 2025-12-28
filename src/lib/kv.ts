@@ -30,7 +30,9 @@ import type {
   PokemonIndexSettings,
   PokemonCardPriceSnapshot,
   PokemonIndexPoint,
+  StrategyRun,
 } from '@/types';
+import type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
 import { statSessionSchema } from '@/lib/validation';
 
 // Create Redis client
@@ -108,6 +110,9 @@ async function ensureConnected(retries = 0): Promise<void> {
   }
 }
 
+// Export redis client and ensureConnected for use in other modules (e.g., eth-price-service.ts)
+export { redis, ensureConnected };
+
 // Handle Redis connection errors
 redis.on('error', (err) => {
   console.error('Redis client error:', err);
@@ -143,6 +148,8 @@ const KV_KEYS = {
   POKEMON_INDEX_SETTINGS: 'pokemon:index:settings',
   POKEMON_CARD_PRICES: 'pokemon:index:card-prices',
   POKEMON_INDEX_SERIES: 'pokemon:index:series',
+  ETH_ADAPTIVE_STRATEGY_CONFIG: 'eth:adaptive:strategy:config',
+  ETH_PAPER_SESSION_ACTIVE: 'eth:paper:session:active',
 } as const;
 
 // Exercise operations
@@ -721,4 +728,26 @@ export async function setPokemonIndexSeries(series: PokemonIndexPoint[]): Promis
   await ensureConnected();
   await redis.set(KV_KEYS.POKEMON_INDEX_SERIES, JSON.stringify(series));
 }
+
+// ============================================================================
+// ETH Trading Bot - Enhanced Adaptive Strategy Config
+// ============================================================================
+
+// Re-export type for convenience
+export type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
+
+export async function getAdaptiveStrategyConfig(): Promise<EnhancedAdaptiveStrategyConfig | null> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.ETH_ADAPTIVE_STRATEGY_CONFIG);
+  return data ? JSON.parse(data) as EnhancedAdaptiveStrategyConfig : null;
+}
+
+export async function saveAdaptiveStrategyConfig(config: EnhancedAdaptiveStrategyConfig): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.ETH_ADAPTIVE_STRATEGY_CONFIG, JSON.stringify(config));
+}
+
+// ============================================================================
+// ETH Trading Bot - Strategy Runs (REMOVED - No longer storing strategy runs)
+// ============================================================================
 

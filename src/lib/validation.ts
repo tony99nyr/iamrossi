@@ -17,6 +17,14 @@ export const pinVerifySchema = z.object({
 });
 
 // ============================================================================
+// Trading Schemas
+// ============================================================================
+
+export const tradingStartSchema = z.object({
+  name: z.string().optional(),
+});
+
+// ============================================================================
 // Rehab Schemas
 // ============================================================================
 
@@ -226,6 +234,48 @@ export const pokemonCardConfigSchema = z.object({
 export const pokemonIndexSettingsSchema = z.object({
   cards: z.array(pokemonCardConfigSchema).max(20, 'Maximum of 20 cards allowed'),
   refreshIntervalHours: z.number().int().positive().max(48).default(24),
+});
+
+// ============================================================================
+// ETH Trading Bot Schemas
+// ============================================================================
+
+export const indicatorConfigSchema = z.object({
+  type: z.enum(['sma', 'ema', 'macd', 'rsi', 'bollinger']),
+  weight: z.number().min(0).max(1),
+  params: z.record(z.string(), z.number()),
+});
+
+export const tradingConfigSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().optional(),
+  timeframe: z.enum(['1m', '5m', '15m', '1h', '4h', '1d']),
+  indicators: z.array(indicatorConfigSchema),
+  buyThreshold: z.number().min(-1).max(1),
+  sellThreshold: z.number().min(-1).max(1),
+  maxPositionPct: z.number().min(0).max(1),
+  initialCapital: z.number().positive(),
+});
+
+export const backtestRequestSchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  initialCapital: z.number().positive().optional(),
+  config: tradingConfigSchema,
+  saveRun: z.boolean().optional().default(false),
+  runName: z.string().optional(),
+});
+
+export const strategyRunQuerySchema = z.object({
+  type: z.enum(['backtest', 'paper']).optional(),
+  limit: z.coerce.number().int().positive().max(100).optional().default(20),
+  offset: z.coerce.number().int().nonnegative().optional().default(0),
+  sortBy: z.enum(['createdAt', 'totalReturn', 'sharpeRatio', 'calmarRatio']).optional().default('createdAt'),
+  order: z.enum(['asc', 'desc']).optional().default('desc'),
+});
+
+export const strategyCompareSchema = z.object({
+  ids: z.string().min(1).transform(s => s.split(',').map(id => id.trim())),
 });
 
 // ============================================================================
