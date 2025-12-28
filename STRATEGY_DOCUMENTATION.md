@@ -544,8 +544,8 @@ interface EnhancedAdaptiveStrategyConfig {
 ### Paper Trading Files
 - `src/lib/paper-trading-enhanced.ts` - Paper trading service
 - `src/app/api/trading/paper/*` - API routes
-- `src/app/tools/eth-trading-bot/EthTradingBotClient.tsx` - UI dashboard
-- `src/app/tools/eth-trading-bot/components/*` - UI components
+- `src/app/tools/eth-trading/EthTradingBotClient.tsx` - UI dashboard
+- `src/app/tools/eth-trading/components/*` - UI components
 
 ### Configuration Files
 - `src/lib/kv.ts` - Redis storage functions

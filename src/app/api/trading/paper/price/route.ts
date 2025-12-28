@@ -24,13 +24,13 @@ export async function GET(request: NextRequest) {
     const cached = await redis.get(CACHE_KEY);
     if (cached) {
       const { price, timestamp } = JSON.parse(cached) as { price: number; timestamp: number };
-      const now = Date.now();
+    const now = Date.now();
       if (now - timestamp < CACHE_TTL_SECONDS * 1000) {
-        return NextResponse.json({ 
+      return NextResponse.json({ 
           price,
-          cached: true,
+        cached: true,
           timestamp
-        });
+      });
       }
     }
 

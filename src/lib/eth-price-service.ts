@@ -2,7 +2,7 @@ import type { PriceCandle } from '@/types';
 import { redis, ensureConnected } from './kv';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { gunzipSync } from 'zlib';
+import { gunzipSync, gzipSync } from 'zlib';
 
 const BINANCE_API_URL = process.env.BINANCE_API_URL || 'https://api.binance.com/api/v3';
 const COINGECKO_API_URL = process.env.COINGECKO_API_URL || 'https://api.coingecko.com/api/v3';
@@ -28,32 +28,49 @@ function getCacheKey(symbol: string, interval: string, startTime: number, endTim
 
 /**
  * Get file path for historical price data
+ * For dates after 2025-12-27, uses rolling file format: ethusdt_1d_rolling.json.gz (fixed name)
+ * For dates up to 2025-12-27, uses date range format: YYYY-MM-DD_YYYY-MM-DD.json.gz
+ * If the range spans the cutoff, use rolling file if endDate is after cutoff
  */
 function getHistoricalDataPath(symbol: string, interval: string, startDate: string, endDate: string): string {
   // Sanitize dates for filename (YYYY-MM-DD format)
   const sanitizedStart = startDate.replace(/[^0-9-]/g, '');
   const sanitizedEnd = endDate.replace(/[^0-9-]/g, '');
+  
+  // Use rolling file format if endDate is after 2025-12-27 (even if startDate is before)
+  const cutoffDate = '2025-12-27';
+  if (sanitizedEnd > cutoffDate) {
+    // Rolling file: fixed name that gets updated
+    const filename = `${symbol.toLowerCase()}_${interval}_rolling.json`;
+    return path.join(HISTORICAL_DATA_DIR, symbol.toLowerCase(), interval, filename);
+  }
+  
+  // Original format for dates up to 2025-12-27
   const filename = `${sanitizedStart}_${sanitizedEnd}.json`;
   return path.join(HISTORICAL_DATA_DIR, symbol.toLowerCase(), interval, filename);
 }
 
 /**
- * Load historical price data from local JSON file (supports both .json and .json.gz)
+ * Load historical price data from local JSON file (always expects .json.gz)
  */
 async function loadFromFile(filePath: string): Promise<PriceCandle[] | null> {
   try {
-    // Try regular JSON file first
-    const data = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(data) as PriceCandle[];
+    // Always try compressed file first (.json.gz)
+    const compressedPath = `${filePath}.gz`;
+    const compressed = await fs.readFile(compressedPath);
+    const decompressed = gunzipSync(compressed);
+    const jsonString = decompressed.toString('utf-8');
+    return JSON.parse(jsonString) as PriceCandle[];
   } catch (error) {
-    // Try compressed file (.json.gz)
+    // Fallback: try uncompressed file (for backward compatibility with existing files)
     try {
-      const compressedPath = `${filePath}.gz`;
-      const compressed = await fs.readFile(compressedPath);
-      const decompressed = gunzipSync(compressed);
-      const jsonString = decompressed.toString('utf-8');
-      return JSON.parse(jsonString) as PriceCandle[];
-    } catch (compressedError) {
+      const data = await fs.readFile(filePath, 'utf-8');
+      const parsed = JSON.parse(data) as PriceCandle[];
+      // If we successfully loaded an uncompressed file, compress it and delete the old one
+      await saveToFile(filePath, parsed);
+      await fs.unlink(filePath).catch(() => {}); // Delete uncompressed file
+      return parsed;
+    } catch (fallbackError) {
       // Neither file exists or is invalid - return null
       return null;
     }
@@ -61,7 +78,7 @@ async function loadFromFile(filePath: string): Promise<PriceCandle[] | null> {
 }
 
 /**
- * Save historical price data to local JSON file
+ * Save historical price data to local file (always as compressed .json.gz)
  */
 async function saveToFile(filePath: string, candles: PriceCandle[]): Promise<void> {
   try {
@@ -69,11 +86,21 @@ async function saveToFile(filePath: string, candles: PriceCandle[]): Promise<voi
     const dir = path.dirname(filePath);
     await fs.mkdir(dir, { recursive: true });
     
-    // Write data to file
-    await fs.writeFile(filePath, JSON.stringify(candles, null, 2), 'utf-8');
+    // Always save as compressed .gz file
+    const compressedPath = `${filePath}.gz`;
+    const jsonString = JSON.stringify(candles, null, 2);
+    const compressed = gzipSync(jsonString);
+    await fs.writeFile(compressedPath, compressed);
+    
+    // Remove any uncompressed file if it exists (cleanup)
+    try {
+      await fs.unlink(filePath);
+    } catch {
+      // File doesn't exist, which is fine
+    }
   } catch (error) {
     // File write failure is not critical - log and continue
-    console.warn(`Failed to save historical data to ${filePath}:`, error);
+    console.warn(`Failed to save historical data to ${filePath}.gz:`, error);
   }
 }
 
@@ -245,53 +272,90 @@ export async function fetchPriceCandles(
   const startTime = new Date(startDate).getTime();
   const endTime = new Date(endDate).getTime();
   const interval = mapTimeframeToInterval(timeframe);
+  const cutoffDate = '2025-12-27';
+  const startDateStr = startDate.replace(/[^0-9-]/g, '');
+  const endDateStr = endDate.replace(/[^0-9-]/g, '');
 
-  // 1. Check local JSON file first (most reliable for historical data)
-  // Also check for organized compressed files (symbol_timeframe_start_end.json.gz)
-  const filePath = getHistoricalDataPath(symbol, interval, startDate, endDate);
-  let fileData = await loadFromFile(filePath);
+  // 1. Load data from local files
+  // If date range spans the cutoff, we need to load from both historical and rolling files
+  let allCandles: PriceCandle[] = [];
   
-  // If no exact match, try to find organized compressed file
-  if (!fileData || fileData.length === 0) {
-    try {
-      const dir = path.dirname(filePath);
-      const files = await fs.readdir(dir);
-      const organizedFiles = files.filter(f => 
-        f.startsWith(`${symbol.toLowerCase()}_${interval}_`) && 
-        f.endsWith('.json.gz')
+  // Load from historical file (if startDate is before cutoff)
+  if (startDateStr <= cutoffDate) {
+    const historicalEndDate = endDateStr <= cutoffDate ? endDateStr : cutoffDate;
+    const historicalFilePath = getHistoricalDataPath(symbol, interval, startDateStr, historicalEndDate);
+    const historicalData = await loadFromFile(historicalFilePath);
+    
+    if (historicalData && historicalData.length > 0) {
+      // Filter to date range
+      const filtered = historicalData.filter(c => 
+        c.timestamp >= startTime && c.timestamp <= endTime
       );
-      
-      // Try to find a file that covers our date range
-      for (const file of organizedFiles) {
-        const organizedPath = path.join(dir, file);
-        try {
-          const compressed = await fs.readFile(organizedPath);
-          const decompressed = gunzipSync(compressed);
-          const jsonString = decompressed.toString('utf-8');
-          const allCandles = JSON.parse(jsonString) as PriceCandle[];
-          
-          // Filter candles within our date range
-          const filtered = allCandles.filter(c => 
-            c.timestamp >= startTime && c.timestamp <= endTime
-          );
-          
-          if (filtered.length > 0) {
-            fileData = filtered;
-            console.log(`📁 Loaded ${filtered.length} candles from organized file: ${file}`);
-            break;
+      allCandles.push(...filtered);
+      console.log(`📁 Loaded ${filtered.length} candles from historical file`);
+    } else {
+      // Try to find any historical file that might cover this range
+      try {
+        const dir = path.dirname(historicalFilePath);
+        const files = await fs.readdir(dir);
+        const historicalFiles = files.filter(f => 
+          f.startsWith(`${symbol.toLowerCase()}_${interval}_`) && 
+          f.endsWith('.json.gz') &&
+          !f.includes('rolling')
+        );
+        
+        for (const file of historicalFiles) {
+          const filePath = path.join(dir, file);
+          try {
+            const compressed = await fs.readFile(filePath);
+            const decompressed = gunzipSync(compressed);
+            const jsonString = decompressed.toString('utf-8');
+            const candles = JSON.parse(jsonString) as PriceCandle[];
+            
+            const filtered = candles.filter(c => 
+              c.timestamp >= startTime && c.timestamp <= endTime && c.timestamp <= new Date(cutoffDate + 'T23:59:59Z').getTime()
+            );
+            
+            if (filtered.length > 0) {
+              allCandles.push(...filtered);
+              console.log(`📁 Loaded ${filtered.length} candles from historical file: ${file}`);
+            }
+          } catch (error) {
+            continue;
           }
-        } catch (error) {
-          // Continue to next file
-          continue;
         }
+      } catch (error) {
+        // Directory doesn't exist or can't read - continue
       }
-    } catch (error) {
-      // Directory doesn't exist or can't read - continue
     }
   }
   
-  if (fileData && fileData.length > 0) {
-    return fileData;
+  // Load from rolling file (if endDate is after cutoff)
+  if (endDateStr > cutoffDate) {
+    const rollingStartDate = startDateStr > cutoffDate ? startDateStr : '2025-12-28';
+    const rollingFilePath = getHistoricalDataPath(symbol, interval, rollingStartDate, endDateStr);
+    const rollingData = await loadFromFile(rollingFilePath);
+    
+    if (rollingData && rollingData.length > 0) {
+      // Filter to date range
+      const filtered = rollingData.filter(c => 
+        c.timestamp >= startTime && c.timestamp <= endTime
+      );
+      allCandles.push(...filtered);
+      console.log(`📁 Loaded ${filtered.length} candles from rolling file`);
+    }
+  }
+  
+  // Remove duplicates and sort by timestamp
+  if (allCandles.length > 0) {
+    const uniqueCandles = Array.from(
+      new Map(allCandles.map(c => [c.timestamp, c])).values()
+    ).sort((a, b) => a.timestamp - b.timestamp);
+    
+    // If we have enough data, return it
+    if (uniqueCandles.length >= 50 || uniqueCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime)) {
+      return uniqueCandles;
+    }
   }
 
   // 2. Check Redis cache (for recent data or if file doesn't exist)
@@ -301,17 +365,18 @@ export async function fetchPriceCandles(
     const cached = await redis.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached) as PriceCandle[];
-      // Also save to file for future use
-      await saveToFile(filePath, parsed);
-      return parsed;
+      // If we have enough data from cache, return it
+      if (parsed.length >= 50 || parsed.some(c => c.timestamp >= startTime && c.timestamp <= endTime)) {
+        return parsed;
+      }
     }
   } catch (error) {
     // Cache miss or error - continue to fetch
     console.warn('Redis cache read failed, fetching fresh data:', error);
   }
 
-  // 3. Fetch from API
-  let candles: PriceCandle[];
+  // 3. Fetch from API (only if we don't have enough data from files)
+  let candles: PriceCandle[] = [];
 
   try {
     // Try Binance first
@@ -323,14 +388,68 @@ export async function fetchPriceCandles(
       candles = await fetchCoinGeckoCandles(symbol, startTime, endTime);
     } catch (fallbackError) {
       console.error('CoinGecko API also failed:', fallbackError);
-      throw new Error('Both Binance and CoinGecko APIs failed');
+      // If we have some data from files, use that instead of throwing
+      if (allCandles.length > 0) {
+        console.warn('API fetch failed, but using existing file data');
+        const uniqueCandles = Array.from(
+          new Map(allCandles.map(c => [c.timestamp, c])).values()
+        ).sort((a, b) => a.timestamp - b.timestamp);
+        return uniqueCandles;
+      }
+      throw new Error('Both Binance and CoinGecko APIs failed and no file data available');
     }
+  }
+  
+  // Merge API data with file data
+  if (candles.length > 0 && allCandles.length > 0) {
+    const existingMap = new Map(allCandles.map(c => [c.timestamp, c]));
+    candles.forEach(c => {
+      existingMap.set(c.timestamp, c); // API data overwrites file data
+    });
+    candles = Array.from(existingMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+  } else if (allCandles.length > 0 && candles.length === 0) {
+    // No API data, but we have file data
+    candles = Array.from(
+      new Map(allCandles.map(c => [c.timestamp, c])).values()
+    ).sort((a, b) => a.timestamp - b.timestamp);
   }
 
   // 4. Save to both local file and Redis
-  // Save to file first (persistent, can be committed to repo)
-  await saveToFile(filePath, candles);
-  console.log(`💾 Saved ${candles.length} candles to local file: ${filePath}`);
+  // Determine which file(s) to save to based on date range
+  if (endDateStr > cutoffDate) {
+    // This is going to the rolling file - merge with existing data
+    const rollingStartDate = startDateStr > cutoffDate ? startDateStr : '2025-12-28';
+    const rollingFilePath = getHistoricalDataPath(symbol, interval, rollingStartDate, endDateStr);
+    const existingRollingData = await loadFromFile(rollingFilePath);
+    if (existingRollingData && existingRollingData.length > 0) {
+      // Merge candles, avoiding duplicates (new data overwrites old for same timestamp)
+      const existingMap = new Map(existingRollingData.map(c => [c.timestamp, c]));
+      candles.forEach(c => {
+        existingMap.set(c.timestamp, c); // New data overwrites old data for same timestamp
+      });
+      const merged = Array.from(existingMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+      await saveToFile(rollingFilePath, merged);
+      console.log(`💾 Merged ${candles.length} candles into rolling file: ${rollingFilePath} (total: ${merged.length})`);
+    } else {
+      await saveToFile(rollingFilePath, candles);
+      console.log(`💾 Saved ${candles.length} candles to rolling file: ${rollingFilePath}`);
+    }
+  }
+  
+  // Also save to historical file if startDate is before cutoff
+  if (startDateStr <= cutoffDate && candles.length > 0) {
+    const historicalEndDate = endDateStr <= cutoffDate ? endDateStr : cutoffDate;
+    const historicalFilePath = getHistoricalDataPath(symbol, interval, startDateStr, historicalEndDate);
+    // Only save candles that are within the historical date range
+    const historicalCandles = candles.filter(c => {
+      const candleDate = new Date(c.timestamp).toISOString().split('T')[0].replace(/[^0-9-]/g, '');
+      return candleDate <= cutoffDate;
+    });
+    if (historicalCandles.length > 0) {
+      await saveToFile(historicalFilePath, historicalCandles);
+      console.log(`💾 Saved ${historicalCandles.length} candles to historical file: ${historicalFilePath}`);
+    }
+  }
 
   // Also cache in Redis for 24 hours (for quick access)
   try {
@@ -345,39 +464,204 @@ export async function fetchPriceCandles(
 }
 
 /**
- * Fetch latest price for ETH/USDC
+ * Update today's candle in historical data with latest price
+ * This keeps historical data current as new prices are fetched
+ */
+async function updateTodayCandle(symbol: string, price: number, timeframe: string = '1d'): Promise<void> {
+  try {
+    await ensureConnected();
+    const interval = mapTimeframeToInterval(timeframe);
+    
+    // Get today's date range (start of day to end of day)
+    const now = Date.now();
+    const today = new Date(now);
+    today.setUTCHours(0, 0, 0, 0);
+    const todayStart = today.getTime();
+    const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1;
+    
+    // Try to get existing today's candle from cache
+    const cacheKey = getCacheKey(symbol, interval, todayStart, todayEnd);
+    const cached = await redis.get(cacheKey);
+    
+    if (cached) {
+      const candles = JSON.parse(cached) as PriceCandle[];
+      if (candles.length > 0) {
+        // Find or create today's candle
+        const todayCandleIndex = candles.findIndex(c => {
+          const candleDate = new Date(c.timestamp);
+          candleDate.setUTCHours(0, 0, 0, 0);
+          return candleDate.getTime() === todayStart;
+        });
+        
+        if (todayCandleIndex >= 0) {
+          // Update existing today's candle
+          const todayCandle = candles[todayCandleIndex];
+          todayCandle.close = price;
+          todayCandle.high = Math.max(todayCandle.high, price);
+          todayCandle.low = Math.min(todayCandle.low, price);
+        } else {
+          // Add new candle for today
+          candles.push({
+            timestamp: todayStart,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: 0,
+          });
+        }
+        
+        // Sort by timestamp and update cache
+        candles.sort((a, b) => a.timestamp - b.timestamp);
+        await redis.setEx(cacheKey, 86400, JSON.stringify(candles));
+      }
+    } else {
+      // No cache for today - create new candle
+      const newCandle: PriceCandle = {
+        timestamp: todayStart,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume: 0,
+      };
+      await redis.setEx(cacheKey, 86400, JSON.stringify([newCandle]));
+    }
+    
+    // Also try to update file if we're not in serverless (filesystem available)
+    // This is best-effort and won't work in Vercel serverless
+    try {
+      const todayStr = new Date(todayStart).toISOString().split('T')[0];
+      
+      // For dates after 2025-12-27, use rolling file format: ethusdt_1d_rolling.json.gz (fixed name)
+      let filePath: string;
+      if (todayStr > '2025-12-27') {
+        // Rolling file format for dates after 2025-12-27 (fixed filename)
+        filePath = getHistoricalDataPath(symbol, interval, '2025-12-28', todayStr);
+      } else {
+        // Date-specific file for dates up to 2025-12-27
+        filePath = getHistoricalDataPath(symbol, interval, todayStr, todayStr);
+      }
+      
+      let existingFileData = await loadFromFile(filePath);
+      
+      // If rolling file doesn't exist yet, create it
+      if (!existingFileData && todayStr > '2025-12-27') {
+        existingFileData = [];
+      }
+      
+      if (existingFileData) {
+        const todayCandleIndex = existingFileData.findIndex(c => {
+          const candleDate = new Date(c.timestamp);
+          candleDate.setUTCHours(0, 0, 0, 0);
+          return candleDate.getTime() === todayStart;
+        });
+        
+        if (todayCandleIndex >= 0) {
+          existingFileData[todayCandleIndex].close = price;
+          existingFileData[todayCandleIndex].high = Math.max(existingFileData[todayCandleIndex].high, price);
+          existingFileData[todayCandleIndex].low = Math.min(existingFileData[todayCandleIndex].low, price);
+        } else {
+          existingFileData.push({
+            timestamp: todayStart,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: 0,
+          });
+        }
+        
+        // Sort by timestamp to keep data organized
+        existingFileData.sort((a, b) => a.timestamp - b.timestamp);
+        
+        await saveToFile(filePath, existingFileData);
+      }
+    } catch (fileError) {
+      // File update is optional (won't work in serverless) - ignore errors
+    }
+  } catch (error) {
+    // Non-critical - log but don't throw
+    console.warn('Failed to update today candle in historical data:', error);
+  }
+}
+
+/**
+ * Fetch latest price for ETH/USDC and update historical data
  */
 export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<number> {
+  let price: number;
+  
   try {
-    // Try Binance first
+    // Try Binance first with timeout
     const url = `${BINANCE_API_URL}/ticker/price?symbol=${symbol}`;
-    const response = await fetch(url);
-    if (response.ok) {
-      const data = await response.json();
-      return parseFloat(data.price);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const data = await response.json();
+        price = parseFloat(data.price);
+        return price;
+      } else {
+        throw new Error(`Binance returned ${response.status}`);
+      }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        throw new Error('Binance request timeout');
+      }
+      throw fetchError;
     }
   } catch (error) {
     console.error('Binance price fetch failed:', error);
+    
+    // Fallback to CoinGecko
+    try {
+      const coinId = 'ethereum';
+      const url = `${COINGECKO_API_URL}/simple/price?ids=${coinId}&vs_currencies=usd`;
+      const apiKey = process.env.COINGECKO_API_KEY;
+      const headers: HeadersInit = {};
+      if (apiKey) {
+        headers['x-cg-demo-api-key'] = apiKey;
+      }
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      try {
+        const response = await fetch(url, { headers, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (response.ok) {
+          const data = await response.json();
+          price = data[coinId]?.usd || 0;
+          if (!price) {
+            throw new Error('CoinGecko returned invalid price');
+          }
+          return price;
+        } else {
+          throw new Error(`CoinGecko returned ${response.status}`);
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          throw new Error('CoinGecko request timeout');
+        }
+        throw fetchError;
+      }
+    } catch (fallbackError) {
+      console.error('CoinGecko price fetch failed:', fallbackError);
+      throw new Error('Failed to fetch latest price from both APIs');
+    }
   }
 
-  // Fallback to CoinGecko
-  try {
-    const coinId = 'ethereum';
-    const url = `${COINGECKO_API_URL}/simple/price?ids=${coinId}&vs_currencies=usd`;
-    const apiKey = process.env.COINGECKO_API_KEY;
-    const headers: HeadersInit = {};
-    if (apiKey) {
-      headers['x-cg-demo-api-key'] = apiKey;
-    }
-    const response = await fetch(url, { headers });
-    if (response.ok) {
-      const data = await response.json();
-      return data[coinId]?.usd || 0;
-    }
-  } catch (error) {
-    console.error('CoinGecko price fetch failed:', error);
-  }
+  // Update historical data with latest price (non-blocking)
+  updateTodayCandle(symbol, price, '1d').catch(err => {
+    console.warn('Failed to update historical data with latest price:', err);
+  });
 
-  throw new Error('Failed to fetch latest price from both APIs');
+  return price;
 }
 

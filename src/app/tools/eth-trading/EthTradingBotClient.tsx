@@ -8,6 +8,7 @@ import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
 import PortfolioDisplay from './components/PortfolioDisplay';
 import RegimeDisplay from './components/RegimeDisplay';
+import StrategyIndicators from './components/StrategyIndicators';
 import PriceChart from './components/PriceChart';
 
 export default function EthTradingBotClient() {
@@ -18,7 +19,7 @@ export default function EthTradingBotClient() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d' | 'all'>('7d');
+  const [timeRange, setTimeRange] = useState<'all' | 'ytd' | '6m' | '3m' | '1m' | '14d' | '7d' | '1d'>('all');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
 
@@ -303,6 +304,47 @@ export default function EthTradingBotClient() {
                 {isUpdating ? 'Updating...' : 'Refresh Now'}
               </button>
               <button
+                onClick={async () => {
+                  try {
+                    setIsUpdating(true);
+                    const res = await fetch('/api/trading/paper/refresh-historical', {
+                      method: 'POST',
+                      headers: getAuthHeaders(),
+                      credentials: 'include',
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      console.log('Historical data refreshed:', data);
+                      // Refresh session to get updated data
+                      await fetchStatus();
+                    } else {
+                      throw new Error('Failed to refresh historical data');
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to refresh historical data');
+                  } finally {
+                    setIsUpdating(false);
+                  }
+                }}
+                disabled={isUpdating}
+                className={css({
+                  padding: '8px 16px',
+                  bg: '#7c3aed',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: isUpdating ? 'not-allowed' : 'pointer',
+                  opacity: isUpdating ? 0.6 : 1,
+                  fontWeight: 'semibold',
+                  fontSize: 'sm',
+                  _hover: {
+                    bg: '#8b5cf6',
+                  },
+                })}
+              >
+                Refresh Historical Data
+              </button>
+              <button
                 onClick={stopSession}
                 disabled={isStopping}
                 className={css({
@@ -336,7 +378,7 @@ export default function EthTradingBotClient() {
           </div>
         ) : session ? (
           <div className={stack({ gap: '24px' })}>
-            {/* Portfolio and Regime */}
+            {/* Portfolio, Regime, and Strategy Indicators */}
             <div className={flex({ gap: '24px', flexWrap: 'wrap' })}>
               <div className={css({ flex: '1', minWidth: '300px' })}>
                 <PortfolioDisplay portfolio={session.portfolio} />
@@ -348,31 +390,77 @@ export default function EthTradingBotClient() {
                   momentumConfirmed={session.lastSignal.momentumConfirmed}
                 />
               </div>
+              <div className={css({ flex: '1', minWidth: '300px' })}>
+                <StrategyIndicators session={session} />
+              </div>
             </div>
 
             {/* Price Chart */}
             <div>
-              <div className={flex({ gap: '8px', marginBottom: '12px' })}>
-                {(['24h', '7d', '30d', 'all'] as const).map(range => (
-                  <button
-                    key={range}
-                    onClick={() => setTimeRange(range)}
-                    className={css({
-                      padding: '4px 12px',
-                      bg: timeRange === range ? '#1f6feb' : '#21262d',
-                      color: timeRange === range ? '#fff' : '#c9d1d9',
-                      border: '1px solid #30363d',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: 'sm',
-                      _hover: {
-                        bg: timeRange === range ? '#1f6feb' : '#30363d',
-                      },
-                    })}
-                  >
-                    {range === 'all' ? 'All' : range.toUpperCase()}
-                  </button>
-                ))}
+              <div className={flex({ gap: '0px', marginBottom: '12px', flexDirection: 'column', overflowX: 'auto' })}>
+                {/* First row: All, YTD, 6M, 3M, 1M */}
+                <div className={flex({ gap: '0px', minWidth: 'fit-content' })}>
+                  {(['all', 'ytd', '6m', '3m', '1m'] as const).map((range, index) => {
+                    const isFirst = index === 0;
+                    const isLast = index === 4;
+                    return (
+                      <button
+                        key={range}
+                        onClick={() => setTimeRange(range)}
+                        className={css({
+                          padding: { base: '4px 12px', md: '6px 16px' },
+                          bg: timeRange === range ? '#111827' : 'transparent',
+                          color: timeRange === range ? '#e5e7eb' : '#6b7280',
+                          border: '1px solid #1f2937',
+                          borderRight: !isLast ? 'none' : '1px solid #1f2937',
+                          borderRadius: isFirst ? '6px 0 0 0' : isLast ? '0 6px 0 0' : '0',
+                          cursor: 'pointer',
+                          fontSize: { base: 'xs', md: 'sm' },
+                          fontWeight: timeRange === range ? 'semibold' : 'normal',
+                          whiteSpace: 'nowrap',
+                          _hover: {
+                            bg: timeRange === range ? '#111827' : '#1f2937',
+                            color: timeRange === range ? '#e5e7eb' : '#9ca3af',
+                          },
+                        })}
+                      >
+                        {range === 'all' ? 'All' : range === 'ytd' ? 'YTD' : range === '6m' ? '6M' : range === '3m' ? '3M' : '1M'}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Second row: 14D, 7D, 1D */}
+                <div className={flex({ gap: '0px', minWidth: 'fit-content' })}>
+                  {(['14d', '7d', '1d'] as const).map((range, index) => {
+                    const isFirst = index === 0;
+                    const isLast = index === 2;
+                    return (
+                      <button
+                        key={range}
+                        onClick={() => setTimeRange(range)}
+                        className={css({
+                          padding: { base: '4px 12px', md: '6px 16px' },
+                          bg: timeRange === range ? '#111827' : 'transparent',
+                          color: timeRange === range ? '#e5e7eb' : '#6b7280',
+                          border: '1px solid #1f2937',
+                          borderTop: 'none',
+                          borderRight: !isLast ? 'none' : '1px solid #1f2937',
+                          borderRadius: isFirst ? '0 0 0 6px' : isLast ? '0 6px 6px 0' : '0',
+                          cursor: 'pointer',
+                          fontSize: { base: 'xs', md: 'sm' },
+                          fontWeight: timeRange === range ? 'semibold' : 'normal',
+                          whiteSpace: 'nowrap',
+                          _hover: {
+                            bg: timeRange === range ? '#111827' : '#1f2937',
+                            color: timeRange === range ? '#e5e7eb' : '#9ca3af',
+                          },
+                        })}
+                      >
+                        {range === '14d' ? '14D' : range === '7d' ? '7D' : '1D'}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <PriceChart
                 portfolioHistory={session.portfolioHistory}
@@ -448,25 +536,6 @@ export default function EthTradingBotClient() {
           </div>
         )}
 
-        <div className={css({
-          marginTop: '48px',
-          paddingTop: '24px',
-          borderTop: '1px solid #30363d',
-        })}>
-          <Link
-            href="/"
-            className={css({
-              color: '#58a6ff',
-              textDecoration: 'none',
-              fontSize: 'sm',
-              _hover: {
-                textDecoration: 'underline',
-              },
-            })}
-          >
-            ← Back to Home
-          </Link>
-        </div>
       </div>
     </div>
   );
