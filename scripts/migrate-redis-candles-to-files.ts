@@ -5,8 +5,23 @@ import path from 'path';
 import { gzipSync, gunzipSync } from 'zlib';
 import type { PriceCandle } from '../src/types';
 
-// Load environment variables
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+// Load environment variables from .env.local if it exists (for local development)
+// In CI/GitHub Actions, REDIS_URL should be set as an environment variable
+// dotenv.config() won't override existing environment variables, so this is safe
+const envPath = path.resolve(process.cwd(), '.env.local');
+try {
+  dotenv.config({ path: envPath });
+} catch {
+  // .env.local doesn't exist (e.g., in CI) - that's OK, use environment variables
+}
+
+// Verify REDIS_URL is set (critical for the script to work)
+if (!process.env.REDIS_URL) {
+  console.error('❌ ERROR: REDIS_URL environment variable is not set!');
+  console.error('   In GitHub Actions, make sure REDIS_URL is set in Secrets');
+  console.error('   Locally, make sure .env.local contains REDIS_URL');
+  process.exit(1);
+}
 
 const PRICE_CACHE_PREFIX = 'eth:price:cache:';
 const HISTORICAL_DATA_DIR = path.join(process.cwd(), 'data', 'historical-prices');

@@ -46,7 +46,13 @@ jobs:
         env:
           REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
+          if [ -z "$REDIS_URL" ]; then
+            echo "❌ ERROR: REDIS_URL secret is not set in GitHub Secrets"
+            echo "   Please add REDIS_URL to Settings → Secrets and variables → Actions"
+            exit 1
+          fi
           echo "🔄 Running Redis to files migration..."
+          echo "🔗 Connecting to Redis (URL: ${REDIS_URL:0:30}...)"
           pnpm eth:migrate-redis || {
             echo "⚠️  Migration script completed with warnings or errors"
             # Continue even if there are warnings (e.g., file write errors in serverless)
