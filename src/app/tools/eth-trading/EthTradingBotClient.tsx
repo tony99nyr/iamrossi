@@ -10,6 +10,12 @@ import PortfolioDisplay from './components/PortfolioDisplay';
 import RegimeDisplay from './components/RegimeDisplay';
 import StrategyIndicators from './components/StrategyIndicators';
 import PriceChart from './components/PriceChart';
+import HealthStatusPanel from './components/HealthStatusPanel';
+import PerformanceMetricsPanel from './components/PerformanceMetricsPanel';
+import PositionRiskPanel from './components/PositionRiskPanel';
+import StrategyExecutionPanel from './components/StrategyExecutionPanel';
+import TradeAnalyticsPanel from './components/TradeAnalyticsPanel';
+import DataQualityPanel from './components/DataQualityPanel';
 
 export default function EthTradingBotClient() {
   const [session, setSession] = useState<EnhancedPaperTradingSession | null>(null);
@@ -378,6 +384,19 @@ export default function EthTradingBotClient() {
           </div>
         ) : session ? (
           <div className={stack({ gap: '24px' })}>
+            {/* Health & Performance Row */}
+            <div className={flex({ gap: '24px', flexWrap: 'wrap' })}>
+              <div className={css({ flex: '1', minWidth: '300px' })}>
+                <HealthStatusPanel session={session} />
+              </div>
+              <div className={css({ flex: '1', minWidth: '300px' })}>
+                <PerformanceMetricsPanel session={session} />
+              </div>
+              <div className={css({ flex: '1', minWidth: '300px' })}>
+                <DataQualityPanel session={session} />
+              </div>
+            </div>
+
             {/* Portfolio, Regime, and Strategy Indicators */}
             <div className={flex({ gap: '24px', flexWrap: 'wrap' })}>
               <div className={css({ flex: '1', minWidth: '300px' })}>
@@ -392,6 +411,19 @@ export default function EthTradingBotClient() {
               </div>
               <div className={css({ flex: '1', minWidth: '300px' })}>
                 <StrategyIndicators session={session} />
+              </div>
+            </div>
+
+            {/* Position, Strategy Execution, and Trade Analytics */}
+            <div className={flex({ gap: '24px', flexWrap: 'wrap' })}>
+              <div className={css({ flex: '1', minWidth: '300px' })}>
+                <PositionRiskPanel session={session} />
+              </div>
+              <div className={css({ flex: '1', minWidth: '300px' })}>
+                <StrategyExecutionPanel session={session} />
+              </div>
+              <div className={css({ flex: '1', minWidth: '300px' })}>
+                <TradeAnalyticsPanel session={session} />
               </div>
             </div>
 

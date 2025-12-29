@@ -85,16 +85,18 @@ function hasStrongMomentum(
 
 /**
  * Check if regime has persisted using majority rule (N out of last 5 periods)
- * Uses a single history per backtest (based on candles length) instead of per-index
+ * For paper trading, uses sessionId to maintain history across updates
+ * For backtests, uses candles length as cache key
  */
 function checkRegimePersistence(
   candles: PriceCandle[],
   currentIndex: number,
   requiredPeriods: number,
-  targetRegime: 'bullish' | 'bearish' | 'neutral'
+  targetRegime: 'bullish' | 'bearish' | 'neutral',
+  sessionId?: string
 ): boolean {
-  // Use candles length as cache key (single history per backtest)
-  const cacheKey = `${candles.length}`;
+  // Use sessionId for paper trading, candles length for backtests
+  const cacheKey = sessionId || `${candles.length}`;
   
   // Initialize history if needed
   if (!regimeHistory.has(cacheKey)) {
@@ -106,13 +108,22 @@ function checkRegimePersistence(
   // Detect current regime
   const regime = detectMarketRegime(candles, currentIndex);
   
-  // Add to history (only if we haven't seen this index yet)
-  // Track by index to avoid duplicates
-  if (history.length <= currentIndex) {
+  // For paper trading with sessionId, append to history (rolling window)
+  // For backtests, track by index
+  if (sessionId) {
+    // Paper trading: append new regime, keep last 10 periods for rolling window
     history.push(regime.regime);
+    if (history.length > 10) {
+      history.shift(); // Keep only last 10 periods
+    }
   } else {
-    // Update existing entry
-    history[currentIndex] = regime.regime;
+    // Backtest: track by index
+    if (history.length <= currentIndex) {
+      history.push(regime.regime);
+    } else {
+      // Update existing entry
+      history[currentIndex] = regime.regime;
+    }
   }
   
   // Need at least 5 periods in history for majority rule
@@ -154,11 +165,13 @@ function calculateDynamicPositionSize(
 
 /**
  * Generate enhanced adaptive trading signal with persistence and dynamic sizing
+ * @param sessionId Optional session ID for paper trading (maintains regime history across updates)
  */
 export function generateEnhancedAdaptiveSignal(
   candles: PriceCandle[],
   config: EnhancedAdaptiveStrategyConfig,
-  currentIndex: number
+  currentIndex: number,
+  sessionId?: string
 ): TradingSignal & { 
   regime: MarketRegimeSignal; 
   activeStrategy: TradingConfig; 
@@ -181,7 +194,7 @@ export function generateEnhancedAdaptiveSignal(
     momentumConfirmed = hasStrongMomentum(candles, currentIndex, momentumThreshold);
     
     // Check regime persistence (require bullish for N periods)
-    const regimePersisted = checkRegimePersistence(candles, currentIndex, persistencePeriods, 'bullish');
+    const regimePersisted = checkRegimePersistence(candles, currentIndex, persistencePeriods, 'bullish', sessionId);
     
     if (momentumConfirmed && regimePersisted) {
       activeStrategy = config.bullishStrategy;
@@ -195,7 +208,7 @@ export function generateEnhancedAdaptiveSignal(
     }
   } else if (regime.regime === 'bearish' && regime.confidence >= confidenceThreshold) {
     // Check regime persistence for bearish
-    const regimePersisted = checkRegimePersistence(candles, currentIndex, persistencePeriods, 'bearish');
+    const regimePersisted = checkRegimePersistence(candles, currentIndex, persistencePeriods, 'bearish', sessionId);
     
     if (regimePersisted) {
       activeStrategy = config.bearishStrategy;
@@ -231,5 +244,12 @@ export function generateEnhancedAdaptiveSignal(
  */
 export function clearRegimeHistory(): void {
   regimeHistory.clear();
+}
+
+/**
+ * Clear regime history for a specific session (useful when stopping paper trading)
+ */
+export function clearRegimeHistoryForSession(sessionId: string): void {
+  regimeHistory.delete(sessionId);
 }
 

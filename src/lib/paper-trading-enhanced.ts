@@ -8,9 +8,10 @@ import type { Trade, PortfolioSnapshot, Portfolio, PriceCandle, TradingSignal, T
 import type { MarketRegimeSignal } from './market-regime-detector-cached';
 import type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
 import { fetchLatestPrice, fetchPriceCandles } from './eth-price-service';
-import { generateEnhancedAdaptiveSignal, clearRegimeHistory } from './adaptive-strategy-enhanced';
+import { generateEnhancedAdaptiveSignal, clearRegimeHistory, clearRegimeHistoryForSession } from './adaptive-strategy-enhanced';
 import { calculateConfidence } from './confidence-calculator';
 import { redis, ensureConnected } from './kv';
+import { validateDataQuality, type DataQualityReport } from './data-quality-validator';
 
 export interface EnhancedPaperTradingSession {
   id: string;
@@ -28,6 +29,9 @@ export interface EnhancedPaperTradingSession {
   lastSignal: TradingSignal & { regime: MarketRegimeSignal; activeStrategy: TradingConfig | null; momentumConfirmed: boolean; positionSizeMultiplier: number };
   lastPrice: number;
   lastUpdate: number;
+  dataQuality?: DataQualityReport; // Latest data quality report
+  regimeHistory?: Array<{ timestamp: number; regime: MarketRegimeSignal['regime']; confidence: number }>; // Track regime changes
+  strategySwitches?: Array<{ timestamp: number; from: string; to: string; reason: string }>; // Track strategy switches
 }
 
 const ACTIVE_SESSION_KEY = 'eth:paper:session:active';
@@ -63,9 +67,20 @@ export class PaperTradingService {
     // Clear any previous regime history
     clearRegimeHistory();
 
-    // Generate initial signal to get regime
+    // Generate initial signal to get regime (pass session ID for regime history tracking)
     const currentIndex = candles.length - 1;
-    const initialSignal = generateEnhancedAdaptiveSignal(candles, config, currentIndex);
+    const sessionId = uuidv4(); // Generate session ID before creating session
+    
+    // Validate data quality
+    const startTime = new Date(startDate).getTime();
+    const endTime = new Date(endDate).getTime();
+    const dataQuality = validateDataQuality(candles, '1d', startTime, endTime, currentIndex, 60);
+    
+    if (!dataQuality.isValid) {
+      console.warn('Data quality issues detected at session start:', dataQuality.issues);
+    }
+    
+    const initialSignal = generateEnhancedAdaptiveSignal(candles, config, currentIndex, sessionId);
 
     // Populate portfolioHistory with historical price data from candles
     // This gives the chart historical context even before the session has many updates
@@ -89,7 +104,7 @@ export class PaperTradingService {
 
     // Create session
     const session: EnhancedPaperTradingSession = {
-      id: uuidv4(),
+      id: sessionId,
       name,
       config,
       startedAt: Date.now(),
@@ -110,6 +125,13 @@ export class PaperTradingService {
       lastSignal: initialSignal,
       lastPrice: initialPrice,
       lastUpdate: Date.now(),
+      dataQuality,
+      regimeHistory: [{
+        timestamp: Date.now(),
+        regime: initialSignal.regime.regime,
+        confidence: initialSignal.regime.confidence,
+      }],
+      strategySwitches: [],
     };
 
     // Save to Redis
@@ -137,21 +159,60 @@ export class PaperTradingService {
       throw new Error('Paper trading session is not active');
     }
 
-    // Fetch latest price
+    // Fetch latest price (this updates today's candle in Redis asynchronously)
     const currentPrice = await fetchLatestPrice('ETHUSDT');
+    
+    // Note: updateTodayCandle is called asynchronously in fetchLatestPrice
+    // The merge logic in fetchPriceCandles will pick up today's candle from Redis
+    // We add a small delay to give updateTodayCandle time to complete its Redis update
+    await new Promise(resolve => setTimeout(resolve, 200));
 
-    // Fetch recent candles for regime detection
+    // Also fetch and save hourly candles for historical data continuity
+    // This ensures we have hourly candle data going forward
+    try {
+      const now = new Date();
+      const today = new Date(now);
+      today.setUTCHours(0, 0, 0, 0);
+      const todayStr = today.toISOString().split('T')[0];
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      
+      // Fetch hourly candles for yesterday and today (saves to Redis and files)
+      await fetchPriceCandles('ETHUSDT', '1h', yesterdayStr, todayStr, currentPrice);
+      console.log(`✅ Fetched and saved hourly candles for historical data`);
+    } catch (hourlyError) {
+      // Non-critical - log but don't fail the session update
+      console.warn('Failed to fetch hourly candles (non-critical):', hourlyError instanceof Error ? hourlyError.message : hourlyError);
+    }
+
+    // Fetch recent candles for regime detection (daily candles for strategy)
+    // Pass currentPrice so fetchPriceCandles can create today's candle if Redis doesn't have it yet
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const candles = await fetchPriceCandles('ETHUSDT', '1d', startDate, endDate);
+    const candles = await fetchPriceCandles('ETHUSDT', '1d', startDate, endDate, currentPrice);
 
     if (candles.length < 50) {
       throw new Error('Not enough historical data to update session');
     }
 
-    // Generate signal with enhanced adaptive strategy
+    // Generate signal with enhanced adaptive strategy (pass session ID for regime history tracking)
     const currentIndex = candles.length - 1;
-    const signal = generateEnhancedAdaptiveSignal(candles, session.config, currentIndex);
+    
+    // Validate data quality (check for gaps, freshness, look-ahead bias)
+    const startTime = new Date(startDate).getTime();
+    const endTime = new Date(endDate).getTime();
+    const dataQuality = validateDataQuality(candles, '1d', startTime, endTime, currentIndex, 60);
+    
+    if (!dataQuality.isValid) {
+      console.warn('Data quality issues detected:', dataQuality.issues);
+      // Log warnings but don't block execution
+      if (dataQuality.warnings.length > 0) {
+        console.warn('Data quality warnings:', dataQuality.warnings);
+      }
+    }
+    
+    const signal = generateEnhancedAdaptiveSignal(candles, session.config, currentIndex, session.id);
     const confidence = calculateConfidence(signal, candles, currentIndex);
 
     // Execute trades based on signal
@@ -172,6 +233,9 @@ export class PaperTradingService {
       const ethAmount = positionSize / currentPrice;
 
       if (ethAmount > 0 && positionSize <= portfolio.usdcBalance) {
+        // Track cost basis for P&L calculation
+        const costBasis = positionSize;
+        
         portfolio.usdcBalance -= positionSize;
         portfolio.ethBalance += ethAmount;
 
@@ -185,6 +249,7 @@ export class PaperTradingService {
           signal: signal.signal,
           confidence,
           portfolioValue: portfolio.usdcBalance + portfolio.ethBalance * currentPrice,
+          costBasis, // Store cost basis for P&L calculation
         };
 
         updatedSession.trades.push(trade);
@@ -200,6 +265,46 @@ export class PaperTradingService {
       const usdcAmount = positionSize * currentPrice;
 
       if (positionSize > 0 && positionSize <= portfolio.ethBalance) {
+        // Calculate P&L: find matching buy trades using FIFO
+        let remainingToSell = positionSize;
+        let totalCostBasis = 0;
+        
+        // Find buy trades that haven't been fully sold yet (FIFO)
+        for (const buyTrade of updatedSession.trades.filter(t => t.type === 'buy' && !t.fullySold)) {
+          if (remainingToSell <= 0) break;
+          
+          const buyAmount = buyTrade.ethAmount;
+          const sellAmount = Math.min(remainingToSell, buyAmount);
+          const costBasisRatio = sellAmount / buyAmount;
+          const costBasis = (buyTrade.costBasis || buyTrade.usdcAmount) * costBasisRatio;
+          
+          totalCostBasis += costBasis;
+          remainingToSell -= sellAmount;
+          
+          // Mark buy trade as fully or partially sold
+          if (sellAmount >= buyAmount) {
+            buyTrade.fullySold = true;
+          } else {
+            buyTrade.ethAmount -= sellAmount;
+            buyTrade.costBasis = (buyTrade.costBasis || buyTrade.usdcAmount) - costBasis;
+            buyTrade.usdcAmount = buyTrade.costBasis;
+          }
+        }
+        
+        // If we couldn't match to a buy (shouldn't happen in normal operation), use average cost
+        if (totalCostBasis === 0 && updatedSession.trades.filter(t => t.type === 'buy').length > 0) {
+          const avgCost = updatedSession.trades
+            .filter(t => t.type === 'buy' && !t.fullySold)
+            .reduce((sum, t) => sum + (t.costBasis || t.usdcAmount), 0) /
+            updatedSession.trades
+              .filter(t => t.type === 'buy' && !t.fullySold)
+              .reduce((sum, t) => sum + t.ethAmount, 0);
+          totalCostBasis = positionSize * avgCost;
+        }
+        
+        const pnl = usdcAmount - totalCostBasis;
+        const isWin = pnl > 0;
+        
         portfolio.ethBalance -= positionSize;
         portfolio.usdcBalance += usdcAmount;
 
@@ -213,13 +318,15 @@ export class PaperTradingService {
           signal: signal.signal,
           confidence,
           portfolioValue: portfolio.usdcBalance + portfolio.ethBalance * currentPrice,
+          costBasis: totalCostBasis,
+          pnl,
         };
 
         updatedSession.trades.push(trade);
         portfolio.tradeCount++;
 
-        // Check if this was a winning trade
-        if (trade.portfolioValue > portfolio.initialCapital) {
+        // Update win count based on actual trade P&L
+        if (isWin) {
           portfolio.winCount++;
         }
       }
@@ -239,6 +346,50 @@ export class PaperTradingService {
       ethPrice: currentPrice,
     });
 
+    // Track regime changes
+    if (!updatedSession.regimeHistory) {
+      updatedSession.regimeHistory = [];
+    }
+    const previousRegime = updatedSession.currentRegime;
+    if (previousRegime && previousRegime.regime !== signal.regime.regime) {
+      // Regime changed - log it
+      updatedSession.regimeHistory.push({
+        timestamp: Date.now(),
+        regime: signal.regime.regime,
+        confidence: signal.regime.confidence,
+      });
+      // Keep only last 100 regime changes
+      if (updatedSession.regimeHistory.length > 100) {
+        updatedSession.regimeHistory.shift();
+      }
+    } else if (updatedSession.regimeHistory.length === 0) {
+      // First regime entry
+      updatedSession.regimeHistory.push({
+        timestamp: Date.now(),
+        regime: signal.regime.regime,
+        confidence: signal.regime.confidence,
+      });
+    }
+
+    // Track strategy switches
+    if (!updatedSession.strategySwitches) {
+      updatedSession.strategySwitches = [];
+    }
+    const previousStrategy = updatedSession.lastSignal?.activeStrategy?.name || 'none';
+    const currentStrategy = signal.activeStrategy?.name || 'none';
+    if (previousStrategy !== currentStrategy) {
+      updatedSession.strategySwitches.push({
+        timestamp: Date.now(),
+        from: previousStrategy,
+        to: currentStrategy,
+        reason: `Regime: ${signal.regime.regime}, Confidence: ${(signal.regime.confidence * 100).toFixed(1)}%, Momentum: ${signal.momentumConfirmed ? 'confirmed' : 'not confirmed'}`,
+      });
+      // Keep only last 50 strategy switches
+      if (updatedSession.strategySwitches.length > 50) {
+        updatedSession.strategySwitches.shift();
+      }
+    }
+
     // Update session state
     updatedSession.currentRegime = signal.regime;
     updatedSession.currentIndicators = signal.indicators;
@@ -246,6 +397,7 @@ export class PaperTradingService {
     updatedSession.lastPrice = currentPrice;
     updatedSession.lastUpdate = Date.now();
     updatedSession.portfolio = portfolio;
+    updatedSession.dataQuality = dataQuality;
 
     // Save to Redis
     await redis.set(ACTIVE_SESSION_KEY, JSON.stringify(updatedSession));
@@ -310,6 +462,9 @@ export class PaperTradingService {
     session.stoppedAt = Date.now();
     session.portfolio.totalValue = finalValue;
     session.portfolio.totalReturn = ((finalValue - session.portfolio.initialCapital) / session.portfolio.initialCapital) * 100;
+
+    // Clear regime history for this session
+    clearRegimeHistoryForSession(session.id);
 
     // Save to Redis
     await redis.set(ACTIVE_SESSION_KEY, JSON.stringify(session));

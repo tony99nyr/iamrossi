@@ -1,0 +1,109 @@
+name: Migrate Redis Candles to Files
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC to migrate old candle data from Redis to files
+    # This keeps Redis under the 100MB free tier limit
+    - cron: '0 2 * * *'
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  migrate-redis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write  # Required to push commits back to repository
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # Fetch full history for proper git operations
+          ref: main  # Ensure we're on the correct branch
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Configure Git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+      
+      - name: Run migration script
+        env:
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+        run: |
+          echo "🔄 Running Redis to files migration..."
+          pnpm eth:migrate-redis || {
+            echo "⚠️  Migration script completed with warnings or errors"
+            # Continue even if there are warnings (e.g., file write errors in serverless)
+            # The script will still delete old keys from Redis
+          }
+      
+      - name: Check for changes
+        id: git-check
+        run: |
+          # Check specifically for changes in data/historical-prices/
+          if [ -n "$(git status --porcelain data/historical-prices/)" ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "📝 Files have been updated in data/historical-prices/"
+            git status --short data/historical-prices/
+            echo ""
+            echo "Changed files:"
+            git diff --name-only data/historical-prices/ || true
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "✅ No file changes to commit (data may already be in files or only Redis cleanup occurred)"
+          fi
+      
+      - name: Commit and push changes
+        if: steps.git-check.outputs.changes == 'true'
+        run: |
+          echo "📦 Staging changes in data/historical-prices/"
+          git add data/historical-prices/
+          
+          echo "📝 Committing changes..."
+          git commit -m "chore: migrate old candle data from Redis to files [skip ci]" || {
+            echo "⚠️  Commit failed - files may have been identical or already committed"
+            exit 0
+          }
+          
+          echo "📊 Commit details:"
+          git log -1 --stat
+          
+          echo "🚀 Pushing to origin/main..."
+          git push origin HEAD:main || {
+            echo "❌ Failed to push changes"
+            echo "💡 This may be due to:"
+            echo "   1. GITHUB_TOKEN permissions (check workflow permissions)"
+            echo "   2. Branch protection rules (may need to use pull request)"
+            echo "   3. Network issues"
+            echo ""
+            echo "⚠️  Changes are committed locally but not pushed - they will be lost on next deploy!"
+            exit 1  # Fail the workflow if push fails - this is critical
+          }
+          echo "✅ Changes committed and pushed to repository - will persist across deploys"
+      
+      - name: Summary
+        run: |
+          echo "## Migration Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.git-check.outputs.changes }}" == "true" ]; then
+            echo "✅ Files updated and committed to repository" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️  No file changes (data may already be in files or only Redis cleanup occurred)" >> $GITHUB_STEP_SUMMARY
+          fi
+

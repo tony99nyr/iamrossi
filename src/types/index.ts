@@ -367,6 +367,9 @@ export interface Trade {
   signal: number;
   confidence: number;
   portfolioValue: number; // Total value after trade
+  costBasis?: number; // Cost basis for P&L calculation (buy: usdcAmount, sell: matched buy cost)
+  pnl?: number; // Profit/Loss for sell trades (usdcAmount - costBasis)
+  fullySold?: boolean; // For buy trades: whether this position has been fully sold
 }
 
 export interface Portfolio {

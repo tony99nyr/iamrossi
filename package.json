@@ -27,6 +27,7 @@
     "eth:refresh-historical": "npx tsx scripts/refresh-eth-historical.ts",
     "eth:convert-files": "npx tsx scripts/convert-historical-files.ts",
     "eth:fill-today": "npx tsx scripts/fill-rolling-file-today.ts",
+    "eth:migrate-redis": "npx tsx scripts/migrate-redis-candles-to-files.ts",
     "redis:analyze": "npx tsx scripts/analyze-redis-memory.ts",
     "google-fit:exchange-token": "npx tsx scripts/exchange-google-fit-token.ts"
   },
