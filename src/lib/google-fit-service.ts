@@ -26,6 +26,8 @@ interface GoogleFitDataSourceResponse {
 }
 
 interface GoogleFitPoint {
+  startTimeNanos?: string;
+  endTimeNanos?: string;
   value?: Array<{
     fpVal?: number;
   }>;
@@ -62,9 +64,24 @@ export function isGoogleFitConfigured(): boolean {
 }
 
 /**
- * Get access token from refresh token
+ * Custom error for expired/revoked refresh tokens
  */
-async function getAccessToken(): Promise<string> {
+export class GoogleFitTokenError extends Error {
+  constructor(
+    message: string,
+    public readonly code: 'invalid_grant' | 'invalid_client' | 'other',
+    public readonly originalError?: unknown,
+  ) {
+    super(message);
+    this.name = 'GoogleFitTokenError';
+  }
+}
+
+/**
+ * Get access token from refresh token
+ * Exported for testing token validity
+ */
+export async function getAccessToken(): Promise<string> {
   if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
     throw new Error('Google Fit credentials are not configured');
   }
@@ -85,7 +102,32 @@ async function getAccessToken(): Promise<string> {
   const data = await res.json();
   if (!res.ok) {
     console.error('[Google Fit] Failed to refresh access token:', data);
-    throw new Error('Failed to refresh access token');
+    
+    // Check for specific error types
+    const errorCode = data.error as string | undefined;
+    const errorDescription = data.error_description as string | undefined;
+    
+    if (errorCode === 'invalid_grant') {
+      const message = errorDescription?.includes('expired') || errorDescription?.includes('revoked')
+        ? 'Google Fit refresh token has expired or been revoked. Please generate a new refresh token using: pnpm run exchange-google-fit-token'
+        : `Google Fit refresh token error: ${errorDescription || 'Token has been expired or revoked'}. Please generate a new refresh token using: pnpm run exchange-google-fit-token`;
+      throw new GoogleFitTokenError(message, 'invalid_grant', data);
+    }
+    
+    if (errorCode === 'invalid_client') {
+      throw new GoogleFitTokenError(
+        'Google Fit client credentials are invalid. Please check GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET environment variables.',
+        'invalid_client',
+        data,
+      );
+    }
+    
+    // Generic error for other cases
+    throw new GoogleFitTokenError(
+      `Failed to refresh access token: ${errorDescription || errorCode || 'Unknown error'}`,
+      'other',
+      data,
+    );
   }
   return data.access_token as string;
 }
@@ -126,7 +168,8 @@ async function getHeartRatePoints(
   accessToken: string,
   dataStreamId: string,
   startNs: string,
-  endNs: string
+  endNs: string,
+  workoutSessions?: GoogleFitSession[]
 ): Promise<number[]> {
   const datasetUrl = `${DATA_SOURCES_URL}/${encodeURIComponent(dataStreamId)}/datasets/${startNs}-${endNs}`;
   const res = await fetch(datasetUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -137,12 +180,94 @@ async function getHeartRatePoints(
   }
   const points = Array.isArray(data.point) ? data.point : [];
   const values: number[] = [];
-  for (const p of points) {
-    const v = p.value?.[0];
-    if (v && typeof v.fpVal === 'number') {
-      values.push(v.fpVal);
+  
+  console.log(`[Google Fit] Retrieved ${points.length} total HR data points from API`);
+  
+  // If we have workout sessions, filter HR data to only include samples during workout periods
+  // This gives us workout-specific HR stats (higher max, more accurate avg) rather than all-day stats
+  if (workoutSessions && workoutSessions.length > 0) {
+    // Create time ranges for all workout sessions (convert to nanoseconds)
+    const workoutRanges: Array<{ startNs: number; endNs: number }> = [];
+    for (const session of workoutSessions) {
+      if (session.startTimeMillis && session.endTimeMillis) {
+        // Convert milliseconds to nanoseconds (multiply by 1,000,000)
+        const startNs = Number.parseInt(session.startTimeMillis, 10) * 1000000;
+        const endNs = Number.parseInt(session.endTimeMillis, 10) * 1000000;
+        workoutRanges.push({ startNs, endNs });
+        console.log(`[Google Fit] Workout range: ${startNs} to ${endNs} (${new Date(Number.parseInt(session.startTimeMillis, 10)).toISOString()} to ${new Date(Number.parseInt(session.endTimeMillis, 10)).toISOString()})`);
+      }
+    }
+    
+    console.log(`[Google Fit] Filtering HR data to ${workoutRanges.length} workout session(s)`);
+    
+    let pointsWithTime = 0;
+    let pointsWithoutTime = 0;
+    
+    // Only include HR points that fall within workout time ranges
+    for (const p of points) {
+      const pointTimeNs = p.startTimeNanos || p.endTimeNanos;
+      if (!pointTimeNs) {
+        pointsWithoutTime++;
+        continue;
+      }
+      pointsWithTime++;
+      
+      // Convert point time to number for comparison
+      const pointTime = Number.parseInt(pointTimeNs, 10);
+      if (isNaN(pointTime)) continue;
+      
+      // Check if this point falls within any workout session
+      const isDuringWorkout = workoutRanges.some(range => {
+        return pointTime >= range.startNs && pointTime <= range.endNs;
+      });
+      
+      if (isDuringWorkout) {
+        const v = p.value?.[0];
+        if (v && typeof v.fpVal === 'number') {
+          values.push(v.fpVal);
+        }
+      }
+    }
+    
+    console.log(`[Google Fit] Filtered ${values.length} HR samples from ${points.length} total samples (workout periods only)`);
+    console.log(`[Google Fit] Points breakdown: ${pointsWithTime} with timestamps, ${pointsWithoutTime} without timestamps`);
+    
+    // If filtering resulted in very few samples, fall back to all-day data
+    // This handles timezone mismatches or cases where HR data wasn't recorded during workout
+    if (values.length === 0 && points.length > 0) {
+      console.warn(`[Google Fit] WARNING: No HR samples matched workout time ranges! Falling back to all-day data.`);
+      console.warn(`[Google Fit] This could mean:`);
+      console.warn(`  - Workout timestamps don't match HR data timestamps (timezone issue?)`);
+      console.warn(`  - HR data wasn't recorded during workout period`);
+      if (points[0]?.startTimeNanos && points[points.length - 1]?.startTimeNanos) {
+        const firstTime = new Date(Number.parseInt(points[0].startTimeNanos, 10) / 1000000).toISOString();
+        const lastTime = new Date(Number.parseInt(points[points.length - 1].startTimeNanos, 10) / 1000000).toISOString();
+        console.warn(`  - HR data time range: ${firstTime} to ${lastTime}`);
+      }
+      
+      // Fall back to all-day data
+      for (const p of points) {
+        const v = p.value?.[0];
+        if (v && typeof v.fpVal === 'number') {
+          values.push(v.fpVal);
+        }
+      }
+      console.log(`[Google Fit] Using all-day data instead: ${values.length} samples`);
+    } else if (values.length > 0 && values.length < points.length * 0.1) {
+      // If we filtered to less than 10% of samples, that's suspicious - log a warning
+      console.warn(`[Google Fit] WARNING: Filtered to only ${values.length} samples (${((values.length / points.length) * 100).toFixed(1)}% of total). This might indicate a timezone mismatch.`);
+    }
+  } else {
+    // No workout sessions - use all HR data for the day
+    console.log(`[Google Fit] No workout sessions detected - using all-day HR data`);
+    for (const p of points) {
+      const v = p.value?.[0];
+      if (v && typeof v.fpVal === 'number') {
+        values.push(v.fpVal);
+      }
     }
   }
+  
   return values;
 }
 
@@ -151,11 +276,10 @@ async function getHeartRatePoints(
  * Returns sessions that are workouts (activity types 8-113) or from Wahoo
  */
 async function getWorkoutSessionsForDate(accessToken: string, date: string): Promise<GoogleFitSession[]> {
-  const dateObj = new Date(`${date}T00:00:00`);
-  const startOfDay = new Date(dateObj);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(dateObj);
-  endOfDay.setHours(23, 59, 59, 999);
+  // Parse date in local timezone to avoid timezone issues
+  const [year, month, day] = date.split('-').map(Number);
+  const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
   const startTime = startOfDay.toISOString();
   const endTime = endOfDay.toISOString();
@@ -172,11 +296,12 @@ async function getWorkoutSessionsForDate(accessToken: string, date: string): Pro
   }
 
   const sessions = Array.isArray(data.session) ? data.session : [];
+  console.log(`[Google Fit] Found ${sessions.length} total sessions for ${date} (before filtering)`);
 
   // Filter for workout sessions:
   // 1. Activity types 8-113 are workout activities (running, cycling, etc.)
   // 2. Sessions from Wahoo (package name contains "wahoo" or name contains "Wahoo")
-  return sessions.filter((session) => {
+  const workoutSessions = sessions.filter((session) => {
     const activityType = session.activityType;
     const isWorkoutActivity = activityType !== undefined && activityType >= 8 && activityType <= 113;
     
@@ -187,6 +312,18 @@ async function getWorkoutSessionsForDate(accessToken: string, date: string): Pro
 
     return isWorkoutActivity || isWahoo;
   });
+  
+  if (sessions.length > 0 && workoutSessions.length === 0) {
+    console.log(`[Google Fit] Found ${sessions.length} sessions but none matched workout criteria. Sample sessions:`, 
+      sessions.slice(0, 3).map(s => ({ 
+        activityType: s.activityType, 
+        name: s.name, 
+        app: s.application?.name 
+      }))
+    );
+  }
+  
+  return workoutSessions;
 }
 
 /**
@@ -219,7 +356,15 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
     try {
       const cached = await kvGet<GoogleFitHeartRate>(cacheKey);
       if (cached) {
-        return cached;
+        // Only return cached data if it has actual HR values
+        // If cache has empty data (no avgBpm/maxBpm), we should re-fetch in case data was added
+        if (cached.avgBpm !== undefined || cached.maxBpm !== undefined) {
+          console.log(`[Google Fit] Using cached HR data for ${date}: avg=${cached.avgBpm}, max=${cached.maxBpm}, samples=${cached.sampleCount || 0}`);
+          return cached;
+        } else {
+          console.log(`[Google Fit] Cached data for ${date} is empty (no HR values), re-fetching...`);
+          // Don't return empty cached data - re-fetch to see if data is now available
+        }
       }
     } catch (error) {
       console.error('[Google Fit] Cache read error:', error);
@@ -229,31 +374,26 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
   try {
     const accessToken = await getAccessToken();
     
-    // Check if there are workout sessions on this date before fetching HR data
-    // For today, always fetch HR data even if no sessions found (workout may be syncing)
+    // Check if there are workout sessions on this date (for logging purposes)
+    // Note: We always fetch HR data regardless of workout sessions, since HR data can exist
+    // from general activity, walks, or continuous monitoring even without formal workout sessions
     const workoutSessions = await getWorkoutSessionsForDate(accessToken, date);
     console.log(`[Google Fit] Found ${workoutSessions.length} workout sessions for ${date}`);
     
-    // Only skip HR fetch for past dates with no workout sessions
-    // For today, always fetch HR data (workout may have been logged but sessions not synced yet)
-    if (workoutSessions.length === 0 && !isToday) {
-      console.log(`[Google Fit] No workout sessions found for past date ${date}, skipping HR fetch`);
-      // Return empty data structure (no workouts, so no HR data)
-      // Cache this result to avoid checking sessions repeatedly
-      const emptyHeartRate: GoogleFitHeartRate = {
-        date,
-        lastSynced: new Date().toISOString(),
-      };
-      
-      const cacheDuration = 24 * 60 * 60; // 24 hours for past dates
-      try {
-        await kvSet(cacheKey, emptyHeartRate, { ex: cacheDuration });
-      } catch (error) {
-        console.error('[Google Fit] Cache write error:', error);
-      }
-      
-      return emptyHeartRate;
+    // Log workout session details for debugging
+    if (workoutSessions.length > 0) {
+      workoutSessions.forEach((session, idx) => {
+        const startTime = session.startTimeMillis ? new Date(Number.parseInt(session.startTimeMillis, 10)).toISOString() : 'unknown';
+        const endTime = session.endTimeMillis ? new Date(Number.parseInt(session.endTimeMillis, 10)).toISOString() : 'unknown';
+        const duration = session.startTimeMillis && session.endTimeMillis 
+          ? Math.round((Number.parseInt(session.endTimeMillis, 10) - Number.parseInt(session.startTimeMillis, 10)) / 1000 / 60)
+          : 'unknown';
+        console.log(`[Google Fit] Workout ${idx + 1}: ${session.name || 'Unnamed'} (type: ${session.activityType}), ${startTime} to ${endTime} (${duration} min)`);
+      });
     }
+    
+    // Always fetch HR data - don't skip based on workout sessions
+    // HR data can exist from general activity, walks, or continuous monitoring
 
     const heartRateStreamId = await getMergedHeartRateStreamId(accessToken);
 
@@ -268,8 +408,16 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
 
     console.log(`[Google Fit] Fetching HR data for ${date}: ${startNs} to ${endNs} (${startOfDay.toISOString()} to ${endOfDay.toISOString()})`);
     
-    const values = await getHeartRatePoints(accessToken, heartRateStreamId, startNs, endNs);
-    console.log(`[Google Fit] Found ${values.length} heart rate samples for ${date}`);
+    // Pass workout sessions to filter HR data to workout periods only
+    const values = await getHeartRatePoints(accessToken, heartRateStreamId, startNs, endNs, workoutSessions);
+    console.log(`[Google Fit] Found ${values.length} heart rate samples for ${date}${workoutSessions.length > 0 ? ' (filtered to workout periods)' : ' (all-day data)'}`);
+    
+    if (values.length === 0) {
+      console.log(`[Google Fit] No heart rate samples found for ${date}. This could mean:`);
+      console.log(`  - No HR data was recorded on this date`);
+      console.log(`  - Date range might be incorrect (check timezone)`);
+      console.log(`  - HR data source might not have data for this date`);
+    }
     
     const stats = computeStats(values);
 
@@ -280,6 +428,23 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
       sampleCount: values.length,
       lastSynced: new Date().toISOString(),
     };
+
+    // Log what we're returning with workout context
+    if (stats) {
+      const workoutContext = workoutSessions.length > 0 
+        ? ` (from ${workoutSessions.length} workout session(s), ${values.length} samples during workouts)`
+        : ` (all-day data, ${values.length} total samples)`;
+      console.log(`[Google Fit] Computed stats for ${date}: avg=${stats.avg.toFixed(1)} bpm, max=${stats.max.toFixed(1)} bpm${workoutContext}`);
+      
+      // If we have workouts but max HR is suspiciously low, warn
+      if (workoutSessions.length > 0 && stats.max < 100) {
+        console.warn(`[Google Fit] WARNING: Workout detected but max HR is only ${stats.max.toFixed(1)} bpm - this seems low for a workout. Check if HR filtering is working correctly.`);
+      }
+    } else if (values.length > 0) {
+      console.log(`[Google Fit] WARNING: Found ${values.length} samples but computeStats returned null - this should not happen`);
+    } else {
+      console.log(`[Google Fit] No stats computed for ${date} (no samples found)`);
+    }
 
     // Determine cache duration based on whether this is today's data
     // Today's data: 15 minutes (data may update throughout the day)
@@ -296,6 +461,12 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
     return heartRate;
   } catch (error) {
     console.error('[Google Fit] Error fetching heart rate data:', error);
+    
+    // If it's a token error, log more details but still return empty data
+    if (error instanceof GoogleFitTokenError) {
+      console.error(`[Google Fit] Token error (${error.code}): ${error.message}`);
+    }
+    
     // Return empty data structure on error (don't throw)
     return {
       date,

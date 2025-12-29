@@ -182,56 +182,111 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
 
                 // Get all dates in current week
                 const weekDates = getWeekDates(currentWeekStart);
-                const rates: Record<string, GoogleFitHeartRate> = {};
                 
                 // Only fetch for past and current dates, not future
                 const today = new Date();
                 const todayStr = formatDate(today);
 
-                // Fetch heart rate for each day in parallel (only past/current dates, skip rest days)
-                // Always fetch today's heart rate regardless of entry status (workout may have been logged after initial fetch)
-                await Promise.all(
-                    weekDates
-                        .filter(date => {
-                            const dateStr = formatDate(date);
-                            // Skip future dates
-                            if (dateStr > todayStr) return false;
-                            
-                            // Always fetch today's heart rate (workout may have been logged after initial fetch)
-                            if (dateStr === todayStr) return true;
-                            
-                            // For past dates, skip rest days
-                            const entry = entries.find(e => e.date === dateStr);
-                            return !entry?.isRestDay;
-                        })
-                        .map(async (date) => {
-                            const dateStr = formatDate(date);
-                            try {
-                                // For today, force refresh to get latest data (workout may have been logged after initial fetch)
-                                const url = dateStr === todayStr 
-                                    ? `/api/google-fit/heart-rate?date=${dateStr}&forceRefresh=true`
-                                    : `/api/google-fit/heart-rate?date=${dateStr}`;
-                                const response = await fetch(url);
-                                if (response.ok) {
-                                    const data = await response.json();
-                                    // Only store if it has actual heart rate data (not empty)
-                                    if (data.avgBpm !== undefined || data.maxBpm !== undefined) {
-                                        rates[dateStr] = data;
-                                    }
-                                }
-                            } catch (error) {
-                                console.error(`Failed to fetch Google Fit heart rate for ${dateStr}:`, error);
+                // Fetch heart rate for each day in parallel (only past/current dates)
+                // Don't skip rest days - we should still try to fetch (API will return empty if no workouts)
+                const fetchPromises = weekDates
+                    .filter(date => {
+                        const dateStr = formatDate(date);
+                        // Skip future dates
+                        return dateStr <= todayStr;
+                    })
+                    .map(async (date) => {
+                        const dateStr = formatDate(date);
+                        try {
+                            // For today, force refresh to get latest data (workout may have been logged after initial fetch)
+                            const url = dateStr === todayStr 
+                                ? `/api/google-fit/heart-rate?date=${dateStr}&forceRefresh=true`
+                                : `/api/google-fit/heart-rate?date=${dateStr}`;
+                            const response = await fetch(url);
+                            if (response.ok) {
+                                const data = await response.json();
+                                // Store the data even if empty (so we know we've checked)
+                                // Only return if it has actual heart rate data for display purposes
+                                return { dateStr, data, hasData: data.avgBpm !== undefined || data.maxBpm !== undefined };
                             }
-                        })
-                );
+                        } catch (error) {
+                            console.error(`Failed to fetch Google Fit heart rate for ${dateStr}:`, error);
+                        }
+                        return null;
+                    });
 
-                setHeartRates(rates);
+                const results = await Promise.all(fetchPromises);
+                
+                // Merge new data with existing heart rates (don't replace)
+                setHeartRates(prev => {
+                    const updated = { ...prev };
+                    results.forEach(result => {
+                        if (result) {
+                            if (result.hasData) {
+                                console.log(`[Rehab] Storing HR data for ${result.dateStr}: avg=${result.data.avgBpm}, max=${result.data.maxBpm}`);
+                                updated[result.dateStr] = result.data;
+                            } else {
+                                console.log(`[Rehab] No HR data for ${result.dateStr} (empty response)`);
+                            }
+                        }
+                    });
+                    return updated;
+                });
             } catch (error) {
                 console.error('Failed to fetch Google Fit heart rate:', error);
             }
         };
         fetchHeartRates();
     }, [currentWeekStart, entries]);
+
+    // Fetch heart rate data for selected date if not already loaded
+    useEffect(() => {
+        if (!selectedDate) return;
+        
+        // Check if we already have data for this date
+        const hasData = heartRates[selectedDate] && 
+            (heartRates[selectedDate].avgBpm !== undefined || heartRates[selectedDate].maxBpm !== undefined);
+        if (hasData) return;
+        
+        const fetchHeartRateForDate = async () => {
+            try {
+                // Check if Google Fit is configured
+                const statusResponse = await fetch('/api/google-fit/status');
+                if (!statusResponse.ok) return;
+                
+                const status = await statusResponse.json();
+                if (!status.configured) return;
+
+                const today = new Date();
+                const todayStr = formatDate(today);
+                
+                // Skip future dates
+                if (selectedDate > todayStr) return;
+
+                // Fetch heart rate for this specific date
+                const url = selectedDate === todayStr 
+                    ? `/api/google-fit/heart-rate?date=${selectedDate}&forceRefresh=true`
+                    : `/api/google-fit/heart-rate?date=${selectedDate}`;
+                
+                const response = await fetch(url);
+                if (response.ok) {
+                    const data = await response.json();
+                    // Store the data if it has actual heart rate values
+                    if (data.avgBpm !== undefined || data.maxBpm !== undefined) {
+                        setHeartRates(prev => ({
+                            ...prev,
+                            [selectedDate]: data,
+                        }));
+                    }
+                }
+            } catch (error) {
+                console.error(`Failed to fetch Google Fit heart rate for ${selectedDate}:`, error);
+            }
+        };
+        
+        fetchHeartRateForDate();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedDate]); // Only depend on selectedDate - check heartRates inside the effect
 
     const selectedEntry = entries.find(e => e.date === selectedDate);
 

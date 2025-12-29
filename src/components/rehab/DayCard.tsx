@@ -296,8 +296,8 @@ export default function DayCard({
                     </div>
                 )}
                 
-                {/* Heart Rate Display - Right aligned (skip on rest days) */}
-                {!entry?.isRestDay && heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined) && (
+                {/* Heart Rate Display - Right aligned (show if HR data exists, even on rest days) */}
+                {heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined) && (
                     <div className={cx('heart-rate-display', css({
                         fontSize: '11px',
                         color: '#999',

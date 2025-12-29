@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDailyHeartRate, isGoogleFitConfigured } from '@/lib/google-fit-service';
+import { getDailyHeartRate, isGoogleFitConfigured, GoogleFitTokenError } from '@/lib/google-fit-service';
 
 /**
  * Fetch Google Fit heart rate data for a specific date
@@ -61,6 +61,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(heartRate);
   } catch (error) {
     console.error('Error fetching Google Fit heart rate:', error);
+    
+    // Handle token errors specifically
+    if (error instanceof GoogleFitTokenError) {
+      return NextResponse.json(
+        { 
+          error: 'Google Fit authentication failed',
+          details: error.message,
+          code: error.code,
+          requiresTokenRefresh: error.code === 'invalid_grant',
+        },
+        { status: 401 }
+      );
+    }
+    
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
     return NextResponse.json(

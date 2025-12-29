@@ -158,15 +158,15 @@ export default function DayView({
             </div>
 
             {/* Oura Scores & Heart Rate Row */}
-            {(ouraScores || (!entry?.isRestDay && heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined))) && (
+            {(ouraScores || (heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined))) && (
                 <div className={cx('tracking-section', css({
                     marginBottom: '16px',
                     display: 'grid',
-                    gridTemplateColumns: ouraScores && heartRate && !entry?.isRestDay ? 'repeat(4, 1fr)' : ouraScores ? 'repeat(3, 1fr)' : '1fr',
+                    gridTemplateColumns: ouraScores && heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined) ? 'repeat(4, 1fr)' : ouraScores ? 'repeat(3, 1fr)' : '1fr',
                     gap: '12px',
                     alignItems: 'start',
                     _xlg: {
-                        maxWidth: ouraScores && heartRate && !entry?.isRestDay ? '800px' : ouraScores ? '600px' : '200px',
+                        maxWidth: ouraScores && heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined) ? '800px' : ouraScores ? '600px' : '200px',
                         margin: '0 auto 16px auto',
                         gap: '16px',
                     }
@@ -186,8 +186,8 @@ export default function DayView({
                         </>
                     )}
 
-                    {/* Heart Rate Display (skip on rest days) */}
-                    {!entry?.isRestDay && heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined) && (
+                    {/* Heart Rate Display (show if HR data exists, even on rest days) */}
+                    {heartRate && (heartRate.avgBpm !== undefined || heartRate.maxBpm !== undefined) && (
                         <div className={css({ 
                             display: 'flex', 
                             flexDirection: 'column',
