@@ -9,6 +9,7 @@ interface HealthStatusPanelProps {
 }
 
 export default function HealthStatusPanel({ session }: HealthStatusPanelProps) {
+  // eslint-disable-next-line react-hooks/purity -- Date.now() is safe for display purposes
   const now = Date.now();
   const lastUpdateAge = now - session.lastUpdate;
   const sessionUptime = now - session.startedAt;

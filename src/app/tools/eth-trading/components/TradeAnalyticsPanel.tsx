@@ -37,6 +37,7 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
     const losingTrades = sellTrades.filter(t => (t.pnl || 0) < 0);
     
     // Trade frequency
+    // eslint-disable-next-line react-hooks/purity -- Date.now() is safe in useMemo
     const now = Date.now();
     const oneDayAgo = now - 24 * 60 * 60 * 1000;
     const tradesLast24h = trades.filter(t => t.timestamp >= oneDayAgo).length;
@@ -58,6 +59,7 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
   }, [trades, session.startedAt]);
 
   const formatTimeAgo = (timestamp: number) => {
+    // eslint-disable-next-line react-hooks/purity -- Date.now() is safe in function
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
     if (seconds < 60) return `${seconds}s ago`;
     const minutes = Math.floor(seconds / 60);

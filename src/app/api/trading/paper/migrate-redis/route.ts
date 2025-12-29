@@ -178,8 +178,8 @@ export async function POST(request: NextRequest) {
         
         migrated.push(key);
         
-      } catch (error) {
-        errors.push({ key, error: error instanceof Error ? error.message : String(error) });
+      } catch (err) {
+        errors.push({ key, error: err instanceof Error ? err.message : String(err) });
       }
     }
     
@@ -190,10 +190,10 @@ export async function POST(request: NextRequest) {
     let fileWriteErrors = 0;
     for (const [fileKey, candles] of candlesByFile.entries()) {
       try {
-        const [symbol, interval, filePath] = fileKey.split(':');
+        const [, , filePath] = fileKey.split(':');
         
         // Load existing file data
-        let existingCandles = await loadFromFile(filePath) || [];
+        const existingCandles = await loadFromFile(filePath) || [];
         
         // Merge new candles with existing (deduplicate by timestamp)
         const candleMap = new Map<number, PriceCandle>();

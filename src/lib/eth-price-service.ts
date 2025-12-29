@@ -17,10 +17,10 @@ const PRICE_CACHE_PREFIX = 'eth:price:cache:';
 // Rate limiting: track last API call time
 let lastBinanceCall = 0;
 let lastCoinGeckoCall = 0;
-let lastCoinbaseCall = 0;
+const lastCoinbaseCall = 0;
 const MIN_BINANCE_DELAY = 100; // 100ms between Binance calls
 const MIN_COINGECKO_DELAY = 1200; // 1.2s between CoinGecko calls (free tier limit)
-const MIN_COINBASE_DELAY = 500; // 500ms between Coinbase calls
+// const MIN_COINBASE_DELAY = 500; // 500ms between Coinbase calls (unused for now)
 
 /**
  * Get cache key for price data (Redis)
@@ -1018,7 +1018,7 @@ async function fetchPriceWithRetry(
   headers: HeadersInit,
   maxRetries: number = 3,
   baseDelay: number = 1000,
-  parsePrice?: (data: any) => number,
+  parsePrice?: (data: unknown) => number,
   apiName: string = 'API'
 ): Promise<number> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -1244,12 +1244,9 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
       }
     }
   }
-
-  // Update historical data with latest price (non-blocking)
-  updateTodayCandle(symbol, price, '1d').catch(err => {
-    console.warn('Failed to update historical data with latest price:', err);
-  });
-
-  return price;
+  
+  // This code is unreachable - all successful paths return early
+  // TypeScript requires a return statement, but this should never execute
+  throw new Error('Unexpected: fetchLatestPriceFresh reached unreachable code');
 }
 

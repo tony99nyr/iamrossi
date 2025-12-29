@@ -240,9 +240,13 @@ async function getHeartRatePoints(
       console.warn(`  - Workout timestamps don't match HR data timestamps (timezone issue?)`);
       console.warn(`  - HR data wasn't recorded during workout period`);
       if (points[0]?.startTimeNanos && points[points.length - 1]?.startTimeNanos) {
-        const firstTime = new Date(Number.parseInt(points[0].startTimeNanos, 10) / 1000000).toISOString();
-        const lastTime = new Date(Number.parseInt(points[points.length - 1].startTimeNanos, 10) / 1000000).toISOString();
-        console.warn(`  - HR data time range: ${firstTime} to ${lastTime}`);
+        const firstTimeNanos = points[0].startTimeNanos;
+        const lastTimeNanos = points[points.length - 1].startTimeNanos;
+        if (firstTimeNanos && lastTimeNanos) {
+          const firstTime = new Date(Number.parseInt(firstTimeNanos, 10) / 1000000).toISOString();
+          const lastTime = new Date(Number.parseInt(lastTimeNanos, 10) / 1000000).toISOString();
+          console.warn(`  - HR data time range: ${firstTime} to ${lastTime}`);
+        }
       }
       
       // Fall back to all-day data

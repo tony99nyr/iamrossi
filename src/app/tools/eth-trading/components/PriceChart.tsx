@@ -68,33 +68,18 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
     return portfolioHistory.filter(p => p.timestamp >= cutoffTime);
   }, [portfolioHistory, timeRange]);
 
-  if (filteredHistory.length === 0) {
-    return (
-      <div className={css({
-        padding: '24px',
-        bg: '#161b22',
-        border: '1px solid #30363d',
-        borderRadius: '8px',
-        textAlign: 'center',
-        color: '#7d8590',
-      })}>
-        No price data available
-      </div>
-    );
-  }
-
   const width = 1200;
   const height = 550;
   const padding = { top: 20, right: 40, bottom: 40, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  const prices = filteredHistory.map(p => p.ethPrice);
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const pad = (max - min) * 0.1 || 10;
-  const yMin = min - pad;
-  const yMax = max + pad;
+  const prices = useMemo(() => filteredHistory.map(p => p.ethPrice), [filteredHistory]);
+  const min = useMemo(() => Math.min(...prices), [prices]);
+  const max = useMemo(() => Math.max(...prices), [prices]);
+  const pad = useMemo(() => (max - min) * 0.1 || 10, [max, min]);
+  const yMin = useMemo(() => min - pad, [min, pad]);
+  const yMax = useMemo(() => max + pad, [max, pad]);
 
   // Calculate moving averages
   const sma7 = useMemo(() => {
@@ -135,6 +120,22 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
       histogram: Array(signalOffset).fill(null).concat(histogram),
     };
   }, [prices]);
+
+  // Early return after all hooks
+  if (filteredHistory.length === 0) {
+    return (
+      <div className={css({
+        padding: '24px',
+        bg: '#161b22',
+        border: '1px solid #30363d',
+        borderRadius: '8px',
+        textAlign: 'center',
+        color: '#7d8590',
+      })}>
+        No price data available
+      </div>
+    );
+  }
 
   const project = (value: number, index: number): { x: number; y: number } => {
     const x = (index / Math.max(filteredHistory.length - 1, 1)) * chartWidth + padding.left;

@@ -19,6 +19,7 @@ export default function StrategyExecutionPanel({ session }: StrategyExecutionPan
     const regimePersistenceStatus = `${currentRegimeCount}/5 periods`;
 
     // Count strategy switches in last 24h and 7d
+    // eslint-disable-next-line react-hooks/purity -- Date.now() is safe in useMemo
     const now = Date.now();
     const oneDayAgo = now - 24 * 60 * 60 * 1000;
     const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;

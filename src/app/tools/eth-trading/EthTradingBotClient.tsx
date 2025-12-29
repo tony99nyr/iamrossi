@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
 import { css } from '@styled-system/css';
 import { stack, flex } from '@styled-system/patterns';
 import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';

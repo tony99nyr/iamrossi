@@ -19,7 +19,7 @@ export default function PerformanceMetricsPanel({ session }: PerformanceMetricsP
     let maxDrawdown = 0;
     let currentDrawdown = 0;
     let inDrawdown = false;
-    let drawdownStart = 0;
+    const drawdownStart = 0;
 
     for (const snapshot of portfolioHistory) {
       if (snapshot.totalValue > maxValue) {
@@ -28,7 +28,7 @@ export default function PerformanceMetricsPanel({ session }: PerformanceMetricsP
       } else if (snapshot.totalValue < maxValue) {
         if (!inDrawdown) {
           inDrawdown = true;
-          drawdownStart = snapshot.timestamp;
+          // const drawdownStart = snapshot.timestamp; // Unused for now
         }
         const drawdown = ((maxValue - snapshot.totalValue) / maxValue) * 100;
         if (drawdown > maxDrawdown) {
@@ -64,6 +64,7 @@ export default function PerformanceMetricsPanel({ session }: PerformanceMetricsP
       : 0;
 
     // Calculate daily/weekly/monthly returns
+    // eslint-disable-next-line react-hooks/purity -- Date.now() is safe in useMemo
     const now = Date.now();
     const oneDayAgo = now - 24 * 60 * 60 * 1000;
     const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;

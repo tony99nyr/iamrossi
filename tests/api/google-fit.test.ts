@@ -6,10 +6,15 @@ import * as googleFitService from '@/lib/google-fit-service';
 import { resetMockStore } from '../mocks/redis.mock';
 
 // Mock the Google Fit service
-vi.mock('@/lib/google-fit-service', () => ({
-  getDailyHeartRate: vi.fn(),
-  isGoogleFitConfigured: vi.fn(),
-}));
+vi.mock('@/lib/google-fit-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof googleFitService>();
+  return {
+    ...actual,
+    getDailyHeartRate: vi.fn(),
+    isGoogleFitConfigured: vi.fn(),
+    getAccessToken: vi.fn(),
+  };
+});
 
 // Mock the KV functions
 vi.mock('@/lib/kv', () => ({
@@ -35,12 +40,14 @@ describe('/api/google-fit', () => {
   describe('GET /api/google-fit/status', () => {
     it('should return configured status without authentication (public endpoint)', async () => {
       vi.mocked(googleFitService.isGoogleFitConfigured).mockReturnValue(true);
+      vi.mocked(googleFitService.getAccessToken).mockResolvedValue('mock-access-token');
 
       const response = await getStatus();
       const data = await response.json();
 
       expect(response.status).toBe(200);
       expect(data.configured).toBe(true);
+      expect(data.tokenValid).toBe(true);
     });
 
     it('should return false when Google Fit is not configured', async () => {
