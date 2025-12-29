@@ -69,9 +69,8 @@ async function loadFromFile(filePath: string): Promise<PriceCandle[] | null> {
     try {
       const data = await fs.readFile(filePath, 'utf-8');
       const parsed = JSON.parse(data) as PriceCandle[];
-      // If we successfully loaded an uncompressed file, compress it and delete the old one
-      await saveToFile(filePath, parsed);
-      await fs.unlink(filePath).catch(() => {}); // Delete uncompressed file
+      // Note: File compression is handled by GitHub Actions workflow
+      // We just return the parsed data here
       return parsed;
     } catch (fallbackError) {
       // Neither file exists or is invalid - return null
@@ -182,17 +181,28 @@ async function fetchCoinGeckoCandles(
   const startDate = Math.floor(startTime / 1000);
   const endDate = Math.floor(endTime / 1000);
   
-  // Free tier typically allows ~90 days, but let's use 60 days to be safe
-  const MAX_DAYS_PER_REQUEST = 60;
+  // Free tier typically allows ~90 days, but let's use 30 days to be safer
+  // Smaller chunks = more requests but better data coverage
+  const MAX_DAYS_PER_REQUEST = 30;
   const MAX_SECONDS_PER_REQUEST = MAX_DAYS_PER_REQUEST * 24 * 60 * 60;
   
   const allPricePoints: Array<{ timestamp: number; price: number }> = [];
   let currentStart = startDate;
+  let chunkNumber = 0;
+  
+  console.log(`📡 CoinGecko: Fetching ${interval} candles from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
+  const totalDays = Math.floor((endDate - startDate) / 86400);
+  const expectedChunks = Math.ceil((endDate - startDate) / MAX_SECONDS_PER_REQUEST);
+  console.log(`   Date range: ${totalDays} days, will fetch in ${expectedChunks} chunk(s)`);
   
   while (currentStart < endDate) {
+    chunkNumber++;
     await rateLimitCoinGecko();
     
     const currentEnd = Math.min(currentStart + MAX_SECONDS_PER_REQUEST, endDate);
+    const chunkDays = Math.floor((currentEnd - currentStart) / 86400);
+    
+    console.log(`📡 CoinGecko chunk ${chunkNumber}/${expectedChunks}: ${new Date(currentStart * 1000).toISOString().split('T')[0]} to ${new Date(currentEnd * 1000).toISOString().split('T')[0]} (${chunkDays} days)`);
     
     const url = new URL(`${COINGECKO_API_URL}/coins/${coinId}/market_chart/range`);
     url.searchParams.set('vs_currency', 'usd');
@@ -205,9 +215,29 @@ async function fetchCoinGeckoCandles(
       headers['x-cg-demo-api-key'] = apiKey;
     }
 
-    const response = await fetch(url.toString(), { headers });
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), { headers });
+    } catch (fetchError) {
+      console.error(`❌ CoinGecko chunk ${chunkNumber} fetch failed:`, fetchError);
+      // If this is not the first chunk, continue with what we have
+      if (chunkNumber > 1 && allPricePoints.length > 0) {
+        console.warn(`⚠️ Continuing with ${allPricePoints.length} price points from previous chunks`);
+        break;
+      }
+      throw fetchError;
+    }
+    
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
+      console.error(`❌ CoinGecko chunk ${chunkNumber} error: ${response.status} ${response.statusText}`);
+      
+      // If we have some data from previous chunks, continue
+      if (chunkNumber > 1 && allPricePoints.length > 0) {
+        console.warn(`⚠️ CoinGecko chunk ${chunkNumber} failed, but we have ${allPricePoints.length} price points from previous chunks - continuing`);
+        break;
+      }
+      
       // If it's a time range error and we're trying a full year, suggest chunking
       if (response.status === 401 && currentStart === startDate && (endDate - startDate) > MAX_SECONDS_PER_REQUEST) {
         throw new Error(`CoinGecko API error: ${response.status} ${response.statusText} - Free tier limits historical data range. Trying to fetch in chunks...`);
@@ -221,9 +251,15 @@ async function fetchCoinGeckoCandles(
     const prices = data.prices || [];
     
     if (prices.length === 0) {
-      console.warn(`⚠️ CoinGecko returned no price data for range ${new Date(currentStart * 1000).toISOString()} to ${new Date(currentEnd * 1000).toISOString()}`);
+      console.warn(`⚠️ CoinGecko chunk ${chunkNumber} returned no price data`);
+      // If this is not the first chunk and we have data, continue
+      if (chunkNumber > 1 && allPricePoints.length > 0) {
+        console.warn(`⚠️ Continuing with ${allPricePoints.length} price points from previous chunks`);
+        break;
+      }
     } else {
-      console.log(`📊 CoinGecko returned ${prices.length} price points for this chunk`);
+      const pointsPerDay = chunkDays > 0 ? (prices.length / chunkDays).toFixed(1) : '0';
+      console.log(`✅ CoinGecko chunk ${chunkNumber}: ${prices.length} price points (${pointsPerDay} points/day)`);
     }
     
     // Store price points for aggregation
@@ -237,7 +273,7 @@ async function fetchCoinGeckoCandles(
     
     // Add delay between chunks to respect rate limits
     if (currentStart < endDate) {
-      await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5s delay between chunks
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2s delay between chunks (more conservative)
     }
   }
   
@@ -247,6 +283,8 @@ async function fetchCoinGeckoCandles(
     console.warn(`   CoinGecko free tier may not provide hourly/intraday data for very recent periods`);
     throw new Error('CoinGecko returned no price points - may not support hourly data for recent periods');
   }
+  
+  console.log(`📊 CoinGecko total: ${allPricePoints.length} price points collected from ${chunkNumber} chunk(s)`);
   
   // Sort price points by timestamp
   allPricePoints.sort((a, b) => a.timestamp - b.timestamp);
@@ -288,7 +326,16 @@ async function fetchCoinGeckoCandles(
     .filter(c => c.timestamp >= startTime && c.timestamp <= endTime)
     .sort((a, b) => a.timestamp - b.timestamp);
   
-  console.log(`📊 Aggregated ${allPricePoints.length} CoinGecko price points into ${aggregatedCandles.length} ${interval} candles`);
+  console.log(`📊 CoinGecko aggregation: ${allPricePoints.length} price points → ${aggregatedCandles.length} ${interval} candles`);
+  
+  // Warn if we got fewer candles than expected (for daily candles)
+  if (interval === '1d') {
+    const expectedDays = Math.ceil((endTime - startTime) / (24 * 60 * 60 * 1000));
+    if (aggregatedCandles.length < expectedDays * 0.5) {
+      console.warn(`⚠️ CoinGecko returned only ${aggregatedCandles.length} daily candles for ${expectedDays} day range`);
+      console.warn(`   This is normal for CoinGecko free tier - it may only return 1 price point per day for recent data`);
+    }
+  }
   
   if (aggregatedCandles.length === 0) {
     throw new Error('CoinGecko aggregation resulted in 0 candles - may not support hourly data for recent periods');
@@ -315,7 +362,7 @@ function mapTimeframeToInterval(timeframe: string): string {
 /**
  * Fetch historical price candles for ETH/USDC
  * Priority: Local JSON files > Redis cache > API calls
- * Saves fetched data to both local files and Redis
+ * Saves fetched data to Redis (file writes handled by GitHub Actions workflow)
  */
 export async function fetchPriceCandles(
   symbol: string,
@@ -437,15 +484,30 @@ export async function fetchPriceCandles(
             return candleDate.getTime() === todayStart;
           }) || null;
           
-          // Check if the cached candle is synthetic (all OHLC values are the same, volume is 0)
-          // If so, we should try to fetch the real candle from API
+          // Check if the cached candle is synthetic
+          // A candle is synthetic if: all OHLC are the same AND volume is 0 AND it's stale
+          // Note: A real candle that just started (only one price point) will also have OHLC all the same,
+          // but that's OK - it's real data that will be updated as more prices come in
+          // We only treat it as synthetic if it's stale (older than 1 hour for hourly, or older than today for daily)
           if (todayCandle && 
               todayCandle.open === todayCandle.high && 
               todayCandle.high === todayCandle.low && 
               todayCandle.low === todayCandle.close && 
               todayCandle.volume === 0) {
-            console.log(`⚠️ Found synthetic candle in cache (OHLC all $${todayCandle.close.toFixed(2)}), will try to fetch real candle from API`);
-            todayCandle = null; // Treat as missing so we fetch from API
+            // Check if it's stale - if it's recent, it's just a new candle with one price point (real data)
+            const candleAge = now - todayCandle.timestamp;
+            const maxAgeForSynthetic = interval === '1h' ? 60 * 60 * 1000 : // 1 hour for hourly
+                                       interval === '5m' ? 5 * 60 * 1000 :   // 5 minutes for 5m
+                                       24 * 60 * 60 * 1000; // 1 day for daily
+            
+            if (candleAge > maxAgeForSynthetic) {
+              // Stale candle with identical OHLC - likely synthetic
+              console.log(`⚠️ Found potentially synthetic candle in cache (OHLC all $${todayCandle.close.toFixed(2)}, age: ${Math.floor(candleAge / (60 * 1000))}m), will try to fetch real candle from API`);
+              todayCandle = null; // Treat as missing so we fetch from API
+            } else {
+              // Recent candle with identical OHLC - this is real data (just started, only one price point)
+              console.log(`ℹ️ Found new candle in cache (OHLC all $${todayCandle.close.toFixed(2)} - real data, just started)`);
+            }
           }
         }
         
@@ -506,12 +568,37 @@ export async function fetchPriceCandles(
               }
             }
             
-            // NO SYNTHETIC DATA - If we can't get real OHLC from API, we don't create a candle
-            // This ensures we only trade on real data
+            // If we still don't have a candle, check Redis again after updateTodayCandle has had time to run
+            // updateTodayCandle creates real candles from price points (aggregating actual prices over time)
             if (!todayCandle && priceToUse !== null) {
-              console.warn(`⚠️ Cannot create synthetic candle - only real API OHLC data allowed for trading`);
-              console.warn(`   Need real candle from API with proper OHLC values, not just a price`);
-              // Don't create synthetic candle - the system will work with whatever real data we have
+              // Wait a bit more for updateTodayCandle to complete (it's called asynchronously in fetchLatestPrice)
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // Check Redis again - updateTodayCandle should have created/updated the candle
+              try {
+                const retryCached = await redis.get(cacheKey);
+                if (retryCached) {
+                  const retryCandles = JSON.parse(retryCached) as PriceCandle[];
+                  const retryTodayCandle = retryCandles.find(c => {
+                    const candleDate = new Date(c.timestamp);
+                    candleDate.setUTCHours(0, 0, 0, 0);
+                    return candleDate.getTime() === todayStart;
+                  });
+                  
+                  if (retryTodayCandle) {
+                    todayCandle = retryTodayCandle;
+                    console.log(`✅ Found today's candle in Redis after updateTodayCandle (close: $${todayCandle.close.toFixed(2)})`);
+                  }
+                }
+              } catch (retryError) {
+                console.warn('Failed to retry Redis check for today candle:', retryError);
+              }
+              
+              // If we still don't have a candle, that's OK - we'll work with existing data
+              // We don't create synthetic candles, but updateTodayCandle should have created a real one
+              if (!todayCandle) {
+                console.warn(`⚠️ Could not get today's candle from Redis or API - will use existing data`);
+              }
             }
           }
         }
@@ -615,12 +702,18 @@ export async function fetchPriceCandles(
         const hasTodayCandle = todayCandleIndex >= 0;
         const todayCandle = hasTodayCandle ? uniqueCandles[todayCandleIndex]! : null;
         
-        // Check if today's candle is synthetic (all OHLC values are the same, volume is 0)
+        // Check if today's candle is synthetic (all OHLC values are the same, volume is 0, AND stale)
+        // Note: A real candle that just started will have OHLC all the same, but that's OK - it's real data
+        const candleAge = todayCandle ? now - todayCandle.timestamp : Infinity;
+        const maxAgeForSynthetic = interval === '1h' ? 60 * 60 * 1000 : // 1 hour for hourly
+                                   interval === '5m' ? 5 * 60 * 1000 :   // 5 minutes for 5m
+                                   24 * 60 * 60 * 1000; // 1 day for daily
         const isSynthetic = todayCandle && 
           todayCandle.open === todayCandle.high && 
           todayCandle.high === todayCandle.low && 
           todayCandle.low === todayCandle.close && 
-          todayCandle.volume === 0;
+          todayCandle.volume === 0 &&
+          candleAge > maxAgeForSynthetic; // Only consider it synthetic if it's stale
         
         if (!hasTodayCandle || isSynthetic) {
           // Don't have today's candle, or it's synthetic - try to fetch real one from API
@@ -784,42 +877,9 @@ export async function fetchPriceCandles(
     ).sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  // 4. Save to both local file and Redis
-  // Determine which file(s) to save to based on date range
-  if (endDateStr > cutoffDate) {
-    // This is going to the rolling file - merge with existing data
-    const rollingStartDate = startDateStr > cutoffDate ? startDateStr : '2025-12-28';
-    const rollingFilePath = getHistoricalDataPath(symbol, interval, rollingStartDate, endDateStr);
-    const existingRollingData = await loadFromFile(rollingFilePath);
-    if (existingRollingData && existingRollingData.length > 0) {
-      // Merge candles, avoiding duplicates (new data overwrites old for same timestamp)
-      const existingMap = new Map(existingRollingData.map(c => [c.timestamp, c]));
-      candles.forEach(c => {
-        existingMap.set(c.timestamp, c); // New data overwrites old data for same timestamp
-      });
-      const merged = Array.from(existingMap.values()).sort((a, b) => a.timestamp - b.timestamp);
-      await saveToFile(rollingFilePath, merged);
-      console.log(`💾 Merged ${candles.length} candles into rolling file: ${rollingFilePath} (total: ${merged.length})`);
-    } else {
-      await saveToFile(rollingFilePath, candles);
-      console.log(`💾 Saved ${candles.length} candles to rolling file: ${rollingFilePath}`);
-    }
-  }
-  
-  // Also save to historical file if startDate is before cutoff
-  if (startDateStr <= cutoffDate && candles.length > 0) {
-    const historicalEndDate = endDateStr <= cutoffDate ? endDateStr : cutoffDate;
-    const historicalFilePath = getHistoricalDataPath(symbol, interval, startDateStr, historicalEndDate);
-    // Only save candles that are within the historical date range
-    const historicalCandles = candles.filter(c => {
-      const candleDate = new Date(c.timestamp).toISOString().split('T')[0].replace(/[^0-9-]/g, '');
-      return candleDate <= cutoffDate;
-    });
-    if (historicalCandles.length > 0) {
-      await saveToFile(historicalFilePath, historicalCandles);
-      console.log(`💾 Saved ${historicalCandles.length} candles to historical file: ${historicalFilePath}`);
-    }
-  }
+  // 4. Save to Redis only (file writes handled by GitHub Actions workflow)
+  // Note: File writes are handled by GitHub Actions workflow (migrate-redis-candles.yml)
+  // This keeps Vercel serverless deployments clean (no EROFS errors)
 
   // Also cache in Redis for 24 hours (for quick access)
   try {
@@ -933,80 +993,14 @@ async function updateTodayCandle(symbol: string, price: number, timeframe: strin
     // Sort by timestamp and update cache (CRITICAL: This must succeed)
     candles.sort((a, b) => a.timestamp - b.timestamp);
     await redis.setEx(cacheKey, 86400, JSON.stringify(candles));
-    const periodLabel = interval === '1h' ? 'hour' : 'day';
+    const periodLabel = interval === '1h' ? 'hour' : interval === '5m' ? '5-minute' : 'day';
     console.log(`✅ Updated ${periodLabel}'s candle in Redis (close: $${price.toFixed(2)}, timestamp: ${new Date(targetTimestamp).toISOString()})`);
     
-    // Also try to update file if we're not in serverless (filesystem available)
-    // This is best-effort and won't work in Vercel serverless
-    try {
-      const todayStr = new Date(todayStart).toISOString().split('T')[0];
-      
-      // For dates after 2025-12-27, use rolling file format: ethusdt_1d_rolling.json.gz (fixed name)
-      let filePath: string;
-      if (todayStr > '2025-12-27') {
-        // Rolling file format for dates after 2025-12-27 (fixed filename)
-        filePath = getHistoricalDataPath(symbol, interval, '2025-12-28', todayStr);
-      } else {
-        // Date-specific file for dates up to 2025-12-27
-        filePath = getHistoricalDataPath(symbol, interval, todayStr, todayStr);
-      }
-      
-      let existingFileData = await loadFromFile(filePath);
-      
-      // If rolling file doesn't exist yet, create it
-      if (!existingFileData && todayStr > '2025-12-27') {
-        existingFileData = [];
-      }
-      
-      if (existingFileData) {
-        // Find the candle for the target period (day or hour)
-        const fileCandleIndex = existingFileData.findIndex(c => {
-          if (interval === '1d') {
-            const candleDate = new Date(c.timestamp);
-            candleDate.setUTCHours(0, 0, 0, 0);
-            return candleDate.getTime() === targetTimestamp;
-          } else if (interval === '1h') {
-            const candleHour = new Date(c.timestamp);
-            candleHour.setUTCMinutes(0, 0, 0);
-            return candleHour.getTime() === targetTimestamp;
-          } else if (interval === '5m') {
-            const candle5m = new Date(c.timestamp);
-            const minutes = candle5m.getUTCMinutes();
-            const roundedMinutes = Math.floor(minutes / 5) * 5;
-            candle5m.setUTCMinutes(roundedMinutes, 0, 0);
-            return candle5m.getTime() === targetTimestamp;
-          }
-          return c.timestamp === targetTimestamp;
-        });
-        
-        if (fileCandleIndex >= 0) {
-          // Update existing candle with new price point (REAL DATA - aggregating actual prices)
-          existingFileData[fileCandleIndex].close = price;
-          existingFileData[fileCandleIndex].high = Math.max(existingFileData[fileCandleIndex].high, price);
-          existingFileData[fileCandleIndex].low = Math.min(existingFileData[fileCandleIndex].low, price);
-        } else {
-          // Add new candle for this period
-          existingFileData.push({
-            timestamp: targetTimestamp,
-            open: price,
-            high: price,
-            low: price,
-            close: price,
-            volume: 0,
-          });
-        }
-        
-        // Sort by timestamp to keep data organized
-        existingFileData.sort((a, b) => a.timestamp - b.timestamp);
-        
-        await saveToFile(filePath, existingFileData);
-      }
-    } catch (fileError) {
-      // File update is optional (won't work in serverless) - ignore errors
-    }
+    // Note: File writes are handled by GitHub Actions workflow (migrate-redis-candles.yml)
+    // This keeps Vercel serverless deployments clean (no EROFS errors)
   } catch (error) {
     // Non-critical - log but don't throw
-    console.warn('Failed to update today candle in historical data:', error);
+    console.warn(`Failed to update candle in Redis:`, error);
   }
 }
 

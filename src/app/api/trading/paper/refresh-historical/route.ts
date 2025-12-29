@@ -31,13 +31,13 @@ export async function POST(request: NextRequest) {
     // First, find the last HOURLY candle we have in historical data to determine what's missing
     // Then fetch all missing hourly candles from that point to now
     try {
-      // Get the last 7 days to find where our hourly data ends (don't need 200 days for this check)
+      // Get a wider range to find where our hourly data ends (go back further to find the actual gap)
       const startDateForCheck = new Date(today);
-      startDateForCheck.setDate(startDateForCheck.getDate() - 7);
+      startDateForCheck.setDate(startDateForCheck.getDate() - 30); // Check last 30 days to find the gap
       const checkStartStr = startDateForCheck.toISOString().split('T')[0];
       
       // Load existing HOURLY candles to find the last one
-      console.log(`🔍 Checking for last hourly candle in data...`);
+      console.log(`🔍 Checking for last hourly candle in data (checking last 30 days)...`);
       const existingHourlyCandles = await fetchPriceCandles(
         'ETHUSDT',
         '1h',
