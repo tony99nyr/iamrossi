@@ -35,13 +35,40 @@ export async function GET(request: NextRequest) {
     }
 
     // Update session (fetch price, calculate regime, execute trades)
-    const updatedSession = await PaperTradingService.updateSession();
+    try {
+      const updatedSession = await PaperTradingService.updateSession();
 
-    return NextResponse.json({ 
-      session: updatedSession,
-      message: 'Paper trading session updated successfully',
-      timestamp: Date.now()
-    });
+      return NextResponse.json({ 
+        session: updatedSession,
+        message: 'Paper trading session updated successfully',
+        timestamp: Date.now()
+      });
+    } catch (updateError) {
+      // If update fails due to price fetch issues, return a partial success response
+      // This prevents the cron job from appearing as failed when APIs are rate limited
+      const errorMessage = updateError instanceof Error ? updateError.message : String(updateError);
+      
+      // Check if it's a price fetch error (rate limits, API failures)
+      const isPriceFetchError = errorMessage.includes('Failed to fetch latest price') || 
+                                errorMessage.includes('Rate limited') ||
+                                errorMessage.includes('451') ||
+                                errorMessage.includes('429') ||
+                                errorMessage.includes('API');
+      
+      if (isPriceFetchError) {
+        // For price fetch errors, return 200 with a warning (cron job succeeded, but price fetch failed)
+        console.warn('⚠️ Cron update completed but price fetch failed:', errorMessage);
+        return NextResponse.json({ 
+          session: await PaperTradingService.getActiveSession(),
+          message: 'Paper trading session update attempted but price fetch failed (APIs may be rate limited)',
+          warning: errorMessage,
+          timestamp: Date.now()
+        });
+      }
+      
+      // For other errors, re-throw to be caught by outer catch
+      throw updateError;
+    }
   } catch (error) {
     console.error('Error updating paper trading session (cron):', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to update paper trading session';

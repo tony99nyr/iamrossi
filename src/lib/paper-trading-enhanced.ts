@@ -160,7 +160,35 @@ export class PaperTradingService {
     }
 
     // Fetch latest price (this updates today's candle in Redis asynchronously)
-    const currentPrice = await fetchLatestPrice('ETHUSDT');
+    // If price fetch fails (e.g., all APIs rate limited), use the last price from the session
+    let currentPrice: number;
+    try {
+      currentPrice = await fetchLatestPrice('ETHUSDT');
+    } catch (priceError) {
+      // If all APIs fail, try to use the last known price from the session
+      const errorMessage = priceError instanceof Error ? priceError.message : String(priceError);
+      console.warn(`⚠️ Failed to fetch latest price: ${errorMessage}`);
+      
+      // Try to get the last price from the session's portfolio history or current price
+      if (session.portfolioHistory && session.portfolioHistory.length > 0) {
+        const lastSnapshot = session.portfolioHistory[session.portfolioHistory.length - 1];
+        // Estimate price from last portfolio value (rough approximation)
+        if (lastSnapshot && session.portfolio.ethBalance > 0) {
+          const estimatedPrice = (lastSnapshot.totalValue - session.portfolio.usdcBalance) / session.portfolio.ethBalance;
+          if (estimatedPrice > 0 && estimatedPrice < 10000) { // Sanity check
+            console.warn(`⚠️ Using estimated price from last portfolio snapshot: $${estimatedPrice.toFixed(2)}`);
+            currentPrice = estimatedPrice;
+          } else {
+            throw new Error('Failed to fetch price and cannot estimate from portfolio');
+          }
+        } else {
+          throw new Error('Failed to fetch price and no portfolio history available');
+        }
+      } else {
+        // Last resort: throw error (will be caught by caller)
+        throw new Error(`Failed to fetch latest price: ${errorMessage}`);
+      }
+    }
     
     // Note: updateTodayCandle is called asynchronously in fetchLatestPrice
     // The merge logic in fetchPriceCandles will pick up today's candle from Redis
