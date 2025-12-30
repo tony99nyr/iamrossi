@@ -23,8 +23,52 @@ export default function PokemonPriceIndexClient({
     const [showPinModal, setShowPinModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [snapshots, setSnapshots] = useState<PokemonCardPriceSnapshot[]>([]);
-    const [activeView, setActiveView] = useState<'chart' | 'table'>('chart');
-    const [timeRange, setTimeRange] = useState<'all' | 'ytd' | '6m' | '3m' | '1m'>('all');
+    
+    // Initialize state from URL params, with defaults
+    const getInitialView = (): 'chart' | 'table' => {
+        if (typeof window === 'undefined') return 'chart';
+        const params = new URLSearchParams(window.location.search);
+        const view = params.get('view');
+        return (view === 'chart' || view === 'table') ? view : 'chart';
+    };
+    
+    const getInitialTimeRange = (): 'all' | 'ytd' | '6m' | '3m' | '1m' => {
+        if (typeof window === 'undefined') return 'all';
+        const params = new URLSearchParams(window.location.search);
+        const range = params.get('range');
+        return (range === 'all' || range === 'ytd' || range === '6m' || range === '3m' || range === '1m') ? range : 'all';
+    };
+    
+    const [activeView, setActiveView] = useState<'chart' | 'table'>(getInitialView);
+    const [timeRange, setTimeRange] = useState<'all' | 'ytd' | '6m' | '3m' | '1m'>(getInitialTimeRange);
+    
+    // Update URL when view or time range changes
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        
+        const params = new URLSearchParams(window.location.search);
+        
+        // Update view param
+        if (activeView === 'chart') {
+            params.delete('view'); // Default is chart, so we can omit it
+        } else {
+            params.set('view', activeView);
+        }
+        
+        // Update range param
+        if (timeRange === 'all') {
+            params.delete('range'); // Default is all, so we can omit it
+        } else {
+            params.set('range', timeRange);
+        }
+        
+        // Update URL without page reload
+        const newUrl = params.toString() 
+            ? `${window.location.pathname}?${params.toString()}`
+            : window.location.pathname;
+        
+        window.history.replaceState({}, '', newUrl);
+    }, [activeView, timeRange]);
 
     // Check for existing auth cookie on mount
     useEffect(() => {
@@ -284,7 +328,9 @@ export default function PokemonPriceIndexClient({
                     })}>
                         <button
                             type="button"
-                            onClick={() => setActiveView('chart')}
+                            onClick={() => {
+                                setActiveView('chart');
+                            }}
                             className={css({
                                 padding: '6px 12px',
                                 fontSize: '0.8rem',
@@ -298,7 +344,9 @@ export default function PokemonPriceIndexClient({
                         </button>
                         <button
                             type="button"
-                            onClick={() => setActiveView('table')}
+                            onClick={() => {
+                                setActiveView('table');
+                            }}
                             className={css({
                                 padding: '6px 12px',
                                 fontSize: '0.8rem',
@@ -320,11 +368,13 @@ export default function PokemonPriceIndexClient({
                             overflow: 'hidden',
                             backgroundColor: '#020617',
                         })}>
-                            {(['all', 'ytd', '6m', '3m', '1m'] as const).map((range) => (
+                            {(['all', 'ytd', '6m', '3m', '1m'] as const).map((range, index, array) => (
                                 <button
                                     key={range}
                                     type="button"
-                                    onClick={() => setTimeRange(range)}
+                                    onClick={() => {
+                                        setTimeRange(range);
+                                    }}
                                     className={css({
                                         padding: '6px 12px',
                                         fontSize: '0.8rem',
@@ -332,7 +382,7 @@ export default function PokemonPriceIndexClient({
                                         cursor: 'pointer',
                                         backgroundColor: timeRange === range ? '#111827' : 'transparent',
                                         color: timeRange === range ? '#e5e7eb' : '#6b7280',
-                                        borderRight: range !== '1m' ? '1px solid #1f2937' : 'none',
+                                        borderRight: index < array.length - 1 ? '1px solid #1f2937' : 'none',
                                     })}
                                 >
                                     {range === 'all' ? 'All' : range === 'ytd' ? 'YTD' : range === '6m' ? '6M' : range === '3m' ? '3M' : '1M'}
@@ -559,9 +609,17 @@ function SimpleIndexChart({ series, timeRange }: SimpleIndexChartProps & { timeR
     
     if (displaySeries.length === 0) return null;
 
-    const values = displaySeries.map((p) => p.indexValue);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    // Collect all values including index and all moving averages to ensure proper Y-axis range
+    const allValues: number[] = [];
+    displaySeries.forEach((p) => {
+        allValues.push(p.indexValue);
+        if (typeof p.ma7 === 'number') allValues.push(p.ma7);
+        if (typeof p.ma30 === 'number') allValues.push(p.ma30);
+        if (typeof p.ma120 === 'number') allValues.push(p.ma120);
+    });
+    
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
     const pad = (max - min) * 0.1 || 10;
     const yMin = min - pad;
     const yMax = max + pad;
