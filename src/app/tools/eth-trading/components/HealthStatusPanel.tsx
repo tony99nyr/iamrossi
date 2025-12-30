@@ -44,19 +44,38 @@ export default function HealthStatusPanel({ session }: HealthStatusPanelProps) {
   const hasDataIssues = dataQuality && !dataQuality.isValid;
   const hasDataWarnings = dataQuality && dataQuality.warnings.length > 0;
 
+  const getDataQualityStatusColor = (isValid: boolean, hasWarnings: boolean) => {
+    if (!isValid) return '#f85149';
+    if (hasWarnings) return '#eab308';
+    return '#3fb950';
+  };
+
+  const getDataQualityStatusText = (isValid: boolean, hasWarnings: boolean) => {
+    if (!isValid) return 'Issues Detected';
+    if (hasWarnings) return 'Warnings';
+    return 'Good';
+  };
+
+  const formatAge = (ageMs: number) => {
+    const hours = Math.floor(ageMs / (60 * 60 * 1000));
+    const minutes = Math.floor((ageMs % (60 * 60 * 1000)) / (60 * 1000));
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
   return (
     <div className={css({
-      padding: '24px',
+      padding: '16px',
       bg: '#161b22',
       border: '1px solid #30363d',
       borderRadius: '8px',
     })}>
-      <h2 className={css({ fontSize: 'lg', fontWeight: 'semibold', marginBottom: '16px', color: '#e6edf3' })}>
-        System Health
+      <h2 className={css({ fontSize: 'md', fontWeight: 'semibold', marginBottom: '12px', color: '#e6edf3' })}>
+        System Health & Data Quality
       </h2>
       
-      <div className={stack({ gap: '16px' })}>
-        {/* Last Update */}
+      <div className={stack({ gap: '8px' })}>
+        {/* System Status */}
         <div className={css({
           display: 'flex',
           justifyContent: 'space-between',
@@ -82,7 +101,6 @@ export default function HealthStatusPanel({ session }: HealthStatusPanelProps) {
           </div>
         </div>
 
-        {/* Session Uptime */}
         <div className={css({
           display: 'flex',
           justifyContent: 'space-between',
@@ -94,10 +112,10 @@ export default function HealthStatusPanel({ session }: HealthStatusPanelProps) {
           </span>
         </div>
 
-        {/* Data Quality */}
+        {/* Data Quality Section */}
         {dataQuality && (
           <>
-            <div className={css({ height: '1px', bg: '#30363d', margin: '8px 0' })} />
+            <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
             <div className={css({
               display: 'flex',
               justifyContent: 'space-between',
@@ -105,86 +123,153 @@ export default function HealthStatusPanel({ session }: HealthStatusPanelProps) {
             })}>
               <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Data Quality</span>
               <span className={css({
-                color: hasDataIssues ? '#f85149' : hasDataWarnings ? '#eab308' : '#3fb950',
+                color: getDataQualityStatusColor(dataQuality.isValid, hasDataWarnings || false),
                 fontWeight: 'semibold',
               })}>
-                {hasDataIssues ? 'Issues' : hasDataWarnings ? 'Warnings' : 'Good'}
+                {getDataQualityStatusText(dataQuality.isValid, hasDataWarnings || false)}
               </span>
             </div>
 
-            {dataQuality.coverage < 100 && (
-              <div className={css({
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
+            <div className={css({
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            })}>
+              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Data Coverage</span>
+              <span className={css({
+                color: dataQuality.coverage >= 95 ? '#3fb950' : dataQuality.coverage >= 90 ? '#eab308' : '#f85149',
+                fontWeight: 'semibold',
               })}>
-                <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Data Coverage</span>
-                <span className={css({ color: '#e6edf3' })}>
-                  {dataQuality.coverage.toFixed(1)}%
-                </span>
-              </div>
-            )}
+                {dataQuality.coverage.toFixed(1)}%
+              </span>
+            </div>
 
-            {dataQuality.gapCount > 0 && (
-              <div className={css({
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
+            <div className={css({
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            })}>
+              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Data Gaps</span>
+              <span className={css({
+                color: dataQuality.gapCount === 0 ? '#3fb950' : '#f85149',
+                fontWeight: 'semibold',
               })}>
-                <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Data Gaps</span>
-                <span className={css({ color: '#f85149' })}>
-                  {dataQuality.gapCount}
-                </span>
-              </div>
-            )}
+                {dataQuality.gapCount}
+              </span>
+            </div>
 
             {dataQuality.lastCandleAge > 0 && (
+              <>
+                <div className={css({
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                })}>
+                  <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Last Candle Age (1d)</span>
+                  <span className={css({
+                    color: dataQuality.lastCandleAge < 24 * 60 * 60 * 1000 ? '#3fb950' : 
+                           dataQuality.lastCandleAge < 48 * 60 * 60 * 1000 ? '#eab308' : '#f85149',
+                    fontWeight: 'semibold',
+                  })}>
+                    {formatAge(dataQuality.lastCandleAge)}
+                  </span>
+                </div>
+                
+                {/* Calculate 5m candle age from portfolioHistory */}
+                {(() => {
+                  if (!session.portfolioHistory || session.portfolioHistory.length === 0) return null;
+                  
+                  // Find the most recent 5m candle (has timestamp that's not at start of day)
+                  const recent5mCandles = session.portfolioHistory
+                    .filter(snapshot => {
+                      const snapshotDate = new Date(snapshot.timestamp);
+                      const dayStart = new Date(snapshotDate);
+                      dayStart.setUTCHours(0, 0, 0, 0);
+                      // 5m candles have timestamps that are NOT at start of day (have minutes/seconds)
+                      return snapshot.timestamp !== dayStart.getTime();
+                    })
+                    .sort((a, b) => b.timestamp - a.timestamp);
+                  
+                  if (recent5mCandles.length > 0) {
+                    const last5mCandle = recent5mCandles[0]!;
+                    const last5mAge = now - last5mCandle.timestamp;
+                    const fiveMinuteInterval = 5 * 60 * 1000; // 5 minutes
+                    const max5mAge = 10 * 60 * 1000; // 10 minutes (2 intervals)
+                    
+                    return (
+                      <div className={css({
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      })}>
+                        <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Last Candle Age (5m)</span>
+                        <span className={css({
+                          color: last5mAge < fiveMinuteInterval ? '#3fb950' : 
+                                 last5mAge < max5mAge ? '#eab308' : '#f85149',
+                          fontWeight: 'semibold',
+                        })}>
+                          {formatAge(last5mAge)}
+                        </span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+              </>
+            )}
+
+            {dataQuality.missingCandles.length > 0 && (
               <div className={css({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
               })}>
-                <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Last Candle Age</span>
-                <span className={css({ color: '#e6edf3' })}>
-                  {Math.floor(dataQuality.lastCandleAge / (60 * 60 * 1000))}h
+                <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Missing Candles</span>
+                <span className={css({ color: '#f85149', fontWeight: 'semibold' })}>
+                  {dataQuality.missingCandles.length}
                 </span>
               </div>
+            )}
+
+            {/* Issues & Warnings */}
+            {(hasDataIssues || hasDataWarnings) && (
+              <>
+                <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
+                {dataQuality.issues.length > 0 && (
+                  <div className={stack({ gap: '4px' })}>
+                    <span className={css({ color: '#f85149', fontSize: 'sm', fontWeight: 'semibold' })}>
+                      Issues:
+                    </span>
+                    {dataQuality.issues.map((issue, i) => (
+                      <span key={i} className={css({ color: '#f85149', fontSize: 'xs' })}>
+                        • {issue}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {dataQuality.warnings.length > 0 && (
+                  <div className={stack({ gap: '4px' })}>
+                    <span className={css({ color: '#eab308', fontSize: 'sm', fontWeight: 'semibold' })}>
+                      Warnings:
+                    </span>
+                    {dataQuality.warnings.map((warning, i) => (
+                      <span key={i} className={css({ color: '#eab308', fontSize: 'xs' })}>
+                        • {warning}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
 
-        {/* Issues & Warnings */}
-        {dataQuality && (hasDataIssues || hasDataWarnings) && (
-          <>
-            <div className={css({ height: '1px', bg: '#30363d', margin: '8px 0' })} />
-            {dataQuality.issues.length > 0 && (
-              <div className={stack({ gap: '4px' })}>
-                <span className={css({ color: '#f85149', fontSize: 'sm', fontWeight: 'semibold' })}>
-                  Issues:
-                </span>
-                {dataQuality.issues.map((issue, i) => (
-                  <span key={i} className={css({ color: '#f85149', fontSize: 'xs' })}>
-                    • {issue}
-                  </span>
-                ))}
-              </div>
-            )}
-            {dataQuality.warnings.length > 0 && (
-              <div className={stack({ gap: '4px' })}>
-                <span className={css({ color: '#eab308', fontSize: 'sm', fontWeight: 'semibold' })}>
-                  Warnings:
-                </span>
-                {dataQuality.warnings.map((warning, i) => (
-                  <span key={i} className={css({ color: '#eab308', fontSize: 'xs' })}>
-                    • {warning}
-                  </span>
-                ))}
-              </div>
-            )}
-          </>
+        {!dataQuality && (
+          <div className={css({ color: '#7d8590', fontSize: 'sm', fontStyle: 'italic' })}>
+            No data quality report available
+          </div>
         )}
       </div>
     </div>
   );
 }
-

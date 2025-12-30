@@ -2,16 +2,19 @@
 
 import { useRef, useState, useMemo } from 'react';
 import { css } from '@styled-system/css';
-import type { PortfolioSnapshot, Trade } from '@/types';
+import type { PortfolioSnapshot, Trade, PriceCandle } from '@/types';
 import { calculateSMA, calculateEMA, calculateRSI, calculateMACD } from '@/lib/indicators';
+import { detectMarketRegimeCached, clearIndicatorCache } from '@/lib/market-regime-detector-cached';
+import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 
 interface PriceChartProps {
   portfolioHistory: PortfolioSnapshot[];
   trades: Trade[];
   timeRange?: 'all' | 'ytd' | '6m' | '3m' | '1m' | '14d' | '7d' | '1d';
+  session?: EnhancedPaperTradingSession | null;
 }
 
-export default function PriceChart({ portfolioHistory, trades, timeRange = 'all' }: PriceChartProps) {
+export default function PriceChart({ portfolioHistory, trades, timeRange = 'all', session }: PriceChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
@@ -121,6 +124,99 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
     };
   }, [prices]);
 
+  // Calculate regimes for visualization (if session is available) - must be before early return
+  const regimeRegions = useMemo(() => {
+    if (!session || filteredHistory.length < 50) return [];
+    
+    // Clear cache to ensure fresh calculation with proper smoothing and hysteresis
+    // This ensures the smoothing builds up correctly from the start
+    clearIndicatorCache();
+    
+    // Create synthetic candles from portfolioHistory for regime detection
+    const candles: PriceCandle[] = filteredHistory.map((snapshot, index) => {
+      const prevPrice = index > 0 ? filteredHistory[index - 1]!.ethPrice : snapshot.ethPrice;
+      return {
+        timestamp: snapshot.timestamp,
+        open: prevPrice,
+        high: Math.max(snapshot.ethPrice, prevPrice),
+        low: Math.min(snapshot.ethPrice, prevPrice),
+        close: snapshot.ethPrice,
+        volume: 0,
+      };
+    });
+    
+    // Calculate regimes for all points
+    const regions: Array<{ start: number; end: number; regime: 'bullish' | 'bearish' | 'neutral'; confidence: number }> = [];
+    let currentRegime: 'bullish' | 'bearish' | 'neutral' | null = null;
+    let currentStart = 0;
+    let currentConfidence = 0;
+    
+    for (let i = 50; i < candles.length; i++) {
+      const regimeSignal = detectMarketRegimeCached(candles, i);
+      const regime = regimeSignal.regime;
+      const confidence = regimeSignal.confidence;
+      
+      if (regime !== currentRegime) {
+        // Save previous region
+        if (currentRegime !== null && i > currentStart) {
+          regions.push({
+            start: currentStart,
+            end: i - 1,
+            regime: currentRegime,
+            confidence: currentConfidence,
+          });
+        }
+        // Start new region
+        currentRegime = regime;
+        currentStart = i;
+        currentConfidence = confidence;
+      } else {
+        // Update confidence for current region
+        currentConfidence = Math.max(currentConfidence, confidence);
+      }
+    }
+    
+    // Add final region
+    if (currentRegime !== null && candles.length > currentStart) {
+      regions.push({
+        start: currentStart,
+        end: candles.length - 1,
+        regime: currentRegime,
+        confidence: currentConfidence,
+      });
+    }
+    
+    // Convert to chart coordinates
+    return regions.map(region => {
+      const startX = (region.start / Math.max(filteredHistory.length - 1, 1)) * chartWidth + padding.left;
+      const endX = (region.end / Math.max(filteredHistory.length - 1, 1)) * chartWidth + padding.left;
+      return {
+        ...region,
+        x: startX,
+        width: endX - startX,
+      };
+    });
+  }, [session, filteredHistory, chartWidth, padding.left]);
+
+  // Calculate regime for hovered point (for tooltip) - must be before early return
+  const hoveredRegime = useMemo(() => {
+    if (!session || hoveredIndex === null || hoveredIndex < 50) return null;
+    
+    const candles: PriceCandle[] = filteredHistory.map((snapshot, index) => {
+      const prevPrice = index > 0 ? filteredHistory[index - 1]!.ethPrice : snapshot.ethPrice;
+      return {
+        timestamp: snapshot.timestamp,
+        open: prevPrice,
+        high: Math.max(snapshot.ethPrice, prevPrice),
+        low: Math.min(snapshot.ethPrice, prevPrice),
+        close: snapshot.ethPrice,
+        volume: 0,
+      };
+    });
+    
+    return detectMarketRegimeCached(candles, hoveredIndex);
+  }, [session, hoveredIndex, filteredHistory]);
+
   // Early return after all hooks
   if (filteredHistory.length === 0) {
     return (
@@ -216,17 +312,26 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
         y >= padding.top && y <= height - padding.bottom) {
       setHoveredIndex(closestIndex);
       
-      // Calculate position relative to container
-      const relativeX = e.clientX - containerRect.left;
+      // Get the actual data point's position in SVG coordinates
+      const dataPoint = project(filteredHistory[closestIndex].ethPrice, closestIndex);
+      
+      // Convert data point's SVG X position to container-relative coordinates
+      // SVG X is in viewBox coordinates (0 to width), convert to actual pixel position
+      const svgOffsetX = svgRect.left - containerRect.left;
+      const dataPointXInContainer = (dataPoint.x / width) * svgRect.width + svgOffsetX;
+      
+      // Use cursor Y position for vertical alignment (follows cursor)
       const relativeY = e.clientY - containerRect.top;
-      setTooltipPosition({ x: relativeX, y: relativeY });
+      
+      setTooltipPosition({ x: dataPointXInContainer, y: relativeY });
       
       // Calculate tooltip style to prevent going off-screen
       const containerWidth = containerRef.current?.offsetWidth || 0;
       const tooltipWidth = 200;
-      const left = relativeX + 15 > containerWidth - tooltipWidth
-        ? relativeX - tooltipWidth - 15
-        : relativeX + 15;
+      // Position tooltip at the data point's X position, with offset
+      const left = dataPointXInContainer + 15 > containerWidth - tooltipWidth
+        ? dataPointXInContainer - tooltipWidth - 15
+        : dataPointXInContainer + 15;
       const top = relativeY < 100
         ? relativeY + 15
         : relativeY - 10;
@@ -284,6 +389,24 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
           onMouseLeave={handleMouseLeave}
         >
           <rect x="0" y="0" width={width} height={height} fill="#161b22" />
+          
+          {/* Regime background regions */}
+          {regimeRegions.map((region, i) => {
+            const color = region.regime === 'bullish' ? 'rgba(63, 185, 80, 0.1)' :
+                          region.regime === 'bearish' ? 'rgba(248, 81, 73, 0.1)' :
+                          'rgba(125, 133, 144, 0.05)';
+            return (
+              <rect
+                key={i}
+                x={region.x}
+                y={padding.top}
+                width={region.width}
+                height={chartHeight}
+                fill={color}
+              />
+            );
+          })}
+          
           {/* Grid lines */}
           {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
             const y = padding.top + chartHeight - ratio * chartHeight;
@@ -568,6 +691,26 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
                   </span>
                 </div>
               )}
+              {hoveredRegime && (
+                <div className={css({
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  marginTop: '4px',
+                  paddingTop: '4px',
+                  borderTop: '1px solid #374151',
+                })}>
+                  <span className={css({ color: '#9ca3af' })}>Regime:</span>
+                  <span className={css({ 
+                    color: hoveredRegime.regime === 'bullish' ? '#3fb950' :
+                           hoveredRegime.regime === 'bearish' ? '#f85149' : '#7d8590',
+                    fontWeight: 500,
+                    textTransform: 'capitalize'
+                  })}>
+                    {hoveredRegime.regime} ({(hoveredRegime.confidence * 100).toFixed(0)}%)
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -611,6 +754,22 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
           <div className={css({ width: '12px', height: '12px', borderRadius: '50%', bg: '#f85149' })} />
           <span>Sell</span>
         </div>
+        {regimeRegions.length > 0 && (
+          <>
+            <div className={css({ display: 'flex', alignItems: 'center', gap: '6px' })}>
+              <div className={css({ width: '12px', height: '12px', bg: 'rgba(63, 185, 80, 0.3)' })} />
+              <span>Bullish</span>
+            </div>
+            <div className={css({ display: 'flex', alignItems: 'center', gap: '6px' })}>
+              <div className={css({ width: '12px', height: '12px', bg: 'rgba(248, 81, 73, 0.3)' })} />
+              <span>Bearish</span>
+            </div>
+            <div className={css({ display: 'flex', alignItems: 'center', gap: '6px' })}>
+              <div className={css({ width: '12px', height: '12px', bg: 'rgba(125, 133, 144, 0.15)' })} />
+              <span>Neutral</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

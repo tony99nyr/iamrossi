@@ -4,6 +4,10 @@ import { ensurePokemonIndexUpToDate, getOrBuildPokemonIndexSeries } from '@/lib/
 import { logger } from '@/lib/logger';
 import type { PokemonIndexPoint } from '@/types';
 
+// Allow up to 5 minutes for the cron job to complete (Vercel Pro plan allows up to 300s)
+// This is necessary because scraping 7+ cards with delays can take several minutes
+export const maxDuration = 300;
+
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
   const { searchParams } = new URL(request.url);

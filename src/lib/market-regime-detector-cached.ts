@@ -27,6 +27,8 @@ interface IndicatorCache {
   macd: { macd: number[]; signal: number[]; histogram: number[] } | null;
   rsi: number[] | null;
   prices: number[] | null;
+  smoothedCombinedSignal: number[] | null; // EMA-smoothed combined signal for regime detection
+  lastRegime: 'bullish' | 'bearish' | 'neutral' | null; // Track last regime for hysteresis
   lastCandleCount: number;
 }
 
@@ -39,6 +41,8 @@ let indicatorCache: IndicatorCache = {
   macd: null,
   rsi: null,
   prices: null,
+  smoothedCombinedSignal: null,
+  lastRegime: null,
   lastCandleCount: 0,
 };
 
@@ -63,6 +67,9 @@ function ensureIndicatorsCached(candles: PriceCandle[]): void {
     indicatorCache.ema26 = calculateEMA(prices, 26);
     indicatorCache.macd = calculateMACD(prices, 12, 26, 9);
     indicatorCache.rsi = calculateRSI(prices, 14);
+    // Reset smoothed signal cache when candles change (new dataset)
+    indicatorCache.smoothedCombinedSignal = null;
+    indicatorCache.lastRegime = null;
     indicatorCache.lastCandleCount = candles.length;
   }
 }
@@ -274,16 +281,177 @@ export function detectMarketRegimeCached(
   const volatility = Math.min(1, avgVolatility * 20);
 
   // Combine trend and momentum
-  const combinedSignal = (trend * 0.5 + momentum * 0.5);
+  const rawCombinedSignal = (trend * 0.5 + momentum * 0.5);
   const signalStrength = (avgTrendStrength + avgMomentumStrength) / 2;
   
-  // Determine regime
-  const bullishThreshold = 0.05;
-  const bearishThreshold = -0.05;
+  // Apply smoothing to reduce noise (financial professionals use this)
+  // Calculate simple moving average of recent raw signals for this index
+  // This works for both sequential (paper trading) and historical (chart) calculations
+  const smoothingPeriod = 5;
+  let combinedSignal = rawCombinedSignal;
+  
+  if (currentIndex >= 50 + smoothingPeriod - 1) {
+    // Calculate raw signals for recent periods and average them
+    const recentRawSignals: number[] = [rawCombinedSignal];
+    for (let i = 1; i < smoothingPeriod && currentIndex - i >= 50; i++) {
+      const prevIdx = currentIndex - i;
+      const prevPrice = prices[prevIdx]!;
+      
+      // Recalculate trend for previous index
+      const prevSma20 = getLatestIndicatorValue(sma20, prevIdx, 19);
+      const prevSma50 = getLatestIndicatorValue(sma50, prevIdx, 49);
+      const prevSma200 = sma200 ? getLatestIndicatorValue(sma200, prevIdx, 199) : null;
+      const prevEma12 = getLatestIndicatorValue(ema12, prevIdx, 11);
+      const prevEma26 = getLatestIndicatorValue(ema26, prevIdx, 25);
+      
+      let prevTrendScore = 0;
+      let prevTrendSignals = 0;
+      if (prevSma20 !== null) {
+        prevTrendScore += Math.max(-1, Math.min(1, ((prevPrice - prevSma20) / prevSma20) * 10));
+        prevTrendSignals++;
+      }
+      if (prevSma50 !== null) {
+        prevTrendScore += Math.max(-1, Math.min(1, ((prevPrice - prevSma50) / prevSma50) * 10));
+        prevTrendSignals++;
+      }
+      if (prevSma200 !== null) {
+        prevTrendScore += Math.max(-1, Math.min(1, ((prevPrice - prevSma200) / prevSma200) * 8)) * 1.5;
+        prevTrendSignals++;
+      }
+      if (prevSma50 !== null && prevSma200 !== null) {
+        prevTrendScore += Math.max(-1, Math.min(1, ((prevSma50 - prevSma200) / prevSma200) * 30)) * 2.0;
+        prevTrendSignals++;
+      }
+      if (prevSma20 !== null && prevSma50 !== null) {
+        prevTrendScore += Math.max(-1, Math.min(1, ((prevSma20 - prevSma50) / prevSma50) * 20));
+        prevTrendSignals++;
+      }
+      if (prevEma12 !== null && prevEma26 !== null) {
+        prevTrendScore += Math.max(-1, Math.min(1, ((prevEma12 - prevEma26) / prevEma26) * 20));
+        prevTrendSignals++;
+      }
+      const prevTrend = prevTrendSignals > 0 ? prevTrendScore / prevTrendSignals : 0;
+      
+      // Recalculate momentum for previous index
+      const prevHistogram = getLatestIndicatorValue(histogram, prevIdx, 34);
+      const prevMacd = getLatestIndicatorValue(macd, prevIdx, 34);
+      const prevSignal = getLatestIndicatorValue(signal, prevIdx, 34);
+      const prevRsi = getLatestIndicatorValue(rsi, prevIdx, 14);
+      
+      let prevMomentumScore = 0;
+      let prevMomentumSignals = 0;
+      if (prevHistogram !== null) {
+        const priceRange = Math.max(...prices.slice(Math.max(0, prevIdx - 50), prevIdx + 1)) - Math.min(...prices.slice(Math.max(0, prevIdx - 50), prevIdx + 1));
+        const scale = priceRange > 0 ? priceRange / 100 : 1;
+        prevMomentumScore += Math.max(-1, Math.min(1, prevHistogram / scale)) * 1.5;
+        prevMomentumSignals++;
+      }
+      if (prevMacd !== null && prevSignal !== null) {
+        const macdSignal = prevMacd > prevSignal ? 1 : -1;
+        prevMomentumScore += macdSignal * Math.min(1, Math.abs(prevMacd - prevSignal) / Math.abs(prevSignal || 1) * 10);
+        prevMomentumSignals++;
+        prevMomentumScore += (prevMacd > 0 ? 0.3 : -0.3);
+        prevMomentumSignals++;
+      }
+      if (prevRsi !== null) {
+        let rsiSignal = 0;
+        if (prevRsi > 70) rsiSignal = -((prevRsi - 70) / 30);
+        else if (prevRsi < 30) rsiSignal = (30 - prevRsi) / 30;
+        else if (prevRsi > 50) rsiSignal = (prevRsi - 50) / 20;
+        else rsiSignal = -(50 - prevRsi) / 20;
+        prevMomentumScore += rsiSignal;
+        prevMomentumSignals++;
+      }
+      if (prevIdx >= 20) {
+        const price20Ago = prices[prevIdx - 20]!;
+        prevMomentumScore += Math.max(-1, Math.min(1, ((prevPrice - price20Ago) / price20Ago) * 5));
+        prevMomentumSignals++;
+      }
+      const prevMomentum = prevMomentumSignals > 0 ? prevMomentumScore / prevMomentumSignals : 0;
+      
+      recentRawSignals.push((prevTrend * 0.5 + prevMomentum * 0.5));
+    }
+    
+    // Use simple average (SMA) for smoothing - more stable than EMA for historical calculations
+    combinedSignal = recentRawSignals.reduce((a, b) => a + b, 0) / recentRawSignals.length;
+  }
+  
+  // Hysteresis: Different thresholds for entering vs exiting regimes
+  // This prevents whipsaw - once in a regime, you need stronger signal to exit
+  // Financial professionals use this to reduce false signals
+  const bullishEntryThreshold = 0.05;  // Threshold to enter bullish
+  const bullishExitThreshold = 0.02;   // Lower threshold to exit bullish (hysteresis)
+  const bearishEntryThreshold = -0.05; // Threshold to enter bearish
+  const bearishExitThreshold = -0.02;  // Higher threshold to exit bearish (hysteresis)
   const minStrength = 0.1;
 
   let regime: MarketRegime;
   let confidence: number;
+  
+  // Determine previous regime for hysteresis (check 1 period ago)
+  let previousRegime: 'bullish' | 'bearish' | 'neutral' | null = null;
+  if (currentIndex > 50) {
+    const prevIdx = currentIndex - 1;
+    const prevPrice = prices[prevIdx]!;
+    const prevSma20 = getLatestIndicatorValue(sma20, prevIdx, 19);
+    const prevSma50 = getLatestIndicatorValue(sma50, prevIdx, 49);
+    const prevSma200 = sma200 ? getLatestIndicatorValue(sma200, prevIdx, 199) : null;
+    const prevEma12 = getLatestIndicatorValue(ema12, prevIdx, 11);
+    const prevEma26 = getLatestIndicatorValue(ema26, prevIdx, 25);
+    const prevHistogram = getLatestIndicatorValue(histogram, prevIdx, 34);
+    const prevMacd = getLatestIndicatorValue(macd, prevIdx, 34);
+    const prevSignal = getLatestIndicatorValue(signal, prevIdx, 34);
+    const prevRsi = getLatestIndicatorValue(rsi, prevIdx, 14);
+    
+    // Quick calculation of previous signal
+    let prevTrendScore = 0;
+    let prevTrendSignals = 0;
+    if (prevSma20 !== null) { prevTrendScore += Math.max(-1, Math.min(1, ((prevPrice - prevSma20) / prevSma20) * 10)); prevTrendSignals++; }
+    if (prevSma50 !== null) { prevTrendScore += Math.max(-1, Math.min(1, ((prevPrice - prevSma50) / prevSma50) * 10)); prevTrendSignals++; }
+    if (prevSma200 !== null) { prevTrendScore += Math.max(-1, Math.min(1, ((prevPrice - prevSma200) / prevSma200) * 8)) * 1.5; prevTrendSignals++; }
+    if (prevSma50 !== null && prevSma200 !== null) { prevTrendScore += Math.max(-1, Math.min(1, ((prevSma50 - prevSma200) / prevSma200) * 30)) * 2.0; prevTrendSignals++; }
+    const prevTrend = prevTrendSignals > 0 ? prevTrendScore / prevTrendSignals : 0;
+    
+    let prevMomentumScore = 0;
+    let prevMomentumSignals = 0;
+    if (prevHistogram !== null) {
+      const priceRange = Math.max(...prices.slice(Math.max(0, prevIdx - 50), prevIdx + 1)) - Math.min(...prices.slice(Math.max(0, prevIdx - 50), prevIdx + 1));
+      const scale = priceRange > 0 ? priceRange / 100 : 1;
+      prevMomentumScore += Math.max(-1, Math.min(1, prevHistogram / scale)) * 1.5;
+      prevMomentumSignals++;
+    }
+    if (prevMacd !== null && prevSignal !== null) {
+      const macdSignal = prevMacd > prevSignal ? 1 : -1;
+      prevMomentumScore += macdSignal * Math.min(1, Math.abs(prevMacd - prevSignal) / Math.abs(prevSignal || 1) * 10);
+      prevMomentumSignals++;
+      prevMomentumScore += (prevMacd > 0 ? 0.3 : -0.3);
+      prevMomentumSignals++;
+    }
+    if (prevRsi !== null) {
+      let rsiSignal = 0;
+      if (prevRsi > 70) rsiSignal = -((prevRsi - 70) / 30);
+      else if (prevRsi < 30) rsiSignal = (30 - prevRsi) / 30;
+      else if (prevRsi > 50) rsiSignal = (prevRsi - 50) / 20;
+      else rsiSignal = -(50 - prevRsi) / 20;
+      prevMomentumScore += rsiSignal;
+      prevMomentumSignals++;
+    }
+    const prevMomentum = prevMomentumSignals > 0 ? prevMomentumScore / prevMomentumSignals : 0;
+    const prevRawSignal = (prevTrend * 0.5 + prevMomentum * 0.5);
+    
+    if (prevRawSignal > bullishEntryThreshold) {
+      previousRegime = 'bullish';
+    } else if (prevRawSignal < bearishEntryThreshold) {
+      previousRegime = 'bearish';
+    }
+  }
+  
+  // Use hysteresis: if we're already in a regime, use exit threshold; otherwise use entry threshold
+  const isCurrentlyBullish = previousRegime === 'bullish';
+  const isCurrentlyBearish = previousRegime === 'bearish';
+  
+  const bullishThreshold = isCurrentlyBullish ? bullishExitThreshold : bullishEntryThreshold;
+  const bearishThreshold = isCurrentlyBearish ? bearishExitThreshold : bearishEntryThreshold;
 
   if (combinedSignal > bullishThreshold && signalStrength > minStrength) {
     regime = 'bullish';
@@ -295,6 +463,9 @@ export function detectMarketRegimeCached(
     regime = 'neutral';
     confidence = Math.max(0, 1 - Math.abs(combinedSignal) - signalStrength);
   }
+  
+  // Update last regime for next calculation
+  indicatorCache.lastRegime = regime;
 
   // Increase confidence if trend and momentum agree
   if ((trend > 0 && momentum > 0) || (trend < 0 && momentum < 0)) {
@@ -334,6 +505,8 @@ export function clearIndicatorCache(): void {
     macd: null,
     rsi: null,
     prices: null,
+    smoothedCombinedSignal: null,
+    lastRegime: null,
     lastCandleCount: 0,
   };
 }

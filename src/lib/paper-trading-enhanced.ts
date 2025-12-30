@@ -8,7 +8,7 @@ import type { Trade, PortfolioSnapshot, Portfolio, PriceCandle, TradingSignal, T
 import type { MarketRegimeSignal } from './market-regime-detector-cached';
 import type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
 import { fetchLatestPrice, fetchPriceCandles } from './eth-price-service';
-import { generateEnhancedAdaptiveSignal, clearRegimeHistory, clearRegimeHistoryForSession } from './adaptive-strategy-enhanced';
+import { generateEnhancedAdaptiveSignal, clearRegimeHistory, clearRegimeHistoryForSession, recordTradeResult } from './adaptive-strategy-enhanced';
 import { calculateConfidence } from './confidence-calculator';
 import { redis, ensureConnected } from './kv';
 import { validateDataQuality, type DataQualityReport } from './data-quality-validator';
@@ -55,10 +55,14 @@ export class PaperTradingService {
     // Get initial price
     const initialPrice = await fetchLatestPrice('ETHUSDT');
 
-    // Fetch recent candles for regime detection (need at least 200 for indicators)
+    // Fetch ALL available candles for regime detection and chart display
+    // Load from earliest available date to ensure we have complete historical context
+    // fetchPriceCandles will automatically load from all available historical + rolling files
     const endDate = new Date().toISOString().split('T')[0];
-    const startDate = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const candles = await fetchPriceCandles('ETHUSDT', '1d', startDate, endDate);
+    // Use a very early start date - fetchPriceCandles will load all available data from files
+    // This ensures we get ALL historical data, not just the last 200 days
+    const startDate = '2020-01-01'; // Early enough to capture all available historical data
+    const candles = await fetchPriceCandles('ETHUSDT', '1d', startDate, endDate, initialPrice);
 
     if (candles.length < 50) {
       throw new Error('Not enough historical data to start paper trading');
@@ -72,9 +76,10 @@ export class PaperTradingService {
     const sessionId = uuidv4(); // Generate session ID before creating session
     
     // Validate data quality
+    // For daily candles, use 24 hours (1440 minutes) as max age - daily candles from yesterday are expected
     const startTime = new Date(startDate).getTime();
     const endTime = new Date(endDate).getTime();
-    const dataQuality = validateDataQuality(candles, '1d', startTime, endTime, currentIndex, 60);
+    const dataQuality = validateDataQuality(candles, '1d', startTime, endTime, currentIndex, 1440);
     
     if (!dataQuality.isValid) {
       console.warn('Data quality issues detected at session start:', dataQuality.issues);
@@ -85,6 +90,20 @@ export class PaperTradingService {
     // Populate portfolioHistory with historical price data from candles
     // This gives the chart historical context even before the session has many updates
     const initialCapital = config.bullishStrategy.initialCapital;
+    
+    // Get today's date for comparison
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const todayStart = today.getTime();
+    
+    // Check if today's candle is in the candles array
+    const todayCandle = candles.find(c => {
+      const candleDate = new Date(c.timestamp);
+      candleDate.setUTCHours(0, 0, 0, 0);
+      return candleDate.getTime() === todayStart;
+    });
+    
+    // Start with daily candles for historical context
     const portfolioHistory: PortfolioSnapshot[] = candles.map(candle => ({
       timestamp: candle.timestamp,
       usdcBalance: initialCapital, // Historical snapshots show starting balance
@@ -93,14 +112,115 @@ export class PaperTradingService {
       ethPrice: candle.close,
     }));
 
-    // Add current snapshot with actual current price
-    portfolioHistory.push({
-      timestamp: Date.now(),
-      usdcBalance: initialCapital,
-      ethBalance: 0,
-      totalValue: initialCapital,
-      ethPrice: initialPrice,
-    });
+    // Fetch and merge recent intraday candles (5m or 1h) from Redis for the last 48 hours
+    // This provides granular price movements for recent periods
+    try {
+      const now = Date.now();
+      const recentCutoff = now - (48 * 60 * 60 * 1000); // Last 48 hours
+      
+      // Try to fetch 5-minute candles first (most granular), fall back to hourly if not available
+      let intradayCandles: PriceCandle[] = [];
+      const recentStartDate = new Date(recentCutoff).toISOString().split('T')[0];
+      const recentEndDate = new Date(now).toISOString().split('T')[0];
+      
+      try {
+        // Try 5-minute candles first
+        intradayCandles = await fetchPriceCandles('ETHUSDT', '5m', recentStartDate, recentEndDate, initialPrice);
+        console.log(`✅ Loaded ${intradayCandles.length} 5-minute candles from Redis for recent period`);
+      } catch (error5m) {
+        // Fall back to hourly candles if 5-minute not available
+        try {
+          intradayCandles = await fetchPriceCandles('ETHUSDT', '1h', recentStartDate, recentEndDate, initialPrice);
+          console.log(`✅ Loaded ${intradayCandles.length} hourly candles from Redis for recent period`);
+        } catch (error1h) {
+          console.warn('⚠️ Could not load intraday candles from Redis (non-critical):', error1h instanceof Error ? error1h.message : error1h);
+        }
+      }
+      
+      // Merge intraday candles into portfolioHistory, replacing daily candles for recent periods
+      if (intradayCandles.length > 0) {
+        // Create a map of existing daily candles by timestamp (rounded to day)
+        const dailyCandleMap = new Map<number, PortfolioSnapshot>();
+        portfolioHistory.forEach(snapshot => {
+          const dayStart = new Date(snapshot.timestamp);
+          dayStart.setUTCHours(0, 0, 0, 0);
+          dailyCandleMap.set(dayStart.getTime(), snapshot);
+        });
+        
+        // Add intraday candles, but only for the last 48 hours (replace daily candles in that range)
+        intradayCandles.forEach(candle => {
+          if (candle.timestamp >= recentCutoff) {
+            // Check if this intraday candle is within a daily candle's range
+            const candleDay = new Date(candle.timestamp);
+            candleDay.setUTCHours(0, 0, 0, 0);
+            const dayStart = candleDay.getTime();
+            
+            // Only add if it's in the recent 48-hour window
+            // This replaces the daily candle with more granular intraday data
+            portfolioHistory.push({
+              timestamp: candle.timestamp,
+              usdcBalance: initialCapital,
+              ethBalance: 0,
+              totalValue: initialCapital,
+              ethPrice: candle.close,
+            });
+          }
+        });
+        
+        // Remove daily candles that are within the recent 48-hour window (replaced by intraday)
+        const filteredHistory = portfolioHistory.filter(snapshot => {
+          const snapshotDay = new Date(snapshot.timestamp);
+          snapshotDay.setUTCHours(0, 0, 0, 0);
+          const dayStart = snapshotDay.getTime();
+          
+          // Keep daily candles older than 48 hours
+          if (dayStart < recentCutoff) {
+            return true;
+          }
+          
+          // For recent periods, only keep if it's not a daily candle (intraday candles have more precise timestamps)
+          // Daily candles have timestamps at start of day (00:00:00)
+          const isDailyCandle = snapshot.timestamp === dayStart;
+          return !isDailyCandle; // Remove daily candles in recent period, keep intraday
+        });
+        
+        // Sort by timestamp
+        filteredHistory.sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Replace portfolioHistory with merged data
+        portfolioHistory.length = 0;
+        portfolioHistory.push(...filteredHistory);
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to merge intraday candles (non-critical):', error instanceof Error ? error.message : error);
+    }
+
+    // Add current snapshot with actual current price (only if today's candle wasn't already included)
+    // If today's candle exists, it should already have the latest price from fetchPriceCandles
+    // But we add a "now" snapshot to show the very latest price
+    const now = Date.now();
+    if (!todayCandle || todayCandle.timestamp < now - 5 * 60 * 1000) {
+      // Only add if today's candle is missing or more than 5 minutes old
+      portfolioHistory.push({
+        timestamp: now,
+        usdcBalance: initialCapital,
+        ethBalance: 0,
+        totalValue: initialCapital,
+        ethPrice: initialPrice,
+      });
+    } else if (todayCandle.close !== initialPrice) {
+      // Today's candle exists but price has changed - add update snapshot
+      portfolioHistory.push({
+        timestamp: now,
+        usdcBalance: initialCapital,
+        ethBalance: 0,
+        totalValue: initialCapital,
+        ethPrice: initialPrice,
+      });
+    }
+    
+    // Final sort to ensure chronological order
+    portfolioHistory.sort((a, b) => a.timestamp - b.timestamp);
 
     // Create session
     const session: EnhancedPaperTradingSession = {
@@ -214,10 +334,12 @@ export class PaperTradingService {
       console.warn('Failed to fetch hourly candles (non-critical):', hourlyError instanceof Error ? hourlyError.message : hourlyError);
     }
 
-    // Fetch recent candles for regime detection (daily candles for strategy)
+    // Fetch ALL available candles for regime detection (daily candles for strategy)
+    // Load from earliest available date to ensure we have complete historical context
     // Pass currentPrice so fetchPriceCandles can create today's candle if Redis doesn't have it yet
     const endDate = new Date().toISOString().split('T')[0];
-    const startDate = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    // Use a very early start date - fetchPriceCandles will load all available data from files
+    const startDate = '2020-01-01'; // Early enough to capture all available historical data
     const candles = await fetchPriceCandles('ETHUSDT', '1d', startDate, endDate, currentPrice);
 
     if (candles.length < 50) {
@@ -228,9 +350,10 @@ export class PaperTradingService {
     const currentIndex = candles.length - 1;
     
     // Validate data quality (check for gaps, freshness, look-ahead bias)
+    // For daily candles, use 24 hours (1440 minutes) as max age - daily candles from yesterday are expected
     const startTime = new Date(startDate).getTime();
     const endTime = new Date(endDate).getTime();
-    const dataQuality = validateDataQuality(candles, '1d', startTime, endTime, currentIndex, 60);
+    const dataQuality = validateDataQuality(candles, '1d', startTime, endTime, currentIndex, 1440);
     
     if (!dataQuality.isValid) {
       console.warn('Data quality issues detected:', dataQuality.issues);
@@ -333,6 +456,9 @@ export class PaperTradingService {
         const pnl = usdcAmount - totalCostBasis;
         const isWin = pnl > 0;
         
+        // Record trade result for circuit breaker
+        recordTradeResult(session.id, isWin);
+        
         portfolio.ethBalance -= positionSize;
         portfolio.usdcBalance += usdcAmount;
 
@@ -365,14 +491,81 @@ export class PaperTradingService {
     portfolio.totalValue = newTotalValue;
     portfolio.totalReturn = ((newTotalValue - portfolio.initialCapital) / portfolio.initialCapital) * 100;
 
-    // Add portfolio snapshot
+    // Add portfolio snapshot with current price
+    const now = Date.now();
     updatedSession.portfolioHistory.push({
-      timestamp: Date.now(),
+      timestamp: now,
       usdcBalance: portfolio.usdcBalance,
       ethBalance: portfolio.ethBalance,
       totalValue: newTotalValue,
       ethPrice: currentPrice,
     });
+    
+    // Also fetch and merge recent intraday candles (5m or 1h) from Redis for the last 48 hours
+    // This ensures the chart shows granular price movements for recent periods
+    try {
+      const recentCutoff = now - (48 * 60 * 60 * 1000); // Last 48 hours
+      const recentStartDate = new Date(recentCutoff).toISOString().split('T')[0];
+      const recentEndDate = new Date(now).toISOString().split('T')[0];
+      
+      // Try to fetch 5-minute candles first (most granular), fall back to hourly if not available
+      let intradayCandles: PriceCandle[] = [];
+      try {
+        intradayCandles = await fetchPriceCandles('ETHUSDT', '5m', recentStartDate, recentEndDate, currentPrice);
+      } catch (error5m) {
+        try {
+          intradayCandles = await fetchPriceCandles('ETHUSDT', '1h', recentStartDate, recentEndDate, currentPrice);
+        } catch (error1h) {
+          // Non-critical - continue without intraday candles
+        }
+      }
+      
+      // Merge intraday candles into portfolioHistory for recent periods
+      if (intradayCandles.length > 0) {
+        // Create a set of existing timestamps to avoid duplicates
+        const existingTimestamps = new Set(updatedSession.portfolioHistory.map(s => s.timestamp));
+        
+        // Add intraday candles that are within the recent 48-hour window and not already present
+        intradayCandles.forEach(candle => {
+          if (candle.timestamp >= recentCutoff && !existingTimestamps.has(candle.timestamp)) {
+            // Calculate portfolio value at this candle's timestamp
+            // Use the current portfolio state (simplified - in reality, we'd need to track historical portfolio state)
+            const candleValue = portfolio.usdcBalance + portfolio.ethBalance * candle.close;
+            updatedSession.portfolioHistory.push({
+              timestamp: candle.timestamp,
+              usdcBalance: portfolio.usdcBalance,
+              ethBalance: portfolio.ethBalance,
+              totalValue: candleValue,
+              ethPrice: candle.close,
+            });
+            existingTimestamps.add(candle.timestamp);
+          }
+        });
+        
+        // Remove daily candles that are within the recent 48-hour window (replaced by intraday)
+        const filteredHistory = updatedSession.portfolioHistory.filter(snapshot => {
+          const snapshotDay = new Date(snapshot.timestamp);
+          snapshotDay.setUTCHours(0, 0, 0, 0);
+          const dayStart = snapshotDay.getTime();
+          
+          // Keep daily candles older than 48 hours
+          if (dayStart < recentCutoff) {
+            return true;
+          }
+          
+          // For recent periods, only keep if it's not a daily candle (intraday candles have more precise timestamps)
+          const isDailyCandle = snapshot.timestamp === dayStart;
+          return !isDailyCandle; // Remove daily candles in recent period, keep intraday
+        });
+        
+        // Sort by timestamp
+        filteredHistory.sort((a, b) => a.timestamp - b.timestamp);
+        updatedSession.portfolioHistory = filteredHistory;
+      }
+    } catch (error) {
+      // Non-critical - log but continue
+      console.warn('⚠️ Failed to merge intraday candles in update (non-critical):', error instanceof Error ? error.message : error);
+    }
 
     // Track regime changes
     if (!updatedSession.regimeHistory) {

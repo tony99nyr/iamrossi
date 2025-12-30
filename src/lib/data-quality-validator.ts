@@ -152,16 +152,27 @@ export function detectGaps(
   }
 
   // Check for missing candles at the start
+  // For daily candles, we only care about gaps from the first available candle forward
+  // Missing candles before the first available candle are expected (we don't have historical data going back that far)
   const firstCandle = sortedCandles[0]!;
   if (firstCandle.timestamp > startTime + expectedInterval) {
-    const missingAtStart = Math.floor((firstCandle.timestamp - startTime) / expectedInterval);
-    for (let j = 1; j <= missingAtStart; j++) {
-      const expectedTimestamp = startTime + expectedInterval * j;
-      if (expectedTimestamp < firstCandle.timestamp) {
-        missingCandles.push({
-          expected: expectedTimestamp,
-          actual: null,
-        });
+    // For daily candles, only report missing candles if they're recent (within last 30 days)
+    // This prevents false positives when we request data from 2020 but only have data from 2025
+    const isDailyCandle = timeframe === '1d';
+    const recentCutoff = isDailyCandle 
+      ? Date.now() - (30 * 24 * 60 * 60 * 1000) // Last 30 days for daily
+      : startTime; // For intraday, check from startTime
+    
+    if (firstCandle.timestamp > recentCutoff + expectedInterval) {
+      const missingAtStart = Math.floor((firstCandle.timestamp - Math.max(startTime, recentCutoff)) / expectedInterval);
+      for (let j = 1; j <= missingAtStart; j++) {
+        const expectedTimestamp = Math.max(startTime, recentCutoff) + expectedInterval * j;
+        if (expectedTimestamp < firstCandle.timestamp && expectedTimestamp >= recentCutoff) {
+          missingCandles.push({
+            expected: expectedTimestamp,
+            actual: null,
+          });
+        }
       }
     }
   }
@@ -237,9 +248,19 @@ export function validateDataQuality(
   const freshness = validateDataFreshness(candles, timeframe, maxAgeMinutes);
   if (!freshness.isValid && freshness.issue) {
     issues.push(freshness.issue);
-  } else if (freshness.lastCandleAge > maxAgeMinutes * 60 * 1000 * 0.5) {
-    // Warn if data is getting stale (50% of max age)
-    warnings.push(`Data is getting stale: ${(freshness.lastCandleAge / (60 * 60 * 1000)).toFixed(1)}h old`);
+  } else {
+    // Warn if data is getting stale
+    // For daily candles, only warn if it's been more than 24 hours since the candle was created
+    // (daily candles from today are expected, even if 20+ hours into the day)
+    // For intraday candles, warn if it's been more than 50% of max age
+    const isDailyCandle = timeframe === '1d';
+    const shouldWarn = isDailyCandle 
+      ? freshness.lastCandleAge > 24 * 60 * 60 * 1000 // More than 24 hours old
+      : freshness.lastCandleAge > maxAgeMinutes * 60 * 1000 * 0.5; // 50% of max age for intraday
+    
+    if (shouldWarn) {
+      warnings.push(`Data is getting stale: ${(freshness.lastCandleAge / (60 * 60 * 1000)).toFixed(1)}h old`);
+    }
   }
 
   // Detect gaps

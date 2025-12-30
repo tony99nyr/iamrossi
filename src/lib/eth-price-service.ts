@@ -166,7 +166,82 @@ async function fetchBinanceCandles(
 }
 
 /**
- * Fetch historical price data from CoinGecko (fallback)
+ * Fetch historical price data from CoinGecko OHLC endpoint (new method)
+ * Returns 30-minute candles that can be aggregated to any interval
+ * Valid days: 1, 7, 14, 30, 90, 180, 365, max
+ */
+async function fetchCoinGeckoOHLC(
+  symbol: string,
+  days: number = 1
+): Promise<PriceCandle[]> {
+  await rateLimitCoinGecko();
+
+  // CoinGecko uses different symbol format (ethereum vs ETH)
+  const coinId = symbol.toLowerCase() === 'ethusdt' ? 'ethereum' : 'ethereum';
+  
+  // CoinGecko OHLC endpoint only accepts specific day values
+  // Map requested days to nearest valid value
+  const validDays = [1, 7, 14, 30, 90, 180, 365, 'max'];
+  let requestedDays: number | string = days;
+  if (typeof days === 'number') {
+    if (days <= 1) requestedDays = 1;
+    else if (days <= 7) requestedDays = 7;
+    else if (days <= 14) requestedDays = 14;
+    else if (days <= 30) requestedDays = 30;
+    else if (days <= 90) requestedDays = 90;
+    else if (days <= 180) requestedDays = 180;
+    else if (days <= 365) requestedDays = 365;
+    else requestedDays = 'max';
+  }
+
+  const url = new URL(`${COINGECKO_API_URL}/coins/${coinId}/ohlc`);
+  url.searchParams.set('vs_currency', 'usd');
+  url.searchParams.set('days', String(requestedDays));
+
+  const apiKey = process.env.COINGECKO_API_KEY;
+  const headers: HeadersInit = {};
+  if (apiKey) {
+    headers['x-cg-demo-api-key'] = apiKey;
+  }
+
+  const response = await fetch(url.toString(), { headers });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`CoinGecko OHLC API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`);
+  }
+
+  const data = await response.json();
+  
+  // CoinGecko OHLC format: [ timestamp(ms), open, high, low, close ]
+  // Returns 30-minute candles
+  // Note: CoinGecko returns timestamps in milliseconds, we keep them in milliseconds for consistency
+  const candles = data.map((c: number[]) => ({
+    timestamp: c[0], // Keep in milliseconds (CoinGecko format)
+    open: c[1],
+    high: c[2],
+    low: c[3],
+    close: c[4],
+    volume: 0, // CoinGecko OHLC doesn't provide volume
+  }));
+
+  console.log(`✅ CoinGecko OHLC: Fetched ${candles.length} 30-minute candles (requested ${days} days, got ${requestedDays})`);
+  
+  if (candles.length === 0) {
+    throw new Error(`CoinGecko OHLC returned no candles for ${requestedDays} days`);
+  }
+  
+  // Log date range of fetched candles for debugging
+  if (candles.length > 0) {
+    const firstCandle = candles[0]!;
+    const lastCandle = candles[candles.length - 1]!;
+    console.log(`   Date range: ${new Date(firstCandle.timestamp).toISOString()} to ${new Date(lastCandle.timestamp).toISOString()}`);
+  }
+  
+  return candles;
+}
+
+/**
+ * Fetch historical price data from CoinGecko (fallback - old method using market_chart)
  * Splits large date ranges into smaller chunks to work around free tier limits
  * Note: CoinGecko returns price points, not OHLC candles, so we aggregate them
  */
@@ -345,6 +420,48 @@ async function fetchCoinGeckoCandles(
 }
 
 /**
+ * Aggregate candles from one interval to another
+ * Used to convert CoinGecko 30-minute candles to other intervals
+ */
+function aggregateCandles(candles: PriceCandle[], targetInterval: string): PriceCandle[] {
+  if (candles.length === 0) return [];
+  
+  const intervalMs = targetInterval === '5m' ? 5 * 60 * 1000 :
+                     targetInterval === '1h' ? 60 * 60 * 1000 : 
+                     targetInterval === '1d' ? 24 * 60 * 60 * 1000 :
+                     24 * 60 * 60 * 1000; // Default to 1d
+  
+  const candleMap = new Map<number, PriceCandle>();
+  
+  for (const candle of candles) {
+    // Round timestamp to interval start
+    const intervalStart = Math.floor(candle.timestamp / intervalMs) * intervalMs;
+    
+    let aggregated = candleMap.get(intervalStart);
+    if (!aggregated) {
+      aggregated = {
+        timestamp: intervalStart,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume || 0,
+      };
+      candleMap.set(intervalStart, aggregated);
+    } else {
+      // Update OHLC
+      aggregated.high = Math.max(aggregated.high, candle.high);
+      aggregated.low = Math.min(aggregated.low, candle.low);
+      aggregated.close = candle.close; // Last close in interval
+      aggregated.volume = (aggregated.volume || 0) + (candle.volume || 0);
+    }
+  }
+  
+  return Array.from(candleMap.values())
+    .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/**
  * Map timeframe to Binance interval
  */
 function mapTimeframeToInterval(timeframe: string): string {
@@ -373,6 +490,12 @@ export async function fetchPriceCandles(
 ): Promise<PriceCandle[]> {
   const startTime = new Date(startDate).getTime();
   const endTime = new Date(endDate).getTime();
+  
+  // For intraday intervals, ensure we have the full time range (not just date boundaries)
+  // This is important for 5m/1h candles where we want all data in the range
+  const actualEndTime = timeframe === '5m' || timeframe === '1h' 
+    ? Math.max(endTime, Date.now()) // Include up to now for intraday
+    : endTime;
   const now = Date.now();
   const interval = mapTimeframeToInterval(timeframe);
   const cutoffDate = '2025-12-27';
@@ -646,16 +769,16 @@ export async function fetchPriceCandles(
     }
     let hasCompleteCoverage = false;
     
-    if (uniqueCandles.length > 0 && endTime >= startTime) {
-      // Get candles that are in the requested range
-      const candlesInRange = uniqueCandles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
+    if (uniqueCandles.length > 0 && actualEndTime >= startTime) {
+      // Get candles that are in the requested range (use actualEndTime for intraday)
+      const candlesInRange = uniqueCandles.filter(c => c.timestamp >= startTime && c.timestamp <= actualEndTime);
       
       if (candlesInRange.length === 0) {
         hasCompleteCoverage = false; // No candles in the requested range
-        console.log(`⚠️ No candles in requested range (${new Date(startTime).toISOString().split('T')[0]} to ${new Date(endTime).toISOString().split('T')[0]})`);
+        console.log(`⚠️ No candles in requested range (${new Date(startTime).toISOString().split('T')[0]} to ${new Date(actualEndTime).toISOString().split('T')[0]})`);
       } else {
-        // Calculate how many intervals are in the requested range
-        const intervalsInRange = Math.ceil((endTime - startTime) / expectedInterval) + 1;
+        // Calculate how many intervals are in the requested range (use actualEndTime for intraday)
+        const intervalsInRange = Math.ceil((actualEndTime - startTime) / expectedInterval) + 1;
         
         // For hourly candles, we need one candle per hour
         // For daily candles, we need one candle per day
@@ -668,19 +791,31 @@ export async function fetchPriceCandles(
           uniqueIntervals.add(intervalStart);
         });
         
-        // We have complete coverage if we have candles for all intervals in the range
-        hasCompleteCoverage = uniqueIntervals.size >= intervalsInRange;
+        // For intraday intervals (5m, 1h) loaded from Redis, we accept partial coverage
+        // This is because we're just trying to get recent granular data, not complete historical coverage
+        // For daily candles, we require complete coverage
+        if (timeframe === '5m' || timeframe === '1h') {
+          // For intraday, accept if we have at least 10% coverage OR at least 10 candles
+          // This allows us to use partial Redis data without triggering unnecessary API calls
+          hasCompleteCoverage = uniqueIntervals.size >= Math.max(10, intervalsInRange * 0.1);
+        } else {
+          // For daily candles, require complete coverage
+          hasCompleteCoverage = uniqueIntervals.size >= intervalsInRange;
+        }
         
         const intervalLabel = timeframe === '1h' ? 'hours' : timeframe === '1d' ? 'days' : 'intervals';
         console.log(`📊 Coverage check (${timeframe}): requested ${intervalsInRange} ${intervalLabel}, have ${uniqueIntervals.size} unique ${intervalLabel}, ${candlesInRange.length} total candles`);
         
-        if (!hasCompleteCoverage) {
+        if (!hasCompleteCoverage && (timeframe !== '5m' && timeframe !== '1h')) {
+          // Only warn about incomplete coverage for daily candles (intraday partial coverage is OK)
           console.log(`⚠️ Incomplete coverage: have ${uniqueIntervals.size} unique ${intervalLabel}, need ${intervalsInRange} ${intervalLabel} in range - will fetch from API`);
+        } else if (timeframe === '5m' || timeframe === '1h') {
+          console.log(`ℹ️ Partial coverage OK for intraday: have ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${((uniqueIntervals.size / intervalsInRange) * 100).toFixed(1)}%)`);
         }
       }
     } else {
       hasCompleteCoverage = false;
-      console.log(`⚠️ Cannot check coverage: ${uniqueCandles.length} candles, range: ${new Date(startTime).toISOString().split('T')[0]} to ${new Date(endTime).toISOString().split('T')[0]}`);
+      console.log(`⚠️ Cannot check coverage: ${uniqueCandles.length} candles, range: ${new Date(startTime).toISOString().split('T')[0]} to ${new Date(actualEndTime).toISOString().split('T')[0]}`);
     }
     
     // If we have enough data AND complete coverage, return early
@@ -763,15 +898,58 @@ export async function fetchPriceCandles(
   }
 
   // 2. Check Redis cache (for recent data or if file doesn't exist)
+  // For intraday intervals (5m, 1h), check ALL matching Redis keys and merge them
+  // This is important because Redis may have multiple keys with different time ranges
   try {
     await ensureConnected();
-    const cacheKey = getCacheKey(symbol, interval, startTime, endTime);
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached) as PriceCandle[];
-      // If we have enough data from cache, return it
-      if (parsed.length >= 50 || parsed.some(c => c.timestamp >= startTime && c.timestamp <= endTime)) {
-        return parsed;
+    
+    // For intraday intervals, search for all matching keys and merge them
+    if (interval === '5m' || interval === '1h') {
+      const pattern = `${PRICE_CACHE_PREFIX}${symbol}:${interval}:*`;
+      const keys = await redis.keys(pattern);
+      
+      if (keys.length > 0) {
+        const allCachedCandles: PriceCandle[] = [];
+        
+        // Load candles from all matching keys
+        for (const key of keys) {
+          try {
+            const cached = await redis.get(key);
+            if (cached) {
+              const parsed = JSON.parse(cached) as PriceCandle[];
+              // Filter to requested time range (use actualEndTime for intraday to include up to now)
+              const filtered = parsed.filter(c => c.timestamp >= startTime && c.timestamp <= actualEndTime);
+              allCachedCandles.push(...filtered);
+            }
+          } catch (keyError) {
+            // Skip this key if it fails
+            continue;
+          }
+        }
+        
+        // Remove duplicates and sort
+        if (allCachedCandles.length > 0) {
+          const uniqueCandles = Array.from(
+            new Map(allCachedCandles.map(c => [c.timestamp, c])).values()
+          ).sort((a, b) => a.timestamp - b.timestamp);
+          
+          // If we have enough data from cache, return it
+          if (uniqueCandles.length >= 10 || uniqueCandles.some(c => c.timestamp >= startTime && c.timestamp <= actualEndTime)) {
+            console.log(`📦 Loaded ${uniqueCandles.length} ${interval} candles from Redis (${keys.length} keys)`);
+            return uniqueCandles;
+          }
+        }
+      }
+    } else {
+      // For daily candles, use the exact key match (original behavior)
+      const cacheKey = getCacheKey(symbol, interval, startTime, endTime);
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached) as PriceCandle[];
+        // If we have enough data from cache, return it
+        if (parsed.length >= 50 || parsed.some(c => c.timestamp >= startTime && c.timestamp <= endTime)) {
+          return parsed;
+        }
       }
     }
   } catch (error) {
@@ -825,41 +1003,70 @@ export async function fetchPriceCandles(
       console.log(`ℹ️ Using existing data: ${allCandles.length} candles with complete coverage`);
     }
   } catch (error) {
-    console.error('Binance API failed, trying CoinGecko:', error);
-    // Fallback to CoinGecko (will aggregate price points into candles)
+    console.error('Binance API failed, trying CoinGecko OHLC:', error);
+    
+    // Try CoinGecko OHLC endpoint first (new method - returns 30-minute candles)
     try {
-      console.log(`📡 Fetching from CoinGecko and aggregating into ${interval} candles...`);
-      candles = await fetchCoinGeckoCandles(symbol, startTime, endTime, interval);
-    } catch (fallbackError) {
-      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-      console.error('CoinGecko API also failed:', fallbackError);
+      // Calculate days needed - if start and end are the same, we still need at least 1 day
+      // Add 1 day buffer to ensure we get complete data coverage
+      const daysSinceStart = Math.max(1, Math.ceil((endTime - startTime) / (24 * 60 * 60 * 1000)) + 1);
+      const daysToFetch = Math.min(daysSinceStart, 365); // Max 365 days for OHLC endpoint
       
-      // NO SYNTHETIC DATA - Only use real API data
-      // If CoinGecko doesn't have the data, we fail gracefully
-      // This ensures we never trade on fake/synthetic data
-      if (fallbackMessage.includes('no price data') || fallbackMessage.includes('no price points') || fallbackMessage.includes('0 candles')) {
-        console.error(`❌ CoinGecko doesn't have ${interval} data for this period - cannot create synthetic data for trading`);
+      console.log(`📡 Trying CoinGecko OHLC endpoint (${daysToFetch} days, range: ${new Date(startTime).toISOString().split('T')[0]} to ${new Date(endTime).toISOString().split('T')[0]})...`);
+      const ohlcCandles = await fetchCoinGeckoOHLC(symbol, daysToFetch);
+      
+      // Filter to requested time range (timestamps are already in milliseconds)
+      let filteredCandles = ohlcCandles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
+      
+      // Aggregate 30-minute candles to requested interval if needed
+      if (interval !== '30m' && filteredCandles.length > 0) {
+        filteredCandles = aggregateCandles(filteredCandles, interval);
+        console.log(`📊 Aggregated ${ohlcCandles.length} 30m candles → ${filteredCandles.length} ${interval} candles`);
+      }
+      
+      if (filteredCandles.length > 0) {
+        candles = filteredCandles;
+        console.log(`✅ CoinGecko OHLC succeeded: ${candles.length} ${interval} candles`);
+      } else {
+        throw new Error('CoinGecko OHLC returned no candles in requested range');
+      }
+    } catch (ohlcError) {
+      console.error('CoinGecko OHLC failed, trying CoinGecko market_chart (old method):', ohlcError);
+      // Fallback to CoinGecko market_chart (will aggregate price points into candles)
+      try {
+        console.log(`📡 Fetching from CoinGecko market_chart and aggregating into ${interval} candles...`);
+        candles = await fetchCoinGeckoCandles(symbol, startTime, endTime, interval);
+      } catch (fallbackError) {
+        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        console.error('CoinGecko API also failed:', fallbackError);
+      
+        // NO SYNTHETIC DATA - Only use real API data
+        // If CoinGecko doesn't have the data, we fail gracefully
+        // This ensures we never trade on fake/synthetic data
+        if (fallbackMessage.includes('no price data') || fallbackMessage.includes('no price points') || fallbackMessage.includes('0 candles')) {
+          console.error(`❌ CoinGecko doesn't have ${interval} data for this period - cannot create synthetic data for trading`);
+          console.error(`   Missing data range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
+          // Don't create synthetic data - fail gracefully
+          throw new Error(`No real API data available for ${interval} candles in requested range - cannot use synthetic data for trading`);
+        }
+        
+        // NO SYNTHETIC DATA - Only use real API data
+        // If all APIs fail, return what we have from files (real data only)
+        console.error(`❌ All APIs failed - cannot fetch real ${interval} candles`);
         console.error(`   Missing data range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
-        // Don't create synthetic data - fail gracefully
-        throw new Error(`No real API data available for ${interval} candles in requested range - cannot use synthetic data for trading`);
+        console.error(`   Will use existing file data only - NO SYNTHETIC DATA will be created`);
+        
+        // Return existing file data if we have it (real data only)
+        if (allCandles.length > 0) {
+          console.warn(`⚠️ Returning ${allCandles.length} candles from files (incomplete range - missing API data)`);
+          const uniqueCandles = Array.from(
+            new Map(allCandles.map(c => [c.timestamp, c])).values()
+          ).sort((a, b) => a.timestamp - b.timestamp);
+          return uniqueCandles;
+        }
+        
+        throw new Error(`No real API data available and no file data - cannot proceed without real data`);
       }
-      
-      // NO SYNTHETIC DATA - Only use real API data
-      // If all APIs fail, return what we have from files (real data only)
-      console.error(`❌ All APIs failed - cannot fetch real ${interval} candles`);
-      console.error(`   Missing data range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
-      console.error(`   Will use existing file data only - NO SYNTHETIC DATA will be created`);
-      
-      // Return existing file data if we have it (real data only)
-      if (allCandles.length > 0) {
-        console.warn(`⚠️ Returning ${allCandles.length} candles from files (incomplete range - missing API data)`);
-        const uniqueCandles = Array.from(
-          new Map(allCandles.map(c => [c.timestamp, c])).values()
-        ).sort((a, b) => a.timestamp - b.timestamp);
-        return uniqueCandles;
-      }
-      
-      throw new Error(`No real API data available and no file data - cannot proceed without real data`);
     }
   }
   

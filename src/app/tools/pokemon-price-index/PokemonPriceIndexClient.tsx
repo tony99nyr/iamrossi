@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { css, cx } from '@styled-system/css';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
 import type { PokemonCardConfig, PokemonIndexSettings, PokemonIndexPoint, PokemonCardPriceSnapshot } from '@/types';
@@ -510,9 +510,10 @@ function SimpleIndexChart({ series, timeRange }: SimpleIndexChartProps & { timeR
     const containerRef = useRef<HTMLDivElement>(null);
     
     // Filter series based on time range
-    const filteredSeries = (() => {
+    const filteredSeries = useMemo(() => {
         if (timeRange === 'all') return series;
         
+         
         const now = new Date();
         const cutoffDate = new Date();
         
@@ -534,7 +535,7 @@ function SimpleIndexChart({ series, timeRange }: SimpleIndexChartProps & { timeR
         
         const cutoffDateStr = cutoffDate.toISOString().slice(0, 10);
         return series.filter(p => p.date >= cutoffDateStr);
-    })();
+    }, [series, timeRange]);
     
     if (filteredSeries.length === 0) {
         return (

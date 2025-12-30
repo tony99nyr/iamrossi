@@ -28,6 +28,13 @@
     "eth:convert-files": "npx tsx scripts/convert-historical-files.ts",
     "eth:fill-today": "npx tsx scripts/fill-rolling-file-today.ts",
     "eth:migrate-redis": "npx tsx scripts/migrate-redis-candles-to-files.ts",
+    "eth:backfill-paper": "npx tsx scripts/backfill-paper-trading.ts",
+    "eth:compare-regime": "npx tsx scripts/backfill-regime-comparison.ts",
+    "eth:backfill-test": "npx tsx scripts/backfill-test.ts",
+    "eth:optimize-strategy": "npx tsx scripts/optimize-strategy.ts",
+    "eth:test-strategies": "npx tsx scripts/comprehensive-strategy-test.ts",
+    "eth:generate-2026": "npx tsx scripts/generate-synthetic-2026-data.ts",
+    "eth:test-2026": "npx tsx scripts/test-strategies-2026.ts",
     "redis:analyze": "npx tsx scripts/analyze-redis-memory.ts",
     "google-fit:exchange-token": "npx tsx scripts/exchange-google-fit-token.ts"
   },

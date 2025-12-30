@@ -1014,108 +1014,120 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
   let addedToday = false;
   let scrapedCount = 0;
   let errorCount = 0;
+  const failedCards: Array<{ cardId: string; cardName: string; error: string }> = [];
 
-  for (let i = 0; i < settings.cards.length; i++) {
-    const card = settings.cards[i]!;
-    const key = `${card.id}:${today}`;
-    const existingSnapshot = byCardAndDate.get(key);
-    
-    // Add delay between card scrapes (except for the first one) to avoid bot detection
-    if (i > 0) {
-      // Random delay between 2-5 seconds
-      const delayMs = 2000 + Math.random() * 3000;
-      debugLog(`[Pokemon] Waiting ${Math.round(delayMs)}ms before scraping next card (${i + 1}/${settings.cards.length})`);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-    
-    // Check if we have a snapshot AND it has the required price field for this card's condition type
-    if (existingSnapshot) {
-      // For 'both' condition type, we want at least one price, but ideally both
-      // For specific condition types, we need that specific price
-      let hasRequiredPrice = false;
-      let shouldRetryForBetterData = false;
+  // Wrap the entire loop in try-catch to ensure we save partial results even if there's an unexpected error
+  try {
+    for (let i = 0; i < settings.cards.length; i++) {
+      const card = settings.cards[i]!;
+      const key = `${card.id}:${today}`;
+      const existingSnapshot = byCardAndDate.get(key);
       
-      if (card.conditionType === 'ungraded') {
-        hasRequiredPrice = existingSnapshot.ungradedPrice !== undefined;
-      } else if (card.conditionType === 'psa10') {
-        hasRequiredPrice = existingSnapshot.psa10Price !== undefined;
-      } else if (card.conditionType === 'both') {
-        const hasUngraded = existingSnapshot.ungradedPrice !== undefined;
-        const hasPsa10 = existingSnapshot.psa10Price !== undefined;
-        hasRequiredPrice = hasUngraded || hasPsa10;
-        // If we only have one price but want both, consider retrying (but not critical)
-        shouldRetryForBetterData = (hasUngraded && !hasPsa10) || (!hasUngraded && hasPsa10);
+      // Add delay between card scrapes (except for the first one) to avoid bot detection
+      if (i > 0) {
+        // Random delay between 2-5 seconds
+        const delayMs = 2000 + Math.random() * 3000;
+        debugLog(`[Pokemon] Waiting ${Math.round(delayMs)}ms before scraping next card (${i + 1}/${settings.cards.length})`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
       }
       
-      if (hasRequiredPrice && !shouldRetryForBetterData) {
-        debugLog(`[Pokemon] Card ${card.id} (${card.name}) already has today's (${today}) data with required price, skipping`);
-        continue; // Already have today's data with the required price for this card
-      } else if (hasRequiredPrice && shouldRetryForBetterData) {
-        // We have partial data but want both prices - retry to get the missing one
-        debugLog(`[Pokemon] Card ${card.id} (${card.name}) has partial data (ungraded=${existingSnapshot.ungradedPrice !== undefined}, psa10=${existingSnapshot.psa10Price !== undefined}), will retry for complete data`);
-        // Remove the incomplete snapshot so we can replace it
-        const index = updated.findIndex(s => s.cardId === card.id && s.date === today);
-        if (index !== -1) {
-          updated.splice(index, 1);
+      // Check if we have a snapshot AND it has the required price field for this card's condition type
+      if (existingSnapshot) {
+        // For 'both' condition type, we want at least one price, but ideally both
+        // For specific condition types, we need that specific price
+        let hasRequiredPrice = false;
+        let shouldRetryForBetterData = false;
+        
+        if (card.conditionType === 'ungraded') {
+          hasRequiredPrice = existingSnapshot.ungradedPrice !== undefined;
+        } else if (card.conditionType === 'psa10') {
+          hasRequiredPrice = existingSnapshot.psa10Price !== undefined;
+        } else if (card.conditionType === 'both') {
+          const hasUngraded = existingSnapshot.ungradedPrice !== undefined;
+          const hasPsa10 = existingSnapshot.psa10Price !== undefined;
+          hasRequiredPrice = hasUngraded || hasPsa10;
+          // If we only have one price but want both, consider retrying (but not critical)
+          shouldRetryForBetterData = (hasUngraded && !hasPsa10) || (!hasUngraded && hasPsa10);
         }
-        byCardAndDate.delete(key);
-      } else {
-        // Snapshot exists but doesn't have the required price - need to scrape
-        debugLog(`[Pokemon] Card ${card.id} (${card.name}) has snapshot but missing required price (conditionType: ${card.conditionType}), will scrape`);
-        // Remove the incomplete snapshot so we can replace it
-        const index = updated.findIndex(s => s.cardId === card.id && s.date === today);
-        if (index !== -1) {
-          updated.splice(index, 1);
+        
+        if (hasRequiredPrice && !shouldRetryForBetterData) {
+          debugLog(`[Pokemon] Card ${card.id} (${card.name}) already has today's (${today}) data with required price, skipping`);
+          continue; // Already have today's data with the required price for this card
+        } else if (hasRequiredPrice && shouldRetryForBetterData) {
+          // We have partial data but want both prices - retry to get the missing one
+          debugLog(`[Pokemon] Card ${card.id} (${card.name}) has partial data (ungraded=${existingSnapshot.ungradedPrice !== undefined}, psa10=${existingSnapshot.psa10Price !== undefined}), will retry for complete data`);
+          // Remove the incomplete snapshot so we can replace it
+          const index = updated.findIndex(s => s.cardId === card.id && s.date === today);
+          if (index !== -1) {
+            updated.splice(index, 1);
+          }
+          byCardAndDate.delete(key);
+        } else {
+          // Snapshot exists but doesn't have the required price - need to scrape
+          debugLog(`[Pokemon] Card ${card.id} (${card.name}) has snapshot but missing required price (conditionType: ${card.conditionType}), will scrape`);
+          // Remove the incomplete snapshot so we can replace it
+          const index = updated.findIndex(s => s.cardId === card.id && s.date === today);
+          if (index !== -1) {
+            updated.splice(index, 1);
+          }
+          byCardAndDate.delete(key);
         }
-        byCardAndDate.delete(key);
       }
-    }
 
-    debugLog(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name}) [${i + 1}/${settings.cards.length}]`);
-    try {
-      scrapedCount++;
-      const scraped = await scrapePriceChartingForCard(card);
-      
-      // Check if we got any prices
-      if (!scraped.ungradedPrice && !scraped.psa10Price) {
-        debugLog(`[Pokemon] Warning: No prices scraped for card ${card.id} (${card.name}) - both ungraded and psa10 are undefined`);
+      debugLog(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name}) [${i + 1}/${settings.cards.length}]`);
+      try {
+        scrapedCount++;
+        const scraped = await scrapePriceChartingForCard(card);
+        
+        // Check if we got any prices
+        if (!scraped.ungradedPrice && !scraped.psa10Price) {
+          debugLog(`[Pokemon] Warning: No prices scraped for card ${card.id} (${card.name}) - both ungraded and psa10 are undefined`);
+          errorCount++;
+          failedCards.push({ cardId: card.id, cardName: card.name, error: 'No prices found on page' });
+          // Don't add a snapshot with undefined prices - this ensures we'll retry on the next run
+          // Instead, log the failure and continue to the next card
+          // This is better than creating a snapshot that might prevent retries
+          debugLog(`[Pokemon] Not creating snapshot for ${card.id} - will retry on next run`);
+          continue;
+        }
+        
+        const snapshot: PokemonCardPriceSnapshot = {
+          cardId: card.id,
+          date: today,
+          ...scraped,
+        };
+        updated.push(snapshot);
+        byCardAndDate.set(key, snapshot);
+        addedToday = true;
+        debugLog(`[Pokemon] Successfully scraped ${card.id}: ungraded=$${scraped.ungradedPrice || 'N/A'}, psa10=$${scraped.psa10Price || 'N/A'}`);
+      } catch (error) {
         errorCount++;
-        // Don't add a snapshot with undefined prices - this ensures we'll retry on the next run
-        // Instead, log the failure and continue to the next card
-        // This is better than creating a snapshot that might prevent retries
-        debugLog(`[Pokemon] Not creating snapshot for ${card.id} - will retry on next run`);
-        continue;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[Pokemon] Failed to scrape card ${card.id} (${card.name}):`, errorMsg);
+        debugLog(`[Pokemon] Error details: ${errorMsg}`);
+        failedCards.push({ cardId: card.id, cardName: card.name, error: errorMsg });
+        
+        // Check if this is a retryable error - if so, don't create a snapshot so we can retry
+        const isRetryable = isRetryableError(error);
+        if (isRetryable) {
+          debugLog(`[Pokemon] Error is retryable (${errorMsg}), not creating snapshot - will retry on next run`);
+          // Don't add a snapshot - this ensures we'll retry on the next run
+          continue;
+        }
+        
+        // For non-retryable errors (e.g., card not found, page structure changed), 
+        // we still don't want to create a snapshot with undefined prices as it might prevent future retries
+        // Instead, log the error and continue
+        debugLog(`[Pokemon] Non-retryable error for ${card.id}, not creating snapshot - manual intervention may be needed`);
+        // Continue with other cards even if one fails
       }
-      
-      const snapshot: PokemonCardPriceSnapshot = {
-        cardId: card.id,
-        date: today,
-        ...scraped,
-      };
-      updated.push(snapshot);
-      byCardAndDate.set(key, snapshot);
-      addedToday = true;
-      debugLog(`[Pokemon] Successfully scraped ${card.id}: ungraded=$${scraped.ungradedPrice || 'N/A'}, psa10=$${scraped.psa10Price || 'N/A'}`);
-    } catch (error) {
-      errorCount++;
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`[Pokemon] Failed to scrape card ${card.id} (${card.name}):`, errorMsg);
-      debugLog(`[Pokemon] Error details: ${errorMsg}`);
-      
-      // Check if this is a retryable error - if so, don't create a snapshot so we can retry
-      const isRetryable = isRetryableError(error);
-      if (isRetryable) {
-        debugLog(`[Pokemon] Error is retryable (${errorMsg}), not creating snapshot - will retry on next run`);
-        // Don't add a snapshot - this ensures we'll retry on the next run
-        continue;
-      }
-      
-      // For non-retryable errors (e.g., card not found, page structure changed), 
-      // we still don't want to create a snapshot with undefined prices as it might prevent future retries
-      // Instead, log the error and continue
-      debugLog(`[Pokemon] Non-retryable error for ${card.id}, not creating snapshot - manual intervention may be needed`);
-      // Continue with other cards even if one fails
     }
+  } catch (error) {
+    // Unexpected error in the loop itself (shouldn't happen, but handle it gracefully)
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[Pokemon] Unexpected error in refreshTodaySnapshots loop:`, errorMsg);
+    debugLog(`[Pokemon] Loop error: ${errorMsg}, but will attempt to save partial results`);
+    // Continue to save logic below - we want to save whatever we've scraped so far
   }
 
   debugLog(`[Pokemon] refreshTodaySnapshots: Scraped ${scrapedCount} cards, errors: ${errorCount}, addedToday: ${addedToday}`);
@@ -1135,7 +1147,16 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
     cardsWithData,
     cardsWithoutData,
     totalCards: settings.cards.length,
+    failedCards: failedCards.map(f => f.cardId),
   });
+  
+  // Log detailed failure information
+  if (failedCards.length > 0) {
+    console.warn(`[Pokemon] ⚠️  Failed to scrape ${failedCards.length} cards:`);
+    for (const failed of failedCards) {
+      console.warn(`[Pokemon]   - ${failed.cardName} (${failed.cardId}): ${failed.error}`);
+    }
+  }
   
   // Only save if we have new snapshots with actual price data
   // Don't save if we only have failures (no snapshots created)
@@ -1147,6 +1168,7 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
       
       if (cardsWithoutData > 0) {
         console.warn(`[Pokemon] ⚠️  ${cardsWithoutData} cards failed to get price data today and will be retried on the next run`);
+        console.warn(`[Pokemon] Failed cards: ${failedCards.map(f => f.cardName).join(', ')}`);
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1156,6 +1178,7 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
   } else if (cardsWithoutData > 0 && !addedToday) {
     // All cards failed - log warning but don't save (no point saving empty data)
     console.warn(`[Pokemon] ⚠️  All ${settings.cards.length} cards failed to get price data today. This may indicate a systemic issue (rate limiting, site changes, etc.)`);
+    console.warn(`[Pokemon] Failed cards: ${failedCards.map(f => `${f.cardName} (${f.error})`).join(', ')}`);
     debugLog(`[Pokemon] Not saving - no successful scrapes to save`);
   } else {
     debugLog(`[Pokemon] All cards already have today's (${today}) price data, skipping save`);

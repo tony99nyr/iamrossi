@@ -58,3 +58,5 @@ styled-system
 .env*.local
 
 .cursor/debug.log
+
+data/backfill-reports/*

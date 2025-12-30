@@ -9,11 +9,18 @@ interface StrategyIndicatorsProps {
 }
 
 export default function StrategyIndicators({ session }: StrategyIndicatorsProps) {
-  const { lastSignal, currentIndicators } = session;
+  const { lastSignal, currentIndicators, regimeHistory, config } = session;
   const signalStrength = lastSignal.signal;
   const signalAction = lastSignal.action;
   const signalConfidence = lastSignal.confidence;
   const positionMultiplier = lastSignal.positionSizeMultiplier || 1.0;
+  
+  // Calculate regime persistence for display
+  const recentRegimes = regimeHistory?.slice(-5) || [];
+  const currentRegimeCount = recentRegimes.filter(r => r.regime === session.currentRegime.regime).length;
+  const requiredPeriods = config.regimePersistencePeriods || 2;
+  const persistenceProgress = requiredPeriods > 0 ? Math.min(100, (currentRegimeCount / requiredPeriods) * 100) : 0;
+  const regimePersistenceStatus = `${currentRegimeCount}/5 periods (need ${requiredPeriods}, ${persistenceProgress.toFixed(0)}%)`;
 
   // Extract MACD and RSI from indicators if available
   const getIndicatorValue = (key: string): number | null => {
@@ -56,7 +63,7 @@ export default function StrategyIndicators({ session }: StrategyIndicatorsProps)
 
   return (
     <div className={css({
-      padding: { base: '16px', md: '24px' },
+      padding: '16px',
       bg: '#161b22',
       border: '1px solid #30363d',
       borderRadius: '8px',
@@ -64,13 +71,13 @@ export default function StrategyIndicators({ session }: StrategyIndicatorsProps)
       <h2 className={css({ 
         fontSize: { base: 'md', md: 'lg' }, 
         fontWeight: 'semibold', 
-        marginBottom: { base: '12px', md: '16px' }, 
+        marginBottom: { base: '12px', md: '12px' }, 
         color: '#e6edf3' 
       })}>
         Trading Signal
       </h2>
       
-      <div className={stack({ gap: '16px' })}>
+      <div className={stack({ gap: '10px' })}>
         {/* Signal Strength and Action */}
         <div className={css({
           display: 'flex',
@@ -129,8 +136,6 @@ export default function StrategyIndicators({ session }: StrategyIndicatorsProps)
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              paddingTop: '8px',
-              borderTop: '1px solid #30363d',
             })}>
               <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Position Multiplier</span>
               <span className={css({ 
@@ -141,6 +146,56 @@ export default function StrategyIndicators({ session }: StrategyIndicatorsProps)
               </span>
             </div>
           )}
+        </div>
+
+        {/* Strategy Execution Info */}
+        <div className={css({
+          paddingTop: '8px',
+          borderTop: '1px solid #30363d',
+        })}>
+          <div className={css({
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          })}>
+            <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Active Strategy</span>
+            <span className={css({ color: '#e6edf3', fontWeight: 'semibold' })}>
+              {lastSignal.activeStrategy?.name || 'None'}
+            </span>
+          </div>
+
+          <div className={css({
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          })}>
+            <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Regime Persistence</span>
+            <span className={css({ color: '#e6edf3', fontWeight: 'semibold', fontSize: 'sm' })}>
+              {regimePersistenceStatus}
+            </span>
+          </div>
+          <div className={css({
+            fontSize: 'xs',
+            color: '#7d8590',
+            marginTop: '-6px',
+            marginBottom: '4px',
+          })}>
+            (1 period = 5 min update)
+          </div>
+
+          <div className={css({
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          })}>
+            <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Momentum Confirmed</span>
+            <span className={css({
+              color: lastSignal.momentumConfirmed ? '#3fb950' : '#7d8590',
+              fontWeight: 'semibold',
+            })}>
+              {lastSignal.momentumConfirmed ? 'Yes' : 'No'}
+            </span>
+          </div>
         </div>
 
         {/* Technical Indicators */}

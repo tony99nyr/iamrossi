@@ -22,15 +22,15 @@ export default function RegimeDisplay({ regime, activeStrategy, momentumConfirme
 
   return (
     <div className={css({
-      padding: '24px',
+      padding: '16px',
       bg: '#161b22',
       border: '1px solid #30363d',
       borderRadius: '8px',
     })}>
-      <h2 className={css({ fontSize: 'lg', fontWeight: 'semibold', marginBottom: '16px', color: '#e6edf3' })}>
+      <h2 className={css({ fontSize: 'md', fontWeight: 'semibold', marginBottom: '12px', color: '#e6edf3' })}>
         Market Regime
       </h2>
-      <div className={stack({ gap: '16px' })}>
+      <div className={stack({ gap: '10px' })}>
         <div className={css({ display: 'flex', alignItems: 'center', gap: '12px' })}>
           <span className={css({ fontSize: '2xl' })}>{config.emoji}</span>
           <div>

@@ -72,16 +72,16 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
 
   return (
     <div className={css({
-      padding: '24px',
+      padding: '16px',
       bg: '#161b22',
       border: '1px solid #30363d',
       borderRadius: '8px',
     })}>
-      <h2 className={css({ fontSize: 'lg', fontWeight: 'semibold', marginBottom: '16px', color: '#e6edf3' })}>
+      <h2 className={css({ fontSize: 'md', fontWeight: 'semibold', marginBottom: '12px', color: '#e6edf3' })}>
         Trade Analytics
       </h2>
       
-      <div className={stack({ gap: '12px' })}>
+      <div className={stack({ gap: '8px' })}>
         {/* Trade Distribution */}
         <div className={css({
           display: 'flex',
@@ -127,7 +127,7 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
           </span>
         </div>
 
-        <div className={css({ height: '1px', bg: '#30363d', margin: '8px 0' })} />
+        <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
 
         {/* Trade Frequency */}
         <div className={css({
@@ -155,7 +155,7 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
         {/* Best/Worst Trades */}
         {analytics.bestTrade && (
           <>
-            <div className={css({ height: '1px', bg: '#30363d', margin: '8px 0' })} />
+            <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
             <div className={css({ fontSize: 'sm', fontWeight: 'semibold', color: '#e6edf3', marginBottom: '8px' })}>
               Best Trade
             </div>
@@ -184,7 +184,7 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
 
         {analytics.worstTrade && (
           <>
-            <div className={css({ height: '1px', bg: '#30363d', margin: '8px 0' })} />
+            <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
             <div className={css({ fontSize: 'sm', fontWeight: 'semibold', color: '#e6edf3', marginBottom: '8px' })}>
               Worst Trade
             </div>

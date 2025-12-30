@@ -24,10 +24,86 @@ export interface EnhancedAdaptiveStrategyConfig {
   regimePersistencePeriods?: number; // Require N periods of same regime before switching (default: 3)
   dynamicPositionSizing?: boolean; // Scale position with regime confidence (default: true)
   maxBullishPosition?: number; // Maximum bullish position size (default: 0.95)
+  // Risk management features
+  maxVolatility?: number; // Maximum daily volatility to allow trading (default: 0.05 = 5%)
+  circuitBreakerWinRate?: number; // Minimum win rate to continue trading (default: 0.2 = 20%)
+  circuitBreakerLookback?: number; // Number of recent trades to check (default: 10)
+  whipsawDetectionPeriods?: number; // Number of periods to check for whipsaw (default: 5)
+  whipsawMaxChanges?: number; // Maximum regime changes to allow (default: 3)
 }
 
 // Track regime history for persistence
 const regimeHistory: Map<string, Array<'bullish' | 'bearish' | 'neutral'>> = new Map();
+// Track recent trades for circuit breaker (sessionId -> recent trade results)
+const recentTradeResults: Map<string, Array<{ profitable: boolean }>> = new Map();
+
+/**
+ * Calculate daily volatility (standard deviation of returns)
+ */
+function calculateVolatility(
+  candles: PriceCandle[],
+  currentIndex: number,
+  period: number = 20
+): number {
+  if (currentIndex < period) return 0;
+  
+  const prices = candles.map(c => c.close);
+  const returns: number[] = [];
+  
+  for (let i = currentIndex - period + 1; i <= currentIndex; i++) {
+    if (i > 0 && prices[i - 1] > 0) {
+      returns.push((prices[i]! - prices[i - 1]!) / prices[i - 1]!);
+    }
+  }
+  
+  if (returns.length === 0) return 0;
+  
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length;
+  return Math.sqrt(variance);
+}
+
+/**
+ * Check for whipsaw conditions (rapid regime changes)
+ */
+function detectWhipsaw(
+  sessionId: string,
+  currentRegime: 'bullish' | 'bearish' | 'neutral',
+  maxChanges: number = 3
+): boolean {
+  const history = regimeHistory.get(sessionId) || [];
+  if (history.length < 5) return false;
+  
+  const recent = history.slice(-5);
+  recent.push(currentRegime);
+  
+  let changes = 0;
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i] !== recent[i - 1]) {
+      changes++;
+    }
+  }
+  
+  return changes > maxChanges;
+}
+
+/**
+ * Check circuit breaker (stop trading if win rate too low)
+ */
+function checkCircuitBreaker(
+  sessionId: string,
+  minWinRate: number = 0.2,
+  lookback: number = 10
+): boolean {
+  const trades = recentTradeResults.get(sessionId) || [];
+  if (trades.length < 5) return false; // Need at least 5 trades
+  
+  const recent = trades.slice(-lookback);
+  const wins = recent.filter(t => t.profitable).length;
+  const winRate = wins / recent.length;
+  
+  return winRate < minWinRate;
+}
 
 /**
  * Check if momentum is strong enough to confirm bullish regime
@@ -181,8 +257,63 @@ export function generateEnhancedAdaptiveSignal(
   const regime = detectMarketRegime(candles, currentIndex);
   
   const confidenceThreshold = config.regimeConfidenceThreshold || 0.2;
-  const momentumThreshold = config.momentumConfirmationThreshold || 0.25; // Lowered from 0.3
-  const persistencePeriods = config.regimePersistencePeriods || 2; // Reduced from 3
+  const momentumThreshold = config.momentumConfirmationThreshold || 0.25;
+  const persistencePeriods = config.regimePersistencePeriods || 2;
+  
+  // 1. Volatility Filter - Block trading if volatility too high
+  const maxVolatility = config.maxVolatility || 0.05; // 5% daily volatility
+  const currentVolatility = calculateVolatility(candles, currentIndex, 20);
+  if (currentVolatility > maxVolatility) {
+    // Return hold signal if volatility too high
+    return {
+      timestamp: candles[currentIndex]!.timestamp,
+      signal: 0,
+      confidence: 0,
+      indicators: {},
+      action: 'hold',
+      regime,
+      activeStrategy: config.bearishStrategy, // Fallback
+      momentumConfirmed: false,
+      positionSizeMultiplier: 1.0,
+    };
+  }
+  
+  // 2. Whipsaw Detection - Block trading if rapid regime changes detected
+  if (sessionId) {
+    const whipsawMaxChanges = config.whipsawMaxChanges || 3;
+    if (detectWhipsaw(sessionId, regime.regime, whipsawMaxChanges)) {
+      return {
+        timestamp: candles[currentIndex]!.timestamp,
+        signal: 0,
+        confidence: 0,
+        indicators: {},
+        action: 'hold',
+        regime,
+        activeStrategy: config.bearishStrategy,
+        momentumConfirmed: false,
+        positionSizeMultiplier: 1.0,
+      };
+    }
+  }
+  
+  // 3. Circuit Breaker - Stop trading if recent win rate too low
+  if (sessionId) {
+    const minWinRate = config.circuitBreakerWinRate || 0.2;
+    const lookback = config.circuitBreakerLookback || 10;
+    if (checkCircuitBreaker(sessionId, minWinRate, lookback)) {
+      return {
+        timestamp: candles[currentIndex]!.timestamp,
+        signal: 0,
+        confidence: 0,
+        indicators: {},
+        action: 'hold',
+        regime,
+        activeStrategy: config.bearishStrategy,
+        momentumConfirmed: false,
+        positionSizeMultiplier: 1.0,
+      };
+    }
+  }
   
   // Determine which strategy to use with persistence check
   let activeStrategy: TradingConfig;
@@ -240,10 +371,31 @@ export function generateEnhancedAdaptiveSignal(
 }
 
 /**
+ * Record trade result for circuit breaker
+ */
+export function recordTradeResult(
+  sessionId: string,
+  profitable: boolean
+): void {
+  if (!sessionId) return;
+  
+  let trades = recentTradeResults.get(sessionId) || [];
+  trades.push({ profitable });
+  
+  // Keep only recent trades (last 20)
+  if (trades.length > 20) {
+    trades = trades.slice(-20);
+  }
+  
+  recentTradeResults.set(sessionId, trades);
+}
+
+/**
  * Clear regime history (useful for new backtests)
  */
 export function clearRegimeHistory(): void {
   regimeHistory.clear();
+  recentTradeResults.clear();
 }
 
 /**
@@ -251,5 +403,6 @@ export function clearRegimeHistory(): void {
  */
 export function clearRegimeHistoryForSession(sessionId: string): void {
   regimeHistory.delete(sessionId);
+  recentTradeResults.delete(sessionId);
 }
 

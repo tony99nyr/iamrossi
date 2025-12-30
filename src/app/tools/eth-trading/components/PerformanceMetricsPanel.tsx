@@ -125,16 +125,16 @@ export default function PerformanceMetricsPanel({ session }: PerformanceMetricsP
 
   return (
     <div className={css({
-      padding: '24px',
+      padding: '16px',
       bg: '#161b22',
       border: '1px solid #30363d',
       borderRadius: '8px',
     })}>
-      <h2 className={css({ fontSize: 'lg', fontWeight: 'semibold', marginBottom: '16px', color: '#e6edf3' })}>
+      <h2 className={css({ fontSize: 'md', fontWeight: 'semibold', marginBottom: '12px', color: '#e6edf3' })}>
         Performance Metrics
       </h2>
       
-      <div className={stack({ gap: '12px' })}>
+      <div className={stack({ gap: '8px' })}>
         {/* Returns */}
         <div className={css({
           display: 'flex',
@@ -178,7 +178,7 @@ export default function PerformanceMetricsPanel({ session }: PerformanceMetricsP
           </span>
         </div>
 
-        <div className={css({ height: '1px', bg: '#30363d', margin: '8px 0' })} />
+        <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
 
         {/* Risk Metrics */}
         <div className={css({
@@ -217,7 +217,7 @@ export default function PerformanceMetricsPanel({ session }: PerformanceMetricsP
           </span>
         </div>
 
-        <div className={css({ height: '1px', bg: '#30363d', margin: '8px 0' })} />
+        <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
 
         {/* Trade Metrics */}
         <div className={css({
