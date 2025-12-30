@@ -127,7 +127,7 @@ export class PaperTradingService {
         // Try 5-minute candles first
         intradayCandles = await fetchPriceCandles('ETHUSDT', '5m', recentStartDate, recentEndDate, initialPrice);
         console.log(`✅ Loaded ${intradayCandles.length} 5-minute candles from Redis for recent period`);
-      } catch (error5m) {
+      } catch {
         // Fall back to hourly candles if 5-minute not available
         try {
           intradayCandles = await fetchPriceCandles('ETHUSDT', '1h', recentStartDate, recentEndDate, initialPrice);
@@ -153,7 +153,8 @@ export class PaperTradingService {
             // Check if this intraday candle is within a daily candle's range
             const candleDay = new Date(candle.timestamp);
             candleDay.setUTCHours(0, 0, 0, 0);
-            const dayStart = candleDay.getTime();
+            // dayStart calculated but not currently used
+            // const dayStart = candleDay.getTime();
             
             // Only add if it's in the recent 48-hour window
             // This replaces the daily candle with more granular intraday data
@@ -370,8 +371,8 @@ export class PaperTradingService {
     const updatedSession = { ...session };
     const { portfolio } = updatedSession;
 
-    // Calculate current portfolio value
-    const currentValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
+    // Calculate current portfolio value (used implicitly in portfolio.totalValue calculation)
+    // const currentValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
 
     // Execute buy signal
     if (signal.action === 'buy' && portfolio.usdcBalance > 0 && signal.signal > 0) {
@@ -512,10 +513,10 @@ export class PaperTradingService {
       let intradayCandles: PriceCandle[] = [];
       try {
         intradayCandles = await fetchPriceCandles('ETHUSDT', '5m', recentStartDate, recentEndDate, currentPrice);
-      } catch (error5m) {
+      } catch {
         try {
           intradayCandles = await fetchPriceCandles('ETHUSDT', '1h', recentStartDate, recentEndDate, currentPrice);
-        } catch (error1h) {
+        } catch {
           // Non-critical - continue without intraday candles
         }
       }

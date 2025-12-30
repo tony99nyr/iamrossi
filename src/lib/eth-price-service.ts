@@ -17,7 +17,6 @@ const PRICE_CACHE_PREFIX = 'eth:price:cache:';
 // Rate limiting: track last API call time
 let lastBinanceCall = 0;
 let lastCoinGeckoCall = 0;
-const lastCoinbaseCall = 0;
 const MIN_BINANCE_DELAY = 100; // 100ms between Binance calls
 const MIN_COINGECKO_DELAY = 1200; // 1.2s between CoinGecko calls (free tier limit)
 // const MIN_COINBASE_DELAY = 500; // 500ms between Coinbase calls (unused for now)
@@ -64,7 +63,7 @@ async function loadFromFile(filePath: string): Promise<PriceCandle[] | null> {
     const decompressed = gunzipSync(compressed);
     const jsonString = decompressed.toString('utf-8');
     return JSON.parse(jsonString) as PriceCandle[];
-  } catch (error) {
+  } catch {
     // Fallback: try uncompressed file (for backward compatibility with existing files)
     try {
       const data = await fs.readFile(filePath, 'utf-8');
@@ -72,7 +71,7 @@ async function loadFromFile(filePath: string): Promise<PriceCandle[] | null> {
       // Note: File compression is handled by GitHub Actions workflow
       // We just return the parsed data here
       return parsed;
-    } catch (fallbackError) {
+    } catch {
       // Neither file exists or is invalid - return null
       return null;
     }
@@ -81,7 +80,9 @@ async function loadFromFile(filePath: string): Promise<PriceCandle[] | null> {
 
 /**
  * Save historical price data to local file (always as compressed .json.gz)
+ * Note: Currently unused - file saving is handled by GitHub Actions workflow
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function saveToFile(filePath: string, candles: PriceCandle[]): Promise<void> {
   try {
     // Ensure directory exists
@@ -181,7 +182,6 @@ async function fetchCoinGeckoOHLC(
   
   // CoinGecko OHLC endpoint only accepts specific day values
   // Map requested days to nearest valid value
-  const validDays = [1, 7, 14, 30, 90, 180, 365, 'max'];
   let requestedDays: number | string = days;
   if (typeof days === 'number') {
     if (days <= 1) requestedDays = 1;
@@ -370,7 +370,6 @@ async function fetchCoinGeckoCandles(
                      interval === '1d' ? 24 * 60 * 60 * 1000 :
                      24 * 60 * 60 * 1000; // Default to 1d
   
-  const candles: PriceCandle[] = [];
   const candleMap = new Map<number, PriceCandle>();
   
   for (const point of allPricePoints) {
@@ -546,11 +545,11 @@ export async function fetchPriceCandles(
               allCandles.push(...filtered);
               console.log(`📁 Loaded ${filtered.length} candles from historical file: ${file}`);
             }
-          } catch (error) {
+          } catch {
             continue;
           }
         }
-      } catch (error) {
+      } catch {
         // Directory doesn't exist or can't read - continue
       }
     }
@@ -921,7 +920,7 @@ export async function fetchPriceCandles(
               const filtered = parsed.filter(c => c.timestamp >= startTime && c.timestamp <= actualEndTime);
               allCachedCandles.push(...filtered);
             }
-          } catch (keyError) {
+          } catch {
             // Skip this key if it fails
             continue;
           }
@@ -1125,9 +1124,9 @@ async function updateTodayCandle(symbol: string, price: number, timeframe: strin
       if (cached) {
         candles = JSON.parse(cached) as PriceCandle[];
       }
-    } catch (cacheError) {
+    } catch (error) {
       // Cache read failed - start with empty array
-      console.warn('Failed to read today candle from cache, creating new:', cacheError);
+      console.warn('Failed to read today candle from cache, creating new:', error);
     }
     
     // For daily candles, find or create today's candle
@@ -1300,7 +1299,7 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
         return cachedPrice;
       }
     }
-  } catch (cacheError) {
+  } catch {
     // Cache read failed - continue to fetch
   }
   
@@ -1313,7 +1312,7 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
       await ensureConnected();
       const cacheKey = `eth:price:latest:${symbol}`;
       await redis.setEx(cacheKey, 300, String(price)); // 5 minute cache
-    } catch (cacheError) {
+    } catch {
       // Cache write failed - non-critical
     }
     
@@ -1354,7 +1353,7 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
           return cachedPrice;
         }
       }
-    } catch (cacheError) {
+    } catch {
       // Cache read failed
     }
     

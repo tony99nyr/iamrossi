@@ -25,7 +25,7 @@ function todayIsoDate(): string {
 
 
 /**
- * Check if an error is retryable (timeout, network, rate limit)
+ * Check if an error is retryable (timeout, network, rate limit, browser closure, resource exhaustion)
  */
 function isRetryableError(error: unknown): boolean {
   const errorMsg = error instanceof Error ? error.message : String(error);
@@ -40,7 +40,18 @@ function isRetryableError(error: unknown): boolean {
     lowerMsg.includes('rate limit') ||
     lowerMsg.includes('too many requests') ||
     lowerMsg.includes('page load timeout') ||
-    lowerMsg.includes('vgpc object timeout')
+    lowerMsg.includes('vgpc object timeout') ||
+    lowerMsg.includes('browser has been closed') ||
+    lowerMsg.includes('target page, context or browser has been closed') ||
+    lowerMsg.includes('target closed') ||
+    lowerMsg.includes('browser closed') ||
+    lowerMsg.includes('page closed') ||
+    lowerMsg.includes('err_insufficient_resources') ||
+    lowerMsg.includes('insufficient resources') ||
+    lowerMsg.includes('err_insufficient') ||
+    lowerMsg.includes('out of memory') ||
+    lowerMsg.includes('memory') ||
+    lowerMsg.includes('resource')
   );
 }
 
@@ -60,25 +71,71 @@ export async function scrapePriceChartingForCard(
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
     
-    try {
-      if (attempt > 1) {
-        const backoffMs = Math.pow(2, attempt - 2) * 2000; // 2s, 4s, 8s
-        debugLog(`[Pokemon] Retry attempt ${attempt}/${MAX_RETRIES} for card ${card.id} after ${backoffMs}ms backoff`);
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
-      }
+      try {
+        if (attempt > 1) {
+          // Check if previous error was resource-related - use longer backoff
+          const isResourceError = lastError && (
+            lastError.message.includes('ERR_INSUFFICIENT_RESOURCES') ||
+            lastError.message.includes('insufficient resources') ||
+            lastError.message.includes('out of memory') ||
+            lastError.message.includes('memory')
+          );
+          
+          let backoffMs: number;
+          if (isResourceError) {
+            // Longer backoff for resource errors to allow system to recover
+            backoffMs = Math.pow(2, attempt - 2) * 5000; // 5s, 10s, 20s
+            debugLog(`[Pokemon] Resource error detected - using longer backoff: ${backoffMs}ms`);
+          } else {
+            // Normal backoff for other errors
+            backoffMs = Math.pow(2, attempt - 2) * 2000; // 2s, 4s, 8s
+          }
+          
+          debugLog(`[Pokemon] Retry attempt ${attempt}/${MAX_RETRIES} for card ${card.id} after ${backoffMs}ms backoff`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+        }
 
-      browser = await chromium.launch({
-        args: chromiumPkg.args,
-        executablePath: await chromiumPkg.executablePath(
-          'https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar',
-        ),
-        headless: true,
-      });
+        // Add a small delay before launching browser to allow resources to free up
+        // This is especially important after resource errors
+        if (attempt > 1 && lastError && (
+          lastError.message.includes('ERR_INSUFFICIENT_RESOURCES') ||
+          lastError.message.includes('insufficient resources')
+        )) {
+          debugLog(`[Pokemon] Waiting additional 2s before browser launch to allow resource recovery`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
 
+        // Optimize browser launch for serverless environments with limited resources
+        // Add memory-efficient flags to reduce resource usage
+        const browserArgs = [
+          ...chromiumPkg.args,
+          '--disable-dev-shm-usage', // Use /tmp instead of /dev/shm (limited in serverless)
+          '--disable-gpu', // Disable GPU (not available in serverless)
+          '--disable-software-rasterizer', // Reduce memory usage
+          '--disable-extensions', // Disable extensions to save memory
+          '--disable-background-networking', // Reduce background activity
+          '--disable-background-timer-throttling', // Reduce background activity
+          '--disable-renderer-backgrounding', // Reduce background activity
+          '--disable-backgrounding-occluded-windows', // Reduce background activity
+          '--disable-features=TranslateUI', // Disable translation features
+          '--disable-ipc-flooding-protection', // Reduce IPC overhead
+          '--memory-pressure-off', // Disable memory pressure handling
+          '--max_old_space_size=512', // Limit memory usage (MB)
+        ];
+        
+        browser = await chromium.launch({
+          args: browserArgs,
+          executablePath: await chromiumPkg.executablePath(
+            'https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar',
+          ),
+          headless: true,
+        });
+
+      // Reduce viewport size to save memory in serverless environment
       const context = await browser.newContext({
         userAgent:
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1920, height: 1080 },
+        viewport: { width: 1280, height: 720 }, // Reduced from 1920x1080 to save memory
         extraHTTPHeaders: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
@@ -100,8 +157,33 @@ export async function scrapePriceChartingForCard(
       page.on('response', responseHandler);
 
       try {
+        // Check if browser is still open before navigation
+        if (!browser || !browser.isConnected()) {
+          throw new Error('Browser closed before navigation');
+        }
+        
         // Increased timeout for API routes - Playwright can be slow in serverless environments
-        const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 }); // 90 seconds
+        // Use 'domcontentloaded' instead of 'networkidle' for faster, more reliable loading
+        // 'networkidle' can timeout if the page has continuous network activity
+        let response;
+        try {
+          response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 }); // 90 seconds
+        } catch (gotoError) {
+          const errorMsg = gotoError instanceof Error ? gotoError.message : String(gotoError);
+          // Check if browser/page was closed during navigation
+          if (errorMsg.includes('Target page, context or browser has been closed') || 
+              errorMsg.includes('browser has been closed') ||
+              errorMsg.includes('Target closed')) {
+            debugLog(`[Pokemon] Browser closed during navigation for card ${card.id}, will retry`);
+            throw new Error(`Browser closed during navigation: ${errorMsg}`);
+          }
+          throw gotoError;
+        }
+        
+        // Check if browser is still open after navigation
+        if (!browser || !browser.isConnected()) {
+          throw new Error('Browser closed after navigation');
+        }
         
         // Check for 429 rate limit response
         if (response && response.status() === 429) {
@@ -111,9 +193,17 @@ export async function scrapePriceChartingForCard(
             const waitTime = parseInt(retryAfter, 10) * 1000;
             debugLog(`[Pokemon] Rate limited (429) for card ${card.id}, Retry-After: ${retryAfter}s`);
             if (attempt < MAX_RETRIES) {
-              await page.waitForTimeout(waitTime);
+              try {
+                await page.waitForTimeout(waitTime);
+              } catch {
+                // Page might be closed, ignore
+              }
               page.off('response', responseHandler);
-              await browser.close();
+              try {
+                await browser.close();
+              } catch {
+                // Browser might already be closed, ignore
+              }
               continue; // Retry after waiting
             }
           }
@@ -122,16 +212,40 @@ export async function scrapePriceChartingForCard(
         if (rateLimited && attempt < MAX_RETRIES) {
           const waitTime = Math.pow(2, attempt) * 5000; // 10s, 20s, 40s for rate limits
           debugLog(`[Pokemon] Rate limited for card ${card.id}, waiting ${waitTime}ms before retry`);
-          await page.waitForTimeout(waitTime);
+          try {
+            await page.waitForTimeout(waitTime);
+          } catch {
+            // Page might be closed, ignore
+          }
           page.off('response', responseHandler);
-          await browser.close();
+          try {
+            await browser.close();
+          } catch {
+            // Browser might already be closed, ignore
+          }
           continue;
+        }
+        
+        // Check if browser is still open before waiting for elements
+        if (!browser || !browser.isConnected()) {
+          throw new Error('Browser closed before element wait');
         }
         
         // Wait for the price table to be visible
         try {
           await page.waitForSelector('#price_data', { timeout: 20000 }); // Increased to 20s
-        } catch {
+        } catch (selectorError) {
+          // Check if browser closed during wait
+          if (!browser || !browser.isConnected()) {
+            throw new Error('Browser closed during selector wait');
+          }
+          // Check if error is due to page/browser closure
+          const errorMsg = selectorError instanceof Error ? selectorError.message : String(selectorError);
+          if (errorMsg.includes('Target page, context or browser has been closed') || 
+              errorMsg.includes('browser has been closed') ||
+              errorMsg.includes('Target closed')) {
+            throw new Error(`Browser closed during selector wait: ${errorMsg}`);
+          }
           // Continue even if selector doesn't appear - might be a different page structure
           debugLog(`[Pokemon] Price table selector not found for card ${card.id}, continuing with extraction`);
         }
@@ -144,13 +258,34 @@ export async function scrapePriceChartingForCard(
             const vgpc = (globalThis as any).VGPC;
             return typeof vgpc !== 'undefined' && vgpc?.chart_data !== undefined;
           }, { timeout: 15000 }); // Increased to 15s
-        } catch {
+        } catch (vgpcError) {
+          // Check if browser closed during wait
+          if (!browser || !browser.isConnected()) {
+            throw new Error('Browser closed during VGPC wait');
+          }
+          // Check if error is due to page/browser closure
+          const errorMsg = vgpcError instanceof Error ? vgpcError.message : String(vgpcError);
+          if (errorMsg.includes('Target page, context or browser has been closed') || 
+              errorMsg.includes('browser has been closed') ||
+              errorMsg.includes('Target closed')) {
+            throw new Error(`Browser closed during VGPC wait: ${errorMsg}`);
+          }
           // VGPC might not be available, continue with DOM-based extraction
           debugLog(`[Pokemon] VGPC object not found for card ${card.id}, using DOM-based extraction`);
         }
         
+        // Check again before evaluate
+        if (!browser || !browser.isConnected()) {
+          throw new Error('Browser closed before evaluate');
+        }
+        
         // Give a moment for any remaining JavaScript to finish executing
         await page.waitForTimeout(1000);
+        
+        // Final check before evaluate
+        if (!browser || !browser.isConnected()) {
+          throw new Error('Browser closed after timeout');
+        }
 
         const { ungraded, psa10, debugInfo } = await page.evaluate(() => {
           let ungradedPrice: number | undefined;
@@ -285,9 +420,25 @@ export async function scrapePriceChartingForCard(
           return { ungraded: ungradedPrice, psa10: psa10Price, debugInfo: debug };
         });
 
-        page.off('response', responseHandler);
-        await browser.close();
-        browser = null;
+        // Clean up response handler
+        try {
+          page.off('response', responseHandler);
+        } catch {
+          // Page might be closed, ignore
+        }
+        
+        // Clean up browser
+        if (browser) {
+          try {
+            if (browser.isConnected()) {
+              await browser.close();
+            }
+          } catch (closeError) {
+            // Browser might already be closed, ignore
+            debugLog(`[Pokemon] Browser already closed during success cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+          }
+          browser = null;
+        }
 
         debugLog(`[Pokemon] Successfully scraped prices for card ${card.id} (attempt ${attempt}/${MAX_RETRIES})`, { 
           card: card.id, 
@@ -303,9 +454,23 @@ export async function scrapePriceChartingForCard(
           currency: 'USD',
         };
       } catch (error) {
-        page.off('response', responseHandler);
+        // Clean up response handler
+        try {
+          page.off('response', responseHandler);
+        } catch {
+          // Page might be closed, ignore
+        }
+        
+        // Clean up browser - handle case where it might already be closed
         if (browser) {
-          await browser.close();
+          try {
+            if (browser.isConnected()) {
+              await browser.close();
+            }
+          } catch (closeError) {
+            // Browser might already be closed, ignore
+            debugLog(`[Pokemon] Browser already closed during cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+          }
           browser = null;
         }
         
@@ -327,8 +492,16 @@ export async function scrapePriceChartingForCard(
         throw lastError;
       }
     } catch (error) {
+      // Outer catch - handle browser launch/context creation errors
       if (browser) {
-        await browser.close();
+        try {
+          if (browser.isConnected()) {
+            await browser.close();
+          }
+        } catch (closeError) {
+          // Browser might already be closed, ignore
+          debugLog(`[Pokemon] Browser already closed during outer cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+        }
       }
       
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -981,12 +1154,20 @@ export async function scrapeHistoricalPricesForCard(
   }
 }
 
-export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Promise<PokemonCardPriceSnapshot[]> {
+export async function refreshTodaySnapshots(
+  settings: PokemonIndexSettings,
+  options?: { startTime?: number; maxDuration?: number }
+): Promise<PokemonCardPriceSnapshot[]> {
   const today = todayIsoDate();
   const existing = await getPokemonCardPriceSnapshots();
+  const startTime = options?.startTime ?? Date.now();
+  const maxDuration = options?.maxDuration ?? Infinity; // Default: no timeout
   
   debugLog(`[Pokemon] refreshTodaySnapshots: Starting for ${settings.cards.length} cards, today=${today}`);
   debugLog(`[Pokemon] refreshTodaySnapshots: Existing snapshots: ${existing.length}`);
+  if (maxDuration !== Infinity) {
+    debugLog(`[Pokemon] refreshTodaySnapshots: Max duration: ${maxDuration}ms (${Math.round(maxDuration / 1000)}s)`);
+  }
   
   // Safety check: Warn if we have very few snapshots, but don't block daily updates
   // This is just a warning - we still want to add today's data even if the dataset is small
@@ -1014,21 +1195,94 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
   let addedToday = false;
   let scrapedCount = 0;
   let errorCount = 0;
+  let skippedDueToTimeout = 0;
   const failedCards: Array<{ cardId: string; cardName: string; error: string }> = [];
+  const successfulCards: string[] = [];
+
+  // Helper function to check remaining time
+  const getRemainingTime = (): number => {
+    if (maxDuration === Infinity) return Infinity;
+    const elapsed = Date.now() - startTime;
+    return maxDuration - elapsed;
+  };
+
+  // Helper function to check if we should continue (enough time remaining)
+  const shouldContinue = (): boolean => {
+    const remaining = getRemainingTime();
+    // Exit if less than 30 seconds remaining (need time to save)
+    if (remaining < 30000) {
+      return false;
+    }
+    return true;
+  };
+
+  // Helper function to save incrementally
+  const saveIncremental = async (): Promise<void> => {
+    try {
+      await setPokemonCardPriceSnapshots(updated);
+      debugLog(`[Pokemon] Incrementally saved ${updated.length} snapshots`);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[Pokemon] Failed to incrementally save snapshots:`, errorMsg);
+      // Don't throw - we'll try to save at the end
+    }
+  };
 
   // Wrap the entire loop in try-catch to ensure we save partial results even if there's an unexpected error
   try {
     for (let i = 0; i < settings.cards.length; i++) {
+      // Check remaining time before processing each card
+      const remaining = getRemainingTime();
+      if (!shouldContinue()) {
+        const elapsed = Date.now() - startTime;
+        debugLog(`[Pokemon] ⏰ Timeout approaching: ${Math.round(elapsed / 1000)}s elapsed, ${Math.round(remaining / 1000)}s remaining`);
+        debugLog(`[Pokemon] Stopping early to save partial results. Processed ${i}/${settings.cards.length} cards`);
+        skippedDueToTimeout = settings.cards.length - i;
+        
+        // Save what we have so far
+        if (addedToday) {
+          await saveIncremental();
+        }
+        break;
+      }
+
       const card = settings.cards[i]!;
       const key = `${card.id}:${today}`;
       const existingSnapshot = byCardAndDate.get(key);
       
       // Add delay between card scrapes (except for the first one) to avoid bot detection
+      // Reduce delay when time is running out
       if (i > 0) {
-        // Random delay between 2-5 seconds
-        const delayMs = 2000 + Math.random() * 3000;
-        debugLog(`[Pokemon] Waiting ${Math.round(delayMs)}ms before scraping next card (${i + 1}/${settings.cards.length})`);
+        let delayMs: number;
+        if (remaining < 60000) {
+          // Less than 1 minute remaining - use minimal delay (0.5-1s)
+          delayMs = 500 + Math.random() * 500;
+          debugLog(`[Pokemon] ⚡ Time running out - using reduced delay: ${Math.round(delayMs)}ms`);
+        } else if (remaining < 120000) {
+          // Less than 2 minutes remaining - use shorter delay (1-2s)
+          delayMs = 1000 + Math.random() * 1000;
+          debugLog(`[Pokemon] ⚡ Time limited - using shorter delay: ${Math.round(delayMs)}ms`);
+        } else {
+          // Normal delay between 2-5 seconds
+          delayMs = 2000 + Math.random() * 3000;
+        }
+        
+        debugLog(`[Pokemon] Waiting ${Math.round(delayMs)}ms before scraping next card (${i + 1}/${settings.cards.length}), ${Math.round(remaining / 1000)}s remaining`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
+        
+        // Check again after delay
+        if (!shouldContinue()) {
+          const elapsed = Date.now() - startTime;
+          debugLog(`[Pokemon] ⏰ Timeout after delay: ${Math.round(elapsed / 1000)}s elapsed`);
+          debugLog(`[Pokemon] Stopping early to save partial results. Processed ${i}/${settings.cards.length} cards`);
+          skippedDueToTimeout = settings.cards.length - i;
+          
+          // Save what we have so far
+          if (addedToday) {
+            await saveIncremental();
+          }
+          break;
+        }
       }
       
       // Check if we have a snapshot AND it has the required price field for this card's condition type
@@ -1074,7 +1328,8 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
         }
       }
 
-      debugLog(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name}) [${i + 1}/${settings.cards.length}]`);
+      const remainingBeforeScrape = getRemainingTime();
+      debugLog(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name}) [${i + 1}/${settings.cards.length}], ${Math.round(remainingBeforeScrape / 1000)}s remaining`);
       try {
         scrapedCount++;
         const scraped = await scrapePriceChartingForCard(card);
@@ -1099,12 +1354,20 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
         updated.push(snapshot);
         byCardAndDate.set(key, snapshot);
         addedToday = true;
-        debugLog(`[Pokemon] Successfully scraped ${card.id}: ungraded=$${scraped.ungradedPrice || 'N/A'}, psa10=$${scraped.psa10Price || 'N/A'}`);
+        successfulCards.push(card.id);
+        
+        const elapsed = Date.now() - startTime;
+        debugLog(`[Pokemon] ✅ Successfully scraped ${card.id}: ungraded=$${scraped.ungradedPrice || 'N/A'}, psa10=$${scraped.psa10Price || 'N/A'} (${Math.round(elapsed / 1000)}s elapsed)`);
+        
+        // Save incrementally after each successful scrape
+        await saveIncremental();
+        debugLog(`[Pokemon] Incrementally saved snapshot for ${card.id}`);
       } catch (error) {
         errorCount++;
         const errorMsg = error instanceof Error ? error.message : String(error);
+        const elapsed = Date.now() - startTime;
         console.error(`[Pokemon] Failed to scrape card ${card.id} (${card.name}):`, errorMsg);
-        debugLog(`[Pokemon] Error details: ${errorMsg}`);
+        debugLog(`[Pokemon] ❌ Error details (${Math.round(elapsed / 1000)}s elapsed): ${errorMsg}`);
         failedCards.push({ cardId: card.id, cardName: card.name, error: errorMsg });
         
         // Check if this is a retryable error - if so, don't create a snapshot so we can retry
@@ -1130,7 +1393,13 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
     // Continue to save logic below - we want to save whatever we've scraped so far
   }
 
+  const totalElapsed = Date.now() - startTime;
+  const remaining = getRemainingTime();
+  
   debugLog(`[Pokemon] refreshTodaySnapshots: Scraped ${scrapedCount} cards, errors: ${errorCount}, addedToday: ${addedToday}`);
+  if (maxDuration !== Infinity) {
+    debugLog(`[Pokemon] Time tracking: ${Math.round(totalElapsed / 1000)}s elapsed, ${Math.round(remaining / 1000)}s remaining`);
+  }
   
   // Calculate how many new/updated snapshots we have
   const newCount = updated.length - validSnapshots.length;
@@ -1142,11 +1411,16 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
   debugLog(`[Pokemon] refreshTodaySnapshots summary:`, {
     scraped: scrapedCount,
     errors: errorCount,
+    skippedDueToTimeout,
+    successfulCards: successfulCards.length,
     newSnapshots: newCount,
     addedToday,
     cardsWithData,
     cardsWithoutData,
     totalCards: settings.cards.length,
+    elapsedSeconds: Math.round(totalElapsed / 1000),
+    remainingSeconds: maxDuration !== Infinity ? Math.round(remaining / 1000) : null,
+    successfulCardIds: successfulCards,
     failedCards: failedCards.map(f => f.cardId),
   });
   
@@ -1158,17 +1432,28 @@ export async function refreshTodaySnapshots(settings: PokemonIndexSettings): Pro
     }
   }
   
+  // Log timeout information if applicable
+  if (skippedDueToTimeout > 0) {
+    console.warn(`[Pokemon] ⏰ Timeout: ${skippedDueToTimeout} cards were skipped due to timeout and will be retried on the next run`);
+    const skippedCardIds = settings.cards.slice(settings.cards.length - skippedDueToTimeout).map(c => c.id);
+    debugLog(`[Pokemon] Skipped card IDs due to timeout: ${skippedCardIds.join(', ')}`);
+  }
+  
   // Only save if we have new snapshots with actual price data
+  // Note: We may have already saved incrementally, but we'll save again to ensure consistency
   // Don't save if we only have failures (no snapshots created)
   if (addedToday && cardsWithData > 0) {
-    debugLog(`[Pokemon] Saving ${updated.length} total snapshots (${newCount} new/updated for today, ${cardsWithData} with data, ${cardsWithoutData} failed)`);
+    debugLog(`[Pokemon] Final save: ${updated.length} total snapshots (${newCount} new/updated for today, ${cardsWithData} with data, ${cardsWithoutData} failed)`);
     try {
       await setPokemonCardPriceSnapshots(updated);
       debugLog(`[Pokemon] Successfully saved today's (${today}) price data for ${cardsWithData} cards`);
       
-      if (cardsWithoutData > 0) {
-        console.warn(`[Pokemon] ⚠️  ${cardsWithoutData} cards failed to get price data today and will be retried on the next run`);
-        console.warn(`[Pokemon] Failed cards: ${failedCards.map(f => f.cardName).join(', ')}`);
+      if (cardsWithoutData > 0 || skippedDueToTimeout > 0) {
+        const totalMissing = cardsWithoutData + skippedDueToTimeout;
+        console.warn(`[Pokemon] ⚠️  ${totalMissing} cards need price data (${cardsWithoutData} failed, ${skippedDueToTimeout} skipped due to timeout) and will be retried on the next run`);
+        if (failedCards.length > 0) {
+          console.warn(`[Pokemon] Failed cards: ${failedCards.map(f => f.cardName).join(', ')}`);
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1462,6 +1747,7 @@ function addRateOfChange(series: PokemonIndexPoint[], period: number, field: 'ro
 
 export async function ensurePokemonIndexUpToDate(
   settings: PokemonIndexSettings,
+  options?: { startTime?: number; maxDuration?: number }
 ): Promise<PokemonIndexPoint[]> {
   const today = todayIsoDate();
   const snapshots = await getPokemonCardPriceSnapshots();
@@ -1501,7 +1787,8 @@ export async function ensurePokemonIndexUpToDate(
   if (missingCards.length > 0) {
     debugLog(`[Pokemon] ensurePokemonIndexUpToDate: ${missingCards.length} cards missing today's data, refreshing`);
     // Refresh snapshots - this will only scrape cards that don't have today's data
-    updatedSnapshots = await refreshTodaySnapshots(settings);
+    // Pass through time tracking options
+    updatedSnapshots = await refreshTodaySnapshots(settings, options);
     debugLog(`[Pokemon] ensurePokemonIndexUpToDate: refreshTodaySnapshots returned ${updatedSnapshots.length} snapshots`);
   } else {
     debugLog(`[Pokemon] ensurePokemonIndexUpToDate: All cards have today's data, skipping refresh`);

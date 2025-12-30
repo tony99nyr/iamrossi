@@ -9,7 +9,6 @@ import type {
   PortfolioSnapshot,
   StrategyRun,
   Portfolio,
-  PriceCandle,
 } from '@/types';
 import { fetchPriceCandles } from './eth-price-service';
 import { generateAdaptiveSignal } from './adaptive-strategy';

@@ -1,10 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { TradingConfig, Trade, PortfolioSnapshot, StrategyRun, Portfolio } from '@/types';
+import type { TradingConfig, Trade, PortfolioSnapshot, Portfolio } from '@/types';
 import { fetchLatestPrice } from './eth-price-service';
 // Note: generateSignal and calculateConfidence would be used for live paper trading execution
 // import { generateSignal } from './trading-signals';
 // import { calculateConfidence } from './confidence-calculator';
-import { calculateStrategyResults, calculateRiskMetrics } from './risk-metrics';
+// Note: calculateStrategyResults and calculateRiskMetrics are imported but not currently used
+// import { calculateStrategyResults, calculateRiskMetrics } from './risk-metrics';
 
 export interface PaperTradingSession {
   id: string;

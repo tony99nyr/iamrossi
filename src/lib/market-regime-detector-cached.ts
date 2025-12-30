@@ -396,8 +396,9 @@ export function detectMarketRegimeCached(
     const prevSma20 = getLatestIndicatorValue(sma20, prevIdx, 19);
     const prevSma50 = getLatestIndicatorValue(sma50, prevIdx, 49);
     const prevSma200 = sma200 ? getLatestIndicatorValue(sma200, prevIdx, 199) : null;
-    const prevEma12 = getLatestIndicatorValue(ema12, prevIdx, 11);
-    const prevEma26 = getLatestIndicatorValue(ema26, prevIdx, 25);
+    // Note: prevEma12 and prevEma26 calculated but not currently used in logic
+    // getLatestIndicatorValue(ema12, prevIdx, 11);
+    // getLatestIndicatorValue(ema26, prevIdx, 25);
     const prevHistogram = getLatestIndicatorValue(histogram, prevIdx, 34);
     const prevMacd = getLatestIndicatorValue(macd, prevIdx, 34);
     const prevSignal = getLatestIndicatorValue(signal, prevIdx, 34);

@@ -7,7 +7,7 @@ import { gunzipSync } from 'zlib';
 import type { PriceCandle } from '@/types';
 
 const HISTORICAL_DATA_DIR = path.join(process.cwd(), 'data', 'historical-prices');
-const CUTOFF_DATE = '2025-12-27';
+// Historical data cutoff date: 2025-12-27
 
 /**
  * Find the last daily candle date in historical files

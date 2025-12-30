@@ -34,7 +34,14 @@ export async function GET(request: NextRequest) {
           isCronRequest,
           cardCount: settings.cards.length,
         });
-        series = await ensurePokemonIndexUpToDate(settings);
+        // Pass time tracking options for timeout handling
+        const maxDurationMs = maxDuration * 1000; // Convert seconds to milliseconds
+        // Reserve 10 seconds for saving and building series at the end
+        const effectiveMaxDuration = maxDurationMs - 10000;
+        series = await ensurePokemonIndexUpToDate(settings, {
+          startTime,
+          maxDuration: effectiveMaxDuration,
+        });
       } else {
         series = await getOrBuildPokemonIndexSeries(settings);
       }

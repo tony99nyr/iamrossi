@@ -9,7 +9,6 @@
 import type { PriceCandle, TradingConfig, TradingSignal } from '@/types';
 import { detectMarketRegimeCached as detectMarketRegime, type MarketRegimeSignal } from './market-regime-detector-cached';
 import { generateSignal } from './trading-signals';
-import { calculateConfidence } from './confidence-calculator';
 import { calculateMACD, calculateRSI, getLatestIndicatorValue } from './indicators';
 
 export interface OptimizedAdaptiveStrategyConfig {

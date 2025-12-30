@@ -82,6 +82,16 @@ export default async function HomePage() {
                             </Link>
                         </li>
 
+                        <li>
+                            <Link href="/tools/stick-and-puck" className={toolLinkStyle}>
+                                <span className={toolIconStyle}>🏒</span>
+                                <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 })}>
+                                    <strong className={toolNameStyle}>Stick & Puck Finder</strong>
+                                    <span className={toolDescStyle}>Find open hockey sessions at Polar Ice rinks</span>
+                                </div>
+                            </Link>
+                        </li>
+
                        
                     </ul>
                 </section>

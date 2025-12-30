@@ -9,7 +9,6 @@ import type {
   PortfolioSnapshot,
   StrategyRun,
   Portfolio,
-  PriceCandle,
 } from '@/types';
 import { fetchPriceCandles } from './eth-price-service';
 import { generateOptimizedAdaptiveSignal, type OptimizedAdaptiveStrategyConfig } from './adaptive-strategy-optimized';
@@ -48,7 +47,7 @@ export interface OptimizedAdaptiveBacktestResult {
 export async function runOptimizedAdaptiveBacktest(
   options: OptimizedAdaptiveBacktestOptions
 ): Promise<OptimizedAdaptiveBacktestResult> {
-  const { startDate, endDate, config, runName, saveRun } = options;
+  const { startDate, endDate, config, runName } = options;
 
   const candles = await fetchPriceCandles('ETHUSDT', config.bullishStrategy.timeframe, startDate, endDate);
   if (candles.length === 0) {

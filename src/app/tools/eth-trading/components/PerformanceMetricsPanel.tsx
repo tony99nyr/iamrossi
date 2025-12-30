@@ -19,7 +19,6 @@ export default function PerformanceMetricsPanel({ session }: PerformanceMetricsP
     let maxDrawdown = 0;
     let currentDrawdown = 0;
     let inDrawdown = false;
-    const drawdownStart = 0;
 
     for (const snapshot of portfolioHistory) {
       if (snapshot.totalValue > maxValue) {

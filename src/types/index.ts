@@ -438,3 +438,23 @@ export interface StrategyRun {
   tradeIds?: string[]; // References to trades stored separately
 }
 
+// ============================================================================
+// Stick and Puck Finder Types
+// ============================================================================
+
+export interface StickAndPuckSession {
+  id: string;
+  date: string; // ISO date (YYYY-MM-DD)
+  time: string; // HH:mm format
+  rink: string; // Facility name
+  price: number;
+  priceType: 'regular' | 'off-peak';
+  registrationUrl: string;
+  skillLevel?: string;
+  description?: string;
+  leagueId?: string; // DaySmart league ID
+  remainingSlots?: number; // Number of available registration slots
+  capacity?: number; // Total registration capacity
+  isFull?: boolean; // Whether registration is full
+}
+

@@ -30,7 +30,7 @@ import type {
   PokemonIndexSettings,
   PokemonCardPriceSnapshot,
   PokemonIndexPoint,
-  StrategyRun,
+  StickAndPuckSession,
 } from '@/types';
 import type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
 import { statSessionSchema } from '@/lib/validation';
@@ -150,6 +150,7 @@ const KV_KEYS = {
   POKEMON_INDEX_SERIES: 'pokemon:index:series',
   ETH_ADAPTIVE_STRATEGY_CONFIG: 'eth:adaptive:strategy:config',
   ETH_PAPER_SESSION_ACTIVE: 'eth:paper:session:active',
+  STICK_AND_PUCK_SESSIONS: 'stick-and-puck:sessions',
 } as const;
 
 // Exercise operations
@@ -745,6 +746,22 @@ export async function getAdaptiveStrategyConfig(): Promise<EnhancedAdaptiveStrat
 export async function saveAdaptiveStrategyConfig(config: EnhancedAdaptiveStrategyConfig): Promise<void> {
   await ensureConnected();
   await redis.set(KV_KEYS.ETH_ADAPTIVE_STRATEGY_CONFIG, JSON.stringify(config));
+}
+
+// ============================================================================
+// Stick and Puck Finder operations
+// ============================================================================
+
+export async function getStickAndPuckSessions(): Promise<StickAndPuckSession[]> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.STICK_AND_PUCK_SESSIONS);
+  return data ? JSON.parse(data) : [];
+}
+
+export async function setStickAndPuckSessions(sessions: StickAndPuckSession[]): Promise<void> {
+  await ensureConnected();
+  // Cache for 24 hours (86400 seconds)
+  await redis.setEx(KV_KEYS.STICK_AND_PUCK_SESSIONS, 86400, JSON.stringify(sessions));
 }
 
 // ============================================================================

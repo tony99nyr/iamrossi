@@ -36,7 +36,7 @@ async function loadFromFile(filePath: string): Promise<PriceCandle[] | null> {
     const decompressed = gunzipSync(compressed);
     const jsonString = decompressed.toString('utf-8');
     return JSON.parse(jsonString) as PriceCandle[];
-  } catch (error) {
+  } catch {
     // Fallback: try uncompressed file
     try {
       const data = await fs.readFile(filePath, 'utf-8');
