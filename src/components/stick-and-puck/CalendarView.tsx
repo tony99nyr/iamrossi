@@ -245,7 +245,7 @@ export default function CalendarView({
           const getMobileBadgeColor = () => {
             if (sessionCount === 0) return null;
             
-            // Check if all sessions are in the past
+            // Check if all sessions are in the past (past days should always be grey)
             const now = new Date();
             const allPast = daySessions.every(session => {
               const [year, month, day] = session.date.split('-').map(Number);
@@ -267,6 +267,13 @@ export default function CalendarView({
               return '#ef4444'; // Red for all full
             }
             
+            // Check if all sessions are off-peak
+            const allOffPeak = daySessions.every(session => session.priceType === 'off-peak');
+            
+            if (allOffPeak) {
+              return '#10b981'; // Green for all off-peak
+            }
+            
             // Check if there's at least one peak session
             const hasPeak = daySessions.some(session => session.priceType === 'regular');
             
@@ -274,8 +281,8 @@ export default function CalendarView({
               return '#2563eb'; // Blue if there's peak
             }
             
-            // All are off-peak
-            return '#10b981'; // Green for all off-peak
+            // Default to green
+            return '#10b981';
           };
           
           const mobileBadgeColor = getMobileBadgeColor();
@@ -416,8 +423,26 @@ export default function CalendarView({
                   {/* Mobile: Show count badge */}
                   {mobileBadgeColor && (
                     <div className={css({
-                      backgroundColor: mobileBadgeColor,
+                      backgroundColor: mobileBadgeColor === '#10b981' 
+                        ? '#10b981' 
+                        : mobileBadgeColor === '#ef4444'
+                          ? '#ef4444'
+                          : mobileBadgeColor === '#2563eb'
+                            ? '#2563eb'
+                            : mobileBadgeColor === '#666'
+                              ? '#666'
+                              : mobileBadgeColor,
                       color: '#fff',
+                      border: '1px solid',
+                      borderColor: mobileBadgeColor === '#666' 
+                        ? 'rgba(136, 136, 136, 0.5)' 
+                        : mobileBadgeColor === '#ef4444'
+                          ? 'rgba(239, 68, 68, 0.5)'
+                          : mobileBadgeColor === '#2563eb'
+                            ? 'rgba(37, 99, 235, 0.5)'
+                            : mobileBadgeColor === '#10b981'
+                              ? 'rgba(16, 185, 129, 0.5)'
+                              : 'rgba(16, 185, 129, 0.5)',
                       borderRadius: '6px',
                       padding: '1px 3px',
                       fontSize: '9px',
