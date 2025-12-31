@@ -17,8 +17,6 @@ import {
   detectRSIDivergence,
   detectMACDDivergence,
   findLocalExtremes,
-  type DivergenceSignal,
-  type DivergenceType,
 } from '@/lib/divergence-detector';
 import { generatePriceCandles } from '../mocks/trading-data.mock';
 import type { PriceCandle } from '@/types';
@@ -224,12 +222,10 @@ function createBullishDivergenceCandles(intensity: number = 0.05): PriceCandle[]
   }
 
   // Phase 2: First drop to low (next 20 candles)
-  const firstPeak = price;
   for (let i = 0; i < 20; i++) {
     price = price * (1 - 0.01 - Math.random() * 0.02);
     candles.push(createCandle(baseTime + (30 + i) * 24 * 60 * 60 * 1000, price));
   }
-  const firstLow = price;
 
   // Phase 3: Small bounce (10 candles)
   for (let i = 0; i < 10; i++) {
@@ -243,7 +239,6 @@ function createBullishDivergenceCandles(intensity: number = 0.05): PriceCandle[]
     price = price * (1 - (0.005 + Math.random() * 0.01) * (1 - intensity));
     candles.push(createCandle(baseTime + (60 + i) * 24 * 60 * 60 * 1000, price));
   }
-  const secondLow = price;
 
   // Phase 5: Momentum building (20 candles) - recovery with increasing volume
   for (let i = 0; i < 20; i++) {
@@ -268,7 +263,6 @@ function createBearishDivergenceCandles(intensity: number = 0.05): PriceCandle[]
     price = price * (1 + 0.02 + Math.random() * 0.03);
     candles.push(createCandle(baseTime + i * 24 * 60 * 60 * 1000, price));
   }
-  const firstHigh = price;
 
   // Phase 2: Pullback (20 candles)
   for (let i = 0; i < 20; i++) {
@@ -282,7 +276,6 @@ function createBearishDivergenceCandles(intensity: number = 0.05): PriceCandle[]
     price = price * (1 + (0.01 + Math.random() * 0.02) * (1 - intensity * i / 30));
     candles.push(createCandle(baseTime + (50 + i) * 24 * 60 * 60 * 1000, price));
   }
-  const secondHigh = price;
 
   // Phase 4: Beginning of reversal (20 candles)
   for (let i = 0; i < 20; i++) {

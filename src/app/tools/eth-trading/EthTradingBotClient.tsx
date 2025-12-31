@@ -524,7 +524,6 @@ export default function EthTradingBotClient() {
                 </div>
               </div>
               <PriceChart
-                portfolioHistory={session.portfolioHistory}
                 trades={session.trades}
                 timeRange={timeRange}
                 session={session}

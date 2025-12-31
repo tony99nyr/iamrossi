@@ -341,7 +341,6 @@ export function detectGaps(
   // Check for missing candles at the end
   // Only check for missing candles up to the current period (not future periods)
   const lastCandle = sortedCandles[sortedCandles.length - 1]!;
-  const effectiveEndTime = Math.min(endTime, now);
   
   // For 8h candles, calculate the current period start
   // Only flag missing candles if they're from completed periods
@@ -371,8 +370,6 @@ export function detectGaps(
   // Check for missing candles at the end
   // Include the current period if it has started and been going for more than 1 minute
   const timeSinceCurrentPeriodStart = now - currentPeriodStart;
-  const currentPeriodHasStarted = timeSinceCurrentPeriodStart >= 0;
-  const currentPeriodShouldHaveCandle = currentPeriodHasStarted && timeSinceCurrentPeriodStart >= 60 * 1000; // 1 minute tolerance
   
   // Calculate how many periods we're missing
   const periodsSinceLastCandle = Math.floor((now - lastCandle.timestamp) / expectedInterval);

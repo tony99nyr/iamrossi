@@ -2,19 +2,18 @@
 
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { css } from '@styled-system/css';
-import type { PortfolioSnapshot, Trade, PriceCandle } from '@/types';
+import type { Trade, PriceCandle } from '@/types';
 import { calculateSMA, calculateEMA, calculateRSI, calculateMACD } from '@/lib/indicators';
 import { detectMarketRegimeCached, clearIndicatorCache } from '@/lib/market-regime-detector-cached';
 import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 
 interface PriceChartProps {
-  portfolioHistory: PortfolioSnapshot[];
   trades: Trade[];
   timeRange?: 'all' | 'ytd' | '6m' | '3m' | '1m' | '14d' | '7d' | '48h';
   session?: EnhancedPaperTradingSession | null;
 }
 
-export default function PriceChart({ portfolioHistory: _portfolioHistory, trades, timeRange = 'all', session }: PriceChartProps) {
+export default function PriceChart({ trades, timeRange = 'all', session }: PriceChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
