@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
     const results = {
       daily: { fetched: 0, startDate: null as string | null, endDate: null as string | null, error: null as string | null },
       hourly: { fetched: 0, startDate: null as string | null, endDate: null as string | null, error: null as string | null },
+      eightHour: { fetched: 0, startDate: null as string | null, endDate: null as string | null, error: null as string | null },
       fiveMinute: { fetched: 0, startDate: null as string | null, endDate: null as string | null, error: null as string | null },
       today: { fetched: 0, price: null as number | null, error: null as string | null },
     };
@@ -229,6 +230,89 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       results.hourly.error = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to fetch missing hourly candles:', error);
+    }
+
+    // 2.5. Find the last 8h candle and fill gaps (for paper trading timeframe)
+    try {
+      // Check from a very early date to find where our 8h data actually starts
+      // This will help us identify the gap
+      const earlyStartDate = '2020-01-01'; // Check from 2020 to find actual data range
+      console.log(`🔍 Checking for 8h candle data from ${earlyStartDate} to ${todayStr}...`);
+      const existing8hCandles = await fetchPriceCandles(
+        'ETHUSDT',
+        '8h',
+        earlyStartDate,
+        todayStr,
+        undefined,
+        true // skipAPIFetch=true to only check existing data, not fetch new
+      );
+      
+      if (existing8hCandles.length > 0) {
+        const sortedCandles = [...existing8hCandles].sort((a, b) => b.timestamp - a.timestamp);
+        const lastCandle = sortedCandles[0]!;
+        const lastCandleTime = new Date(lastCandle.timestamp);
+        const lastCandleDateStr = lastCandleTime.toISOString();
+        
+        // Calculate next 8h period (00:00, 08:00, or 16:00)
+        const lastCandleHours = lastCandleTime.getUTCHours();
+        const lastPeriod = Math.floor(lastCandleHours / 8);
+        const nextPeriod = (lastPeriod + 1) % 3; // 0, 1, or 2
+        const next8h = new Date(lastCandleTime);
+        
+        if (nextPeriod === 0) {
+          // Next period is tomorrow 00:00
+          next8h.setUTCDate(next8h.getUTCDate() + 1);
+          next8h.setUTCHours(0, 0, 0, 0);
+        } else {
+          // Next period is same day at next 8h mark
+          next8h.setUTCHours(nextPeriod * 8, 0, 0, 0);
+        }
+        
+        const now = new Date();
+        if (next8h < now) {
+          const next8hStr = next8h.toISOString().split('T')[0];
+          console.log(`📊 Found 8h gap: last 8h candle is ${lastCandleDateStr}, fetching from ${next8hStr} to ${todayStr}`);
+          results.eightHour.startDate = next8hStr;
+          results.eightHour.endDate = todayStr;
+          
+          // Now fetch with API calls enabled
+          const missing8hCandles = await fetchPriceCandles(
+            'ETHUSDT',
+            '8h',
+            next8hStr,
+            todayStr
+          );
+          results.eightHour.fetched = missing8hCandles.length;
+          
+          if (missing8hCandles.length > 0) {
+            console.log(`✅ Fetched ${missing8hCandles.length} missing 8h candle(s) from ${next8hStr} to ${todayStr}`);
+          } else {
+            console.log(`ℹ️ No missing 8h candles found (data is up to date)`);
+          }
+        } else {
+          console.log(`ℹ️ 8h data is up to date (last candle: ${lastCandleDateStr})`);
+        }
+      } else {
+        // No existing 8h data at all - fetch from 2020-01-01 to now
+        // This will aggregate from 1h data if 8h isn't available natively
+        console.log(`📊 No existing 8h data found, fetching 8h candles from 2020-01-01 to ${todayStr}...`);
+        console.log(`   This may take a while as it will aggregate from 1h data if needed...`);
+        
+        results.eightHour.startDate = '2020-01-01';
+        results.eightHour.endDate = todayStr;
+        
+        const all8hCandles = await fetchPriceCandles(
+          'ETHUSDT',
+          '8h',
+          '2020-01-01',
+          todayStr
+        );
+        results.eightHour.fetched = all8hCandles.length;
+        console.log(`✅ Fetched ${all8hCandles.length} 8h candle(s) from 2020-01-01 to ${todayStr}`);
+      }
+    } catch (error) {
+      results.eightHour.error = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Failed to fetch missing 8h candles:', error);
     }
 
     // 3. Fill 5-minute candle gaps for the last 48 hours (most granular intraday data)

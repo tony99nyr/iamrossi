@@ -146,6 +146,22 @@ export default function StrategyIndicators({ session }: StrategyIndicatorsProps)
               </span>
             </div>
           )}
+
+          {lastSignal.kellyMultiplier !== undefined && lastSignal.kellyMultiplier !== 1.0 && (
+            <div className={css({
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            })}>
+              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Kelly Multiplier</span>
+              <span className={css({ 
+                color: lastSignal.kellyMultiplier > 1 ? '#3fb950' : '#7d8590',
+                fontWeight: 'semibold',
+              })}>
+                {lastSignal.kellyMultiplier.toFixed(2)}x
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Strategy Execution Info */}

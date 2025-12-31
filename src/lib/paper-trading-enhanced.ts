@@ -12,6 +12,9 @@ import { generateEnhancedAdaptiveSignal, clearRegimeHistory, clearRegimeHistoryF
 import { calculateConfidence } from './confidence-calculator';
 import { redis, ensureConnected } from './kv';
 import { validateDataQuality, type DataQualityReport } from './data-quality-validator';
+import { calculateKellyCriterion, getKellyMultiplier } from './kelly-criterion';
+import { getATRValue } from './indicators';
+import { createOpenPosition, updateStopLoss, checkStopLosses, type StopLossConfig, type OpenPosition } from './atr-stop-loss';
 
 export interface EnhancedPaperTradingSession {
   id: string;
@@ -26,12 +29,16 @@ export interface EnhancedPaperTradingSession {
   // Enhanced fields
   currentRegime: MarketRegimeSignal;
   currentIndicators: Record<string, number>;
-  lastSignal: TradingSignal & { regime: MarketRegimeSignal; activeStrategy: TradingConfig | null; momentumConfirmed: boolean; positionSizeMultiplier: number };
+  lastSignal: TradingSignal & { regime: MarketRegimeSignal; activeStrategy: TradingConfig | null; momentumConfirmed: boolean; positionSizeMultiplier: number; kellyMultiplier?: number };
   lastPrice: number;
   lastUpdate: number;
   dataQuality?: DataQualityReport; // Latest data quality report
   regimeHistory?: Array<{ timestamp: number; regime: MarketRegimeSignal['regime']; confidence: number }>; // Track regime changes
   strategySwitches?: Array<{ timestamp: number; from: string; to: string; reason: string }>; // Track strategy switches
+  // Advanced risk management
+  openPositions?: OpenPosition[]; // Track open positions with stop losses
+  currentATR?: number; // Current ATR value for display
+  kellyMultiplier?: number; // Current Kelly multiplier for display
 }
 
 const ACTIVE_SESSION_KEY = 'eth:paper:session:active';
@@ -78,10 +85,13 @@ export class PaperTradingService {
     const sessionId = uuidv4(); // Generate session ID before creating session
     
     // Validate data quality
-    // For daily candles, use 24 hours (1440 minutes) as max age - daily candles from yesterday are expected
+    // Use the actual timeframe from config for validation
+    // For 8h candles, use 8 hours (480 minutes) as max age
+    // For daily candles, use 24 hours (1440 minutes) as max age
     const startTime = new Date(startDate).getTime();
     const endTime = new Date(endDate).getTime();
-    const dataQuality = validateDataQuality(candles, '1d', startTime, endTime, currentIndex, 1440);
+    const maxAgeMinutes = timeframe === '8h' ? 480 : timeframe === '12h' ? 720 : 1440;
+    const dataQuality = validateDataQuality(candles, timeframe, startTime, endTime, currentIndex, maxAgeMinutes);
     
     if (!dataQuality.isValid) {
       console.warn('Data quality issues detected at session start:', dataQuality.issues);
@@ -355,10 +365,13 @@ export class PaperTradingService {
     const currentIndex = candles.length - 1;
     
     // Validate data quality (check for gaps, freshness, look-ahead bias)
-    // For daily candles, use 24 hours (1440 minutes) as max age - daily candles from yesterday are expected
+    // Use the actual timeframe from config for validation
+    // For 8h candles, use 8 hours (480 minutes) as max age
+    // For daily candles, use 24 hours (1440 minutes) as max age
     const startTime = new Date(startDate).getTime();
     const endTime = new Date(endDate).getTime();
-    const dataQuality = validateDataQuality(candles, '1d', startTime, endTime, currentIndex, 1440);
+    const maxAgeMinutes = timeframe === '8h' ? 480 : timeframe === '12h' ? 720 : 1440;
+    const dataQuality = validateDataQuality(candles, timeframe, startTime, endTime, currentIndex, maxAgeMinutes);
     
     if (!dataQuality.isValid) {
       console.warn('Data quality issues detected:', dataQuality.issues);
@@ -375,15 +388,116 @@ export class PaperTradingService {
     const updatedSession = { ...session };
     const { portfolio } = updatedSession;
 
-    // Calculate current portfolio value (used implicitly in portfolio.totalValue calculation)
-    // const currentValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
+    // Initialize open positions array if not present
+    if (!updatedSession.openPositions) {
+      updatedSession.openPositions = [];
+    }
+
+    // Get Kelly Criterion and ATR stop loss configs
+    const kellyConfig = session.config.kellyCriterion;
+    const stopLossConfig = session.config.stopLoss;
+    const useKelly = kellyConfig?.enabled ?? true;
+    const useStopLoss = stopLossConfig?.enabled ?? true;
+    const kellyFractionalMultiplier = kellyConfig?.fractionalMultiplier ?? 0.25;
+    const effectiveStopLossConfig: StopLossConfig = stopLossConfig || {
+      enabled: true,
+      atrMultiplier: 2.0,
+      trailing: true,
+      useEMA: true,
+      atrPeriod: 14,
+    };
+
+    // Calculate current ATR for stop loss checks
+    let currentATR: number | null = null;
+    if (useStopLoss) {
+      currentATR = getATRValue(candles, currentIndex, effectiveStopLossConfig.atrPeriod, effectiveStopLossConfig.useEMA);
+      updatedSession.currentATR = currentATR || undefined;
+    }
+
+    // Check stop losses first (before new trades)
+    if (useStopLoss && updatedSession.openPositions.length > 0 && currentATR) {
+      const stopLossResults = checkStopLosses(updatedSession.openPositions, currentPrice, currentATR, effectiveStopLossConfig);
+      
+      for (const { position, result } of stopLossResults) {
+        if (result.shouldExit) {
+          // Exit position due to stop loss
+          const ethToSell = position.buyTrade.ethAmount;
+          const saleValue = ethToSell * currentPrice;
+          const fee = saleValue * 0.001;
+          const netProceeds = saleValue - fee;
+          
+          portfolio.ethBalance -= ethToSell;
+          portfolio.usdcBalance += netProceeds;
+          portfolio.totalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
+          portfolio.tradeCount++;
+
+          // Calculate P&L
+          const buyCost = position.buyTrade.costBasis || position.buyTrade.usdcAmount;
+          const pnl = netProceeds - buyCost;
+          const isWin = pnl > 0;
+          if (isWin) portfolio.winCount++;
+
+          const trade: Trade = {
+            id: uuidv4(),
+            timestamp: Date.now(),
+            type: 'sell',
+            ethPrice: currentPrice,
+            ethAmount: ethToSell,
+            usdcAmount: saleValue,
+            signal: signal.signal,
+            confidence,
+            portfolioValue: portfolio.totalValue,
+            costBasis: buyCost,
+            pnl,
+          };
+
+          updatedSession.trades.push(trade);
+          recordTradeResult(session.id, isWin);
+          
+          // Remove position from open positions
+          const index = updatedSession.openPositions.indexOf(position);
+          if (index > -1) {
+            updatedSession.openPositions.splice(index, 1);
+          }
+        } else {
+          // Update trailing stop loss (updateStopLoss modifies position in place)
+          updateStopLoss(position, currentPrice, currentATR, effectiveStopLossConfig);
+        }
+      }
+    }
+
+    // Calculate Kelly multiplier if enabled
+    let kellyMultiplier = 1.0;
+    if (useKelly && updatedSession.trades.length >= (kellyConfig?.minTrades || 10)) {
+      const completedTrades = updatedSession.trades.filter((t): t is Trade & { pnl: number } => 
+        t.type === 'sell' && t.pnl !== undefined && t.pnl !== null
+      );
+      if (completedTrades.length >= (kellyConfig?.minTrades || 10)) {
+        const kellyResult = calculateKellyCriterion(completedTrades, {
+          minTrades: kellyConfig?.minTrades || 10,
+          lookbackPeriod: kellyConfig?.lookbackPeriod || 50,
+          fractionalMultiplier: kellyFractionalMultiplier,
+        });
+        if (kellyResult) {
+          // Get Kelly multiplier based on result and base position size
+          const basePositionPct = signal.activeStrategy?.maxPositionPct || 0.9;
+          kellyMultiplier = getKellyMultiplier(kellyResult, basePositionPct);
+        }
+      }
+    }
+    updatedSession.kellyMultiplier = kellyMultiplier;
 
     // Execute buy signal
     if (signal.action === 'buy' && portfolio.usdcBalance > 0 && signal.signal > 0) {
       const activeStrategy = signal.activeStrategy;
+      if (!activeStrategy) return updatedSession;
+
       const maxPositionPct = activeStrategy.maxPositionPct || 0.75;
       const positionSizeMultiplier = signal.positionSizeMultiplier || 1.0;
-      const adjustedPositionPct = Math.min(maxPositionPct * positionSizeMultiplier, session.config.maxBullishPosition || 0.95);
+      
+      // Apply Kelly multiplier to position size
+      const kellyAdjustedMultiplier = positionSizeMultiplier * kellyMultiplier;
+      const adjustedPositionPct = Math.min(maxPositionPct * kellyAdjustedMultiplier, session.config.maxBullishPosition || 0.95);
       
       const positionSize = portfolio.usdcBalance * confidence * adjustedPositionPct;
       const ethAmount = positionSize / currentPrice;
@@ -391,8 +505,10 @@ export class PaperTradingService {
       if (ethAmount > 0 && positionSize <= portfolio.usdcBalance) {
         // Track cost basis for P&L calculation
         const costBasis = positionSize;
+        const fee = positionSize * 0.001;
+        const netCost = positionSize + fee;
         
-        portfolio.usdcBalance -= positionSize;
+        portfolio.usdcBalance -= netCost;
         portfolio.ethBalance += ethAmount;
 
         const trade: Trade = {
@@ -410,15 +526,27 @@ export class PaperTradingService {
 
         updatedSession.trades.push(trade);
         portfolio.tradeCount++;
+
+        // Create open position with stop loss if enabled
+        if (useStopLoss && currentATR) {
+          const openPosition = createOpenPosition(trade, currentPrice, currentATR, effectiveStopLossConfig);
+          if (openPosition) {
+            updatedSession.openPositions.push(openPosition);
+          }
+        }
       }
     }
 
     // Execute sell signal
     if (signal.action === 'sell' && portfolio.ethBalance > 0 && signal.signal < 0) {
       const activeStrategy = signal.activeStrategy;
+      if (!activeStrategy) return updatedSession;
+
       const maxPositionPct = activeStrategy.maxPositionPct || 0.5;
       const positionSize = portfolio.ethBalance * confidence * maxPositionPct;
-      const usdcAmount = positionSize * currentPrice;
+      const saleValue = positionSize * currentPrice;
+      const fee = saleValue * 0.001;
+      const netProceeds = saleValue - fee;
 
       if (positionSize > 0 && positionSize <= portfolio.ethBalance) {
         // Calculate P&L: find matching buy trades using FIFO
@@ -458,14 +586,14 @@ export class PaperTradingService {
           totalCostBasis = positionSize * avgCost;
         }
         
-        const pnl = usdcAmount - totalCostBasis;
+        const pnl = netProceeds - totalCostBasis;
         const isWin = pnl > 0;
         
         // Record trade result for circuit breaker
         recordTradeResult(session.id, isWin);
         
         portfolio.ethBalance -= positionSize;
-        portfolio.usdcBalance += usdcAmount;
+        portfolio.usdcBalance += netProceeds;
 
         const trade: Trade = {
           id: uuidv4(),
@@ -473,7 +601,7 @@ export class PaperTradingService {
           type: 'sell',
           ethPrice: currentPrice,
           ethAmount: positionSize,
-          usdcAmount,
+          usdcAmount: saleValue,
           signal: signal.signal,
           confidence,
           portfolioValue: portfolio.usdcBalance + portfolio.ethBalance * currentPrice,
@@ -488,6 +616,16 @@ export class PaperTradingService {
         if (isWin) {
           portfolio.winCount++;
         }
+
+        // Remove matching open positions (FIFO)
+        let remainingToRemove = positionSize;
+        for (let i = updatedSession.openPositions.length - 1; i >= 0 && remainingToRemove > 0; i--) {
+          const position = updatedSession.openPositions[i]!;
+          if (position.buyTrade.id === trade.id || remainingToRemove >= position.buyTrade.ethAmount) {
+            updatedSession.openPositions.splice(i, 1);
+            remainingToRemove -= position.buyTrade.ethAmount;
+          }
+        }
       }
     }
 
@@ -495,6 +633,12 @@ export class PaperTradingService {
     const newTotalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
     portfolio.totalValue = newTotalValue;
     portfolio.totalReturn = ((newTotalValue - portfolio.initialCapital) / portfolio.initialCapital) * 100;
+
+    // Update last signal with Kelly multiplier (cast to include kellyMultiplier)
+    updatedSession.lastSignal = { 
+      ...signal, 
+      kellyMultiplier: kellyMultiplier !== 1.0 ? kellyMultiplier : undefined 
+    } as typeof updatedSession.lastSignal;
 
     // Add portfolio snapshot with current price
     const now = Date.now();

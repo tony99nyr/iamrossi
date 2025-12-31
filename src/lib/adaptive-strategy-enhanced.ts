@@ -29,6 +29,20 @@ export interface EnhancedAdaptiveStrategyConfig {
   circuitBreakerLookback?: number; // Number of recent trades to check (default: 10)
   whipsawDetectionPeriods?: number; // Number of periods to check for whipsaw (default: 5)
   whipsawMaxChanges?: number; // Maximum regime changes to allow (default: 3)
+  // Advanced position sizing and risk management
+  kellyCriterion?: {
+    enabled: boolean;
+    fractionalMultiplier: number; // Fraction of full Kelly to use (default: 0.25 = 25%)
+    minTrades: number; // Minimum completed trades before activating (default: 10)
+    lookbackPeriod: number; // Number of recent trades to analyze (default: 50)
+  };
+  stopLoss?: {
+    enabled: boolean;
+    atrMultiplier: number; // Stop loss distance in ATR units (default: 2.0)
+    trailing: boolean; // Enable trailing stop loss (default: true)
+    useEMA: boolean; // Use EMA for ATR calculation (default: true)
+    atrPeriod: number; // ATR calculation period (default: 14)
+  };
 }
 
 // Track regime history for persistence

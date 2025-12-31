@@ -40,10 +40,6 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules",
-    "scripts/compare-top-strategies-old.ts",
-    "scripts/compare-top-strategies-new.ts",
-    "scripts/debug-synthetic-trades.ts",
-    "scripts/independent-strategy-optimization.ts"
+    "node_modules"
   ]
 }

@@ -286,6 +286,64 @@ export default function RiskManagementPanel({ session }: RiskManagementPanelProp
 
         <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
 
+        {/* Advanced Risk Management */}
+        {session.config.kellyCriterion?.enabled && (
+          <div className={css({
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          })}>
+            <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Kelly Multiplier</span>
+            <span className={css({ 
+              color: session.kellyMultiplier && session.kellyMultiplier > 1 ? '#3fb950' : '#7d8590',
+              fontWeight: 'semibold',
+            })}>
+              {session.kellyMultiplier ? session.kellyMultiplier.toFixed(2) + 'x' : '1.00x'}
+            </span>
+          </div>
+        )}
+
+        {session.config.stopLoss?.enabled && (
+          <>
+            <div className={css({
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            })}>
+              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>ATR Stop Loss</span>
+              <span className={css({ color: '#3fb950', fontWeight: 'semibold' })}>
+                {session.config.stopLoss.atrMultiplier.toFixed(1)}x ATR
+              </span>
+            </div>
+            {session.currentATR && (
+              <div className={css({
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              })}>
+                <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Current ATR</span>
+                <span className={css({ color: '#e6edf3', fontSize: 'sm' })}>
+                  ${session.currentATR.toFixed(2)}
+                </span>
+              </div>
+            )}
+            {session.openPositions && session.openPositions.length > 0 && (
+              <div className={css({
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              })}>
+                <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Open Positions</span>
+                <span className={css({ color: '#e6edf3', fontWeight: 'semibold' })}>
+                  {session.openPositions.length}
+                </span>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
+
         {/* Risk Metrics */}
         <div className={css({
           display: 'flex',

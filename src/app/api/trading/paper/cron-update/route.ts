@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PaperTradingService } from '@/lib/paper-trading-enhanced';
+import { fetchLatestPrice } from '@/lib/eth-price-service';
 
 /**
  * GET /api/trading/paper/cron-update
- * Background cron job to update paper trading session
+ * Background cron job to update price candles and paper trading session (if active)
+ * 
+ * This endpoint:
+ * 1. Always fetches the latest price and updates candles (1d, 1h, 5m) in Redis
+ * 2. Updates the paper trading session if one is active
  * 
  * NOTE: Vercel Hobby plan only allows daily cron jobs, so this endpoint
  * is available for manual triggering or external cron services.
@@ -24,54 +29,89 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get active session
-    const session = await PaperTradingService.getActiveSession();
+    // Always fetch latest price (this automatically updates candles in Redis)
+    // fetchLatestPrice calls updateTodayCandle for 1d, 1h, and 5m timeframes
+    let priceFetchSuccess = false;
+    let currentPrice: number | null = null;
+    let priceFetchError: string | null = null;
 
-    if (!session || !session.isActive) {
-      return NextResponse.json({ 
-        message: 'No active paper trading session',
-        session: null
-      });
-    }
-
-    // Update session (fetch price, calculate regime, execute trades)
     try {
-      const updatedSession = await PaperTradingService.updateSession();
-
-      return NextResponse.json({ 
-        session: updatedSession,
-        message: 'Paper trading session updated successfully',
-        timestamp: Date.now()
-      });
-    } catch (updateError) {
-      // If update fails due to price fetch issues, return a partial success response
-      // This prevents the cron job from appearing as failed when APIs are rate limited
-      const errorMessage = updateError instanceof Error ? updateError.message : String(updateError);
+      currentPrice = await fetchLatestPrice('ETHUSDT');
+      priceFetchSuccess = true;
+      console.log(`✅ Fetched latest price: $${currentPrice.toFixed(2)} (candles updated in Redis)`);
+    } catch (priceError) {
+      const errorMessage = priceError instanceof Error ? priceError.message : String(priceError);
+      priceFetchError = errorMessage;
+      console.warn('⚠️ Failed to fetch latest price (candles may not be updated):', errorMessage);
       
-      // Check if it's a price fetch error (rate limits, API failures)
-      const isPriceFetchError = errorMessage.includes('Failed to fetch latest price') || 
-                                errorMessage.includes('Rate limited') ||
-                                errorMessage.includes('451') ||
-                                errorMessage.includes('429') ||
-                                errorMessage.includes('API');
+      // Check if it's a rate limit error (expected and handled gracefully)
+      const isRateLimit = errorMessage.includes('Rate limited') ||
+                          errorMessage.includes('451') ||
+                          errorMessage.includes('429');
       
-      if (isPriceFetchError) {
-        // For price fetch errors, return 200 with a warning (cron job succeeded, but price fetch failed)
-        console.warn('⚠️ Cron update completed but price fetch failed:', errorMessage);
-        return NextResponse.json({ 
-          session: await PaperTradingService.getActiveSession(),
-          message: 'Paper trading session update attempted but price fetch failed (APIs may be rate limited)',
-          warning: errorMessage,
-          timestamp: Date.now()
-        });
+      if (!isRateLimit) {
+        // For non-rate-limit errors, log but continue (still try to update session if active)
+        console.error('Price fetch error (non-rate-limit):', errorMessage);
       }
-      
-      // For other errors, re-throw to be caught by outer catch
-      throw updateError;
     }
+
+    // Get active session (optional - update if exists)
+    const session = await PaperTradingService.getActiveSession();
+    let sessionUpdateSuccess = false;
+    let updatedSession = session;
+    let sessionUpdateError: string | null = null;
+
+    if (session && session.isActive) {
+      // Update session (fetch price, calculate regime, execute trades)
+      try {
+        updatedSession = await PaperTradingService.updateSession();
+        sessionUpdateSuccess = true;
+        console.log('✅ Paper trading session updated successfully');
+      } catch (updateError) {
+        const errorMessage = updateError instanceof Error ? updateError.message : String(updateError);
+        sessionUpdateError = errorMessage;
+        console.warn('⚠️ Failed to update paper trading session:', errorMessage);
+        
+        // Session update failure is not critical - candles were already updated above
+        // Continue and return success with warning
+      }
+    } else {
+      console.log('ℹ️ No active paper trading session (candles still updated)');
+    }
+
+    // Return success response (candles were updated even if session update failed)
+    const response: {
+      message: string;
+      priceFetch: { success: boolean; price?: number; error?: string };
+      session?: typeof updatedSession;
+      sessionUpdate?: { success: boolean; error?: string };
+      timestamp: number;
+    } = {
+      message: priceFetchSuccess 
+        ? 'Price candles updated successfully' + (sessionUpdateSuccess ? ' and session updated' : '')
+        : 'Cron update completed with warnings',
+      priceFetch: {
+        success: priceFetchSuccess,
+        ...(currentPrice !== null && { price: currentPrice }),
+        ...(priceFetchError && { error: priceFetchError }),
+      },
+      timestamp: Date.now(),
+    };
+
+    if (updatedSession) {
+      response.session = updatedSession;
+      response.sessionUpdate = {
+        success: sessionUpdateSuccess,
+        ...(sessionUpdateError && { error: sessionUpdateError }),
+      };
+    } else {
+      response.message += ' (no active session)';
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
-    console.error('Error updating paper trading session (cron):', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to update paper trading session';
+    console.error('Error in cron update endpoint:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to process cron update';
     return NextResponse.json(
       { error: errorMessage },
       { status: 500 }

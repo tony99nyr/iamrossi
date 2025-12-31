@@ -73,6 +73,20 @@ async function main() {
     circuitBreakerLookback: 12,              // Increased lookback (optimized)
     whipsawDetectionPeriods: 5,              // Check last 5 periods
     whipsawMaxChanges: 3,                   // Max 3 regime changes in 5 periods
+    // Advanced position sizing and risk management
+    kellyCriterion: {
+      enabled: true,
+      fractionalMultiplier: 0.25,           // 25% fractional Kelly (optimal for current config)
+      minTrades: 10,                         // Activate after 10 completed trades
+      lookbackPeriod: 50,                    // Analyze last 50 trades
+    },
+    stopLoss: {
+      enabled: true,
+      atrMultiplier: 2.0,                    // 2.0x ATR stop loss (optimal for current config)
+      trailing: true,                         // Enable trailing stops
+      useEMA: true,                          // Use EMA for smoother ATR
+      atrPeriod: 14,                         // 14-period ATR
+    },
   };
 
   try {
@@ -96,6 +110,22 @@ async function main() {
     console.log(`     • Circuit Breaker: ${(enhancedConfig.circuitBreakerWinRate || 0.2) * 100}% win rate (last ${enhancedConfig.circuitBreakerLookback || 10} trades)`);
     console.log(`     • Whipsaw Detection: Max ${enhancedConfig.whipsawMaxChanges || 3} changes in ${enhancedConfig.whipsawDetectionPeriods || 5} periods`);
     console.log(`   Position Sizing: Fixed (${enhancedConfig.maxBullishPosition ? enhancedConfig.maxBullishPosition * 100 : 95}% max)`);
+    if (enhancedConfig.kellyCriterion) {
+      console.log(`   Kelly Criterion: ${enhancedConfig.kellyCriterion.enabled ? 'Enabled' : 'Disabled'}`);
+      if (enhancedConfig.kellyCriterion.enabled) {
+        console.log(`     • Fractional Multiplier: ${(enhancedConfig.kellyCriterion.fractionalMultiplier * 100).toFixed(0)}%`);
+        console.log(`     • Min Trades: ${enhancedConfig.kellyCriterion.minTrades}`);
+        console.log(`     • Lookback Period: ${enhancedConfig.kellyCriterion.lookbackPeriod}`);
+      }
+    }
+    if (enhancedConfig.stopLoss) {
+      console.log(`   ATR Stop Loss: ${enhancedConfig.stopLoss.enabled ? 'Enabled' : 'Disabled'}`);
+      if (enhancedConfig.stopLoss.enabled) {
+        console.log(`     • ATR Multiplier: ${enhancedConfig.stopLoss.atrMultiplier.toFixed(1)}x`);
+        console.log(`     • Trailing Stop: ${enhancedConfig.stopLoss.trailing ? 'Yes' : 'No'}`);
+        console.log(`     • ATR Period: ${enhancedConfig.stopLoss.atrPeriod}`);
+      }
+    }
   } catch (error) {
     console.error('❌ Failed to save config:', error);
     process.exit(1);

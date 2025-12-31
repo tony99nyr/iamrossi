@@ -408,14 +408,7 @@ async function main() {
   console.log('🔬 Independent Strategy Optimization\n');
   console.log(`Testing ${BULLISH_STRATEGIES.length} bullish × ${BEARISH_STRATEGIES.length} bearish = ${BULLISH_STRATEGIES.length * BEARISH_STRATEGIES.length} combinations\n`);
 
-  const results: Array<{
-    bullishName: string;
-    bearishName: string;
-    bullish: PeriodMetrics;
-    bearish: PeriodMetrics;
-    fullYear: PeriodMetrics;
-    score: number;
-  }> = [];
+  const results: StrategyResult[] = [];
 
   let combination = 0;
   const total = BULLISH_STRATEGIES.length * BEARISH_STRATEGIES.length;

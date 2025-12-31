@@ -25,6 +25,8 @@ function getExpectedInterval(timeframe: string): number {
     '15m': 15 * 60 * 1000,
     '1h': 60 * 60 * 1000,
     '4h': 4 * 60 * 60 * 1000,
+    '8h': 8 * 60 * 60 * 1000,
+    '12h': 12 * 60 * 60 * 1000,
     '1d': 24 * 60 * 60 * 1000,
   };
   return intervals[timeframe] || 24 * 60 * 60 * 1000; // Default to 1d
@@ -74,6 +76,82 @@ export function validateDataFreshness(
     } else {
       // Last candle is from a previous day
       const daysOld = Math.floor((todayStart - lastCandleDayStart) / (24 * 60 * 60 * 1000));
+      return {
+        isValid: false,
+        lastCandleAge: now - lastCandle.timestamp,
+        issue: `Last candle is from ${daysOld} day(s) ago (expected today's candle)`,
+      };
+    }
+  }
+  
+  // For 8h candles, check if the last candle is from the current 8h period
+  if (timeframe === '8h') {
+    const nowDate = new Date(now);
+    const hours = nowDate.getUTCHours();
+    const currentPeriod = Math.floor(hours / 8); // 0, 1, or 2
+    const currentPeriodStart = new Date(nowDate);
+    currentPeriodStart.setUTCHours(currentPeriod * 8, 0, 0, 0);
+    currentPeriodStart.setUTCMinutes(0, 0, 0);
+    const currentPeriodStartTime = currentPeriodStart.getTime();
+    
+    const lastCandleDate = new Date(lastCandle.timestamp);
+    const lastCandleHours = lastCandleDate.getUTCHours();
+    const lastCandlePeriod = Math.floor(lastCandleHours / 8);
+    const lastCandlePeriodStart = new Date(lastCandleDate);
+    lastCandlePeriodStart.setUTCHours(lastCandlePeriod * 8, 0, 0, 0);
+    lastCandlePeriodStart.setUTCMinutes(0, 0, 0);
+    const lastCandlePeriodStartTime = lastCandlePeriodStart.getTime();
+    
+    // Check if last candle is from the current 8h period
+    if (lastCandlePeriodStartTime === currentPeriodStartTime) {
+      // It's the current period's candle - calculate age from start of period
+      const lastCandleAge = now - lastCandlePeriodStartTime;
+      return {
+        isValid: true,
+        lastCandleAge, // Age from start of period
+      };
+    } else {
+      // Last candle is from a previous period
+      const periodsOld = Math.floor((currentPeriodStartTime - lastCandlePeriodStartTime) / (8 * 60 * 60 * 1000));
+      const daysOld = Math.floor(periodsOld / 3); // 3 periods per day
+      return {
+        isValid: false,
+        lastCandleAge: now - lastCandle.timestamp,
+        issue: `Last candle is from ${daysOld} day(s) ago (expected today's candle)`,
+      };
+    }
+  }
+  
+  // For 12h candles, check if the last candle is from the current 12h period
+  if (timeframe === '12h') {
+    const nowDate = new Date(now);
+    const hours = nowDate.getUTCHours();
+    const currentPeriod = Math.floor(hours / 12); // 0 or 1
+    const currentPeriodStart = new Date(nowDate);
+    currentPeriodStart.setUTCHours(currentPeriod * 12, 0, 0, 0);
+    currentPeriodStart.setUTCMinutes(0, 0, 0);
+    const currentPeriodStartTime = currentPeriodStart.getTime();
+    
+    const lastCandleDate = new Date(lastCandle.timestamp);
+    const lastCandleHours = lastCandleDate.getUTCHours();
+    const lastCandlePeriod = Math.floor(lastCandleHours / 12);
+    const lastCandlePeriodStart = new Date(lastCandleDate);
+    lastCandlePeriodStart.setUTCHours(lastCandlePeriod * 12, 0, 0, 0);
+    lastCandlePeriodStart.setUTCMinutes(0, 0, 0);
+    const lastCandlePeriodStartTime = lastCandlePeriodStart.getTime();
+    
+    // Check if last candle is from the current 12h period
+    if (lastCandlePeriodStartTime === currentPeriodStartTime) {
+      // It's the current period's candle - calculate age from start of period
+      const lastCandleAge = now - lastCandlePeriodStartTime;
+      return {
+        isValid: true,
+        lastCandleAge, // Age from start of period
+      };
+    } else {
+      // Last candle is from a previous period
+      const periodsOld = Math.floor((currentPeriodStartTime - lastCandlePeriodStartTime) / (12 * 60 * 60 * 1000));
+      const daysOld = Math.floor(periodsOld / 2); // 2 periods per day
       return {
         isValid: false,
         lastCandleAge: now - lastCandle.timestamp,

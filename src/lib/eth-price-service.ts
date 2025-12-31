@@ -1209,6 +1209,8 @@ async function updateTodayCandle(symbol: string, price: number, timeframe: strin
     
     // For daily candles, find or create today's candle
     // For hourly candles, find or create the current hour's candle
+    // For 8h candles, find or create the current 8h period's candle
+    // For 12h candles, find or create the current 12h period's candle
     let targetTimestamp: number;
     if (interval === '1d') {
       targetTimestamp = todayStart; // Start of day
@@ -1217,6 +1219,20 @@ async function updateTodayCandle(symbol: string, price: number, timeframe: strin
       const currentHour = new Date(now);
       currentHour.setUTCMinutes(0, 0, 0);
       targetTimestamp = currentHour.getTime();
+    } else if (interval === '8h') {
+      // Round to current 8-hour period start (00:00, 08:00, or 16:00)
+      const current8h = new Date(now);
+      const hours = current8h.getUTCHours();
+      const period = Math.floor(hours / 8); // 0, 1, or 2
+      current8h.setUTCHours(period * 8, 0, 0, 0);
+      targetTimestamp = current8h.getTime();
+    } else if (interval === '12h') {
+      // Round to current 12-hour period start (00:00 or 12:00)
+      const current12h = new Date(now);
+      const hours = current12h.getUTCHours();
+      const period = Math.floor(hours / 12); // 0 or 1
+      current12h.setUTCHours(period * 12, 0, 0, 0);
+      targetTimestamp = current12h.getTime();
     } else if (interval === '5m') {
       // Round to current 5-minute period start
       const current5m = new Date(now);
@@ -1238,6 +1254,20 @@ async function updateTodayCandle(symbol: string, price: number, timeframe: strin
         const candleHour = new Date(c.timestamp);
         candleHour.setUTCMinutes(0, 0, 0);
         return candleHour.getTime() === targetTimestamp;
+      } else if (interval === '8h') {
+        // For 8-hour, match the exact 8-hour period timestamp
+        const candle8h = new Date(c.timestamp);
+        const hours = candle8h.getUTCHours();
+        const period = Math.floor(hours / 8);
+        candle8h.setUTCHours(period * 8, 0, 0, 0);
+        return candle8h.getTime() === targetTimestamp;
+      } else if (interval === '12h') {
+        // For 12-hour, match the exact 12-hour period timestamp
+        const candle12h = new Date(c.timestamp);
+        const hours = candle12h.getUTCHours();
+        const period = Math.floor(hours / 12);
+        candle12h.setUTCHours(period * 12, 0, 0, 0);
+        return candle12h.getTime() === targetTimestamp;
       } else if (interval === '5m') {
         // For 5-minute, match the exact 5-minute period timestamp
         const candle5m = new Date(c.timestamp);
@@ -1277,7 +1307,11 @@ async function updateTodayCandle(symbol: string, price: number, timeframe: strin
     // Sort by timestamp and update cache (CRITICAL: This must succeed)
     candles.sort((a, b) => a.timestamp - b.timestamp);
     await redis.setEx(cacheKey, 86400, JSON.stringify(candles));
-    const periodLabel = interval === '1h' ? 'hour' : interval === '5m' ? '5-minute' : 'day';
+    const periodLabel = interval === '1h' ? 'hour' 
+      : interval === '8h' ? '8-hour' 
+      : interval === '12h' ? '12-hour'
+      : interval === '5m' ? '5-minute' 
+      : 'day';
     console.log(`✅ Updated ${periodLabel}'s candle in Redis (close: $${price.toFixed(2)}, timestamp: ${new Date(targetTimestamp).toISOString()})`);
     
     // Note: File writes are handled by GitHub Actions workflow (migrate-redis-candles.yml)
@@ -1395,13 +1429,19 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
     }
     
     // Update historical data with latest price (non-blocking)
-    // Update daily, hourly, and 5-minute candles
+    // Update daily, hourly, 8-hour, 12-hour, and 5-minute candles
     // This builds real candle data from actual price points (not synthetic)
     updateTodayCandle(symbol, price, '1d').catch(err => {
       console.warn('Failed to update daily candle with latest price:', err);
     });
     updateTodayCandle(symbol, price, '1h').catch(err => {
       console.warn('Failed to update hourly candle with latest price:', err);
+    });
+    updateTodayCandle(symbol, price, '8h').catch(err => {
+      console.warn('Failed to update 8-hour candle with latest price:', err);
+    });
+    updateTodayCandle(symbol, price, '12h').catch(err => {
+      console.warn('Failed to update 12-hour candle with latest price:', err);
     });
     updateTodayCandle(symbol, price, '5m').catch(err => {
       console.warn('Failed to update 5-minute candle with latest price:', err);
@@ -1426,8 +1466,12 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
         const cachedPrice = parseFloat(cached);
         if (cachedPrice > 0) {
           console.warn(`⚠️ Using stale cached price: $${cachedPrice.toFixed(2)} (APIs rate limited)`);
-          // Still try to update today's candle with cached price
+          // Still try to update today's candles with cached price
           updateTodayCandle(symbol, cachedPrice, '1d').catch(() => {});
+          updateTodayCandle(symbol, cachedPrice, '1h').catch(() => {});
+          updateTodayCandle(symbol, cachedPrice, '8h').catch(() => {});
+          updateTodayCandle(symbol, cachedPrice, '12h').catch(() => {});
+          updateTodayCandle(symbol, cachedPrice, '5m').catch(() => {});
           return cachedPrice;
         }
       }
