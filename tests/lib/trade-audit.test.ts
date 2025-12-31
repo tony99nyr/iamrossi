@@ -101,7 +101,8 @@ describe('Trade Audit', () => {
     it('should calculate holding period for sell trades', () => {
       const candles = generatePriceCandles('trending-up', 100, 2500);
       const buyTrade = createMockTrade('buy', 2500, 0.1, candles[50]!.timestamp);
-      const sellTrade = createMockTrade('sell', 2600, 0.1, candles[60]!.timestamp, -0.5, 0.7, 10);
+      // sellTrade available if needed for future assertions
+      // const sellTrade = createMockTrade('sell', 2600, 0.1, candles[60]!.timestamp, -0.5, 0.7, 10);
       
       const portfolioHistory: PortfolioSnapshot[] = candles.slice(50, 61).map(c => ({
         timestamp: c.timestamp,
