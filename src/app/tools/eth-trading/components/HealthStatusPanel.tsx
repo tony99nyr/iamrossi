@@ -165,7 +165,9 @@ export default function HealthStatusPanel({ session }: HealthStatusPanelProps) {
                   justifyContent: 'space-between',
                   alignItems: 'center',
                 })}>
-                  <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Last Candle Age (1d)</span>
+                  <span className={css({ color: '#7d8590', fontSize: 'sm' })}>
+                    Last Candle Age ({session.config.bullishStrategy.timeframe || '8h'})
+                  </span>
                   <span className={css({
                     color: dataQuality.lastCandleAge < 24 * 60 * 60 * 1000 ? '#3fb950' : 
                            dataQuality.lastCandleAge < 48 * 60 * 60 * 1000 ? '#eab308' : '#f85149',
@@ -192,26 +194,29 @@ export default function HealthStatusPanel({ session }: HealthStatusPanelProps) {
                   
                   if (recent5mCandles.length > 0) {
                     const last5mCandle = recent5mCandles[0]!;
-                    const last5mAge = now - last5mCandle.timestamp;
+                    const last5mAge = Math.max(0, now - last5mCandle.timestamp); // Ensure non-negative
                     const fiveMinuteInterval = 5 * 60 * 1000; // 5 minutes
                     const max5mAge = 10 * 60 * 1000; // 10 minutes (2 intervals)
                     
-                    return (
-                      <div className={css({
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                      })}>
-                        <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Last Candle Age (5m)</span>
-                        <span className={css({
-                          color: last5mAge < fiveMinuteInterval ? '#3fb950' : 
-                                 last5mAge < max5mAge ? '#eab308' : '#f85149',
-                          fontWeight: 'semibold',
+                    // Only show if age is reasonable (not too old, not negative)
+                    if (last5mAge <= max5mAge * 2) {
+                      return (
+                        <div className={css({
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
                         })}>
-                          {formatAge(last5mAge)}
-                        </span>
-                      </div>
-                    );
+                          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Last Candle Age (5m)</span>
+                          <span className={css({
+                            color: last5mAge < fiveMinuteInterval ? '#3fb950' : 
+                                   last5mAge < max5mAge ? '#eab308' : '#f85149',
+                            fontWeight: 'semibold',
+                          })}>
+                            {formatAge(last5mAge)}
+                          </span>
+                        </div>
+                      );
+                    }
                   }
                   return null;
                 })()}

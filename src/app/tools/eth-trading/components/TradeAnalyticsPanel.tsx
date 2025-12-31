@@ -9,6 +9,11 @@ interface TradeAnalyticsPanelProps {
   session: EnhancedPaperTradingSession;
 }
 
+/**
+ * Trade Analytics Panel
+ * Shows: Trade counts, frequency, recent performance, best/worst trades
+ * Note: Open positions are shown in RiskManagementPanel
+ */
 export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProps) {
   const { trades } = session;
 
@@ -16,23 +21,8 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
     const sellTrades = trades.filter(t => t.type === 'sell' && t.pnl !== undefined);
     const buyTrades = trades.filter(t => t.type === 'buy');
     
-    // Trade distribution
     const buyCount = buyTrades.length;
     const sellCount = sellTrades.length;
-    
-    // Trade timing analysis
-    const tradesByHour = new Map<number, number>();
-    sellTrades.forEach(trade => {
-      const hour = new Date(trade.timestamp).getHours();
-      tradesByHour.set(hour, (tradesByHour.get(hour) || 0) + 1);
-    });
-    
-    // Best and worst trades
-    const sortedByPnl = [...sellTrades].sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
-    const bestTrade = sortedByPnl[0];
-    const worstTrade = sortedByPnl[sortedByPnl.length - 1];
-    
-    // Trade performance by regime (would need regime info per trade - simplified for now)
     const winningTrades = sellTrades.filter(t => (t.pnl || 0) > 0);
     const losingTrades = sellTrades.filter(t => (t.pnl || 0) < 0);
     
@@ -45,30 +35,37 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
       ? (trades.length / ((now - session.startedAt) / (24 * 60 * 60 * 1000)))
       : 0;
     
+    // Best and worst trades
+    const sortedByPnl = [...sellTrades].sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
+    const bestTrade = sortedByPnl[0];
+    const worstTrade = sortedByPnl[sortedByPnl.length - 1];
+    
+    // Recent performance (last 5 trades)
+    const recentSellTrades = sellTrades.slice(-5);
+    const recentWinRate = recentSellTrades.length > 0
+      ? (recentSellTrades.filter(t => (t.pnl || 0) > 0).length / recentSellTrades.length) * 100
+      : 0;
+    const avgRecentPnl = recentSellTrades.length > 0
+      ? recentSellTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) / recentSellTrades.length
+      : 0;
+    
+    // Total P&L
+    const totalPnl = sellTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    
     return {
       buyCount,
       sellCount,
-      tradesByHour,
-      bestTrade,
-      worstTrade,
       winningTrades: winningTrades.length,
       losingTrades: losingTrades.length,
       tradesLast24h,
       tradesPerDay,
+      bestTrade,
+      worstTrade,
+      recentWinRate,
+      avgRecentPnl,
+      totalPnl,
     };
   }, [trades, session.startedAt]);
-
-  const formatTimeAgo = (timestamp: number) => {
-    // eslint-disable-next-line react-hooks/purity -- Date.now() is safe in function
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  };
 
   return (
     <div className={css({
@@ -78,135 +75,120 @@ export default function TradeAnalyticsPanel({ session }: TradeAnalyticsPanelProp
       borderRadius: '8px',
     })}>
       <h2 className={css({ fontSize: 'md', fontWeight: 'semibold', marginBottom: '12px', color: '#e6edf3' })}>
-        Trade Analytics
+        Trade Statistics
       </h2>
       
       <div className={stack({ gap: '8px' })}>
-        {/* Trade Distribution */}
-        <div className={css({
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        })}>
-          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Buy Trades</span>
-          <span className={css({ color: '#3fb950', fontWeight: 'semibold' })}>
-            {analytics.buyCount}
-          </span>
+        {/* Trade Summary Row */}
+        <div className={css({ display: 'flex', justifyContent: 'space-between', gap: '8px' })}>
+          <div className={css({ textAlign: 'center', flex: '1' })}>
+            <div className={css({ color: '#7d8590', fontSize: 'xs' })}>Total</div>
+            <div className={css({ color: '#e6edf3', fontWeight: 'semibold' })}>
+              {analytics.buyCount + analytics.sellCount}
+            </div>
+          </div>
+          <div className={css({ textAlign: 'center', flex: '1' })}>
+            <div className={css({ color: '#7d8590', fontSize: 'xs' })}>Buys</div>
+            <div className={css({ color: '#3fb950', fontWeight: 'semibold' })}>
+              {analytics.buyCount}
+            </div>
+          </div>
+          <div className={css({ textAlign: 'center', flex: '1' })}>
+            <div className={css({ color: '#7d8590', fontSize: 'xs' })}>Sells</div>
+            <div className={css({ color: '#f85149', fontWeight: 'semibold' })}>
+              {analytics.sellCount}
+            </div>
+          </div>
         </div>
 
-        <div className={css({
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        })}>
-          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Sell Trades</span>
-          <span className={css({ color: '#f85149', fontWeight: 'semibold' })}>
-            {analytics.sellCount}
-          </span>
+        {/* Win/Loss Row */}
+        <div className={css({ display: 'flex', justifyContent: 'space-between', gap: '8px' })}>
+          <div className={css({ textAlign: 'center', flex: '1' })}>
+            <div className={css({ color: '#7d8590', fontSize: 'xs' })}>Wins</div>
+            <div className={css({ color: '#3fb950', fontWeight: 'semibold' })}>
+              {analytics.winningTrades}
+            </div>
+          </div>
+          <div className={css({ textAlign: 'center', flex: '1' })}>
+            <div className={css({ color: '#7d8590', fontSize: 'xs' })}>Losses</div>
+            <div className={css({ color: '#f85149', fontWeight: 'semibold' })}>
+              {analytics.losingTrades}
+            </div>
+          </div>
+          <div className={css({ textAlign: 'center', flex: '1' })}>
+            <div className={css({ color: '#7d8590', fontSize: 'xs' })}>Total P&L</div>
+            <div className={css({ 
+              color: analytics.totalPnl >= 0 ? '#3fb950' : '#f85149', 
+              fontWeight: 'semibold',
+              fontSize: 'sm',
+            })}>
+              {analytics.totalPnl >= 0 ? '+' : ''}${analytics.totalPnl.toFixed(0)}
+            </div>
+          </div>
         </div>
 
-        <div className={css({
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        })}>
-          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Winning Trades</span>
-          <span className={css({ color: '#3fb950', fontWeight: 'semibold' })}>
-            {analytics.winningTrades}
-          </span>
-        </div>
-
-        <div className={css({
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        })}>
-          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Losing Trades</span>
-          <span className={css({ color: '#f85149', fontWeight: 'semibold' })}>
-            {analytics.losingTrades}
-          </span>
-        </div>
-
-        <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
+        <div className={css({ height: '1px', bg: '#30363d', margin: '4px 0' })} />
 
         {/* Trade Frequency */}
-        <div className={css({
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        })}>
+        <div className={css({ display: 'flex', justifyContent: 'space-between', alignItems: 'center' })}>
           <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Trades (24h)</span>
           <span className={css({ color: '#e6edf3', fontWeight: 'semibold' })}>
             {analytics.tradesLast24h}
           </span>
         </div>
-
-        <div className={css({
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        })}>
-          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Trades/Day</span>
+        <div className={css({ display: 'flex', justifyContent: 'space-between', alignItems: 'center' })}>
+          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Avg/Day</span>
           <span className={css({ color: '#e6edf3', fontWeight: 'semibold' })}>
             {analytics.tradesPerDay.toFixed(1)}
           </span>
         </div>
 
-        {/* Best/Worst Trades */}
-        {analytics.bestTrade && (
-          <>
-            <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
-            <div className={css({ fontSize: 'sm', fontWeight: 'semibold', color: '#e6edf3', marginBottom: '8px' })}>
-              Best Trade
-            </div>
-            <div className={css({
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            })}>
-              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>P&L</span>
-              <span className={css({ color: '#3fb950', fontWeight: 'semibold' })}>
-                ${analytics.bestTrade.pnl?.toFixed(2) || '0.00'}
-              </span>
-            </div>
-            <div className={css({
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            })}>
-              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Time</span>
-              <span className={css({ color: '#7d8590', fontSize: 'xs' })}>
-                {formatTimeAgo(analytics.bestTrade.timestamp)}
-              </span>
-            </div>
-          </>
-        )}
+        <div className={css({ height: '1px', bg: '#30363d', margin: '4px 0' })} />
 
-        {analytics.worstTrade && (
+        {/* Recent Performance */}
+        <div className={css({ fontSize: 'xs', color: '#7d8590', marginBottom: '2px' })}>
+          Recent (Last 5 Trades)
+        </div>
+        <div className={css({ display: 'flex', justifyContent: 'space-between', alignItems: 'center' })}>
+          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Win Rate</span>
+          <span className={css({
+            color: analytics.recentWinRate >= 60 ? '#3fb950' : analytics.recentWinRate >= 40 ? '#eab308' : '#f85149',
+            fontWeight: 'semibold',
+          })}>
+            {analytics.recentWinRate.toFixed(0)}%
+          </span>
+        </div>
+        <div className={css({ display: 'flex', justifyContent: 'space-between', alignItems: 'center' })}>
+          <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Avg P&L</span>
+          <span className={css({
+            color: analytics.avgRecentPnl >= 0 ? '#3fb950' : '#f85149',
+            fontWeight: 'semibold',
+          })}>
+            {analytics.avgRecentPnl >= 0 ? '+' : ''}${analytics.avgRecentPnl.toFixed(2)}
+          </span>
+        </div>
+
+        {/* Best/Worst Trades - Compact */}
+        {(analytics.bestTrade || analytics.worstTrade) && (
           <>
-            <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
-            <div className={css({ fontSize: 'sm', fontWeight: 'semibold', color: '#e6edf3', marginBottom: '8px' })}>
-              Worst Trade
-            </div>
-            <div className={css({
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            })}>
-              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>P&L</span>
-              <span className={css({ color: '#f85149', fontWeight: 'semibold' })}>
-                ${analytics.worstTrade.pnl?.toFixed(2) || '0.00'}
-              </span>
-            </div>
-            <div className={css({
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            })}>
-              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Time</span>
-              <span className={css({ color: '#7d8590', fontSize: 'xs' })}>
-                {formatTimeAgo(analytics.worstTrade.timestamp)}
-              </span>
+            <div className={css({ height: '1px', bg: '#30363d', margin: '4px 0' })} />
+            <div className={css({ display: 'flex', justifyContent: 'space-between', gap: '12px' })}>
+              {analytics.bestTrade && (
+                <div className={css({ flex: 1 })}>
+                  <div className={css({ color: '#7d8590', fontSize: 'xs', marginBottom: '2px' })}>Best Trade</div>
+                  <div className={css({ color: '#3fb950', fontWeight: 'semibold', fontSize: 'sm' })}>
+                    +${(analytics.bestTrade.pnl || 0).toFixed(2)}
+                  </div>
+                </div>
+              )}
+              {analytics.worstTrade && analytics.worstTrade !== analytics.bestTrade && (
+                <div className={css({ flex: 1 })}>
+                  <div className={css({ color: '#7d8590', fontSize: 'xs', marginBottom: '2px' })}>Worst Trade</div>
+                  <div className={css({ color: '#f85149', fontWeight: 'semibold', fontSize: 'sm' })}>
+                    ${(analytics.worstTrade.pnl || 0).toFixed(2)}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}

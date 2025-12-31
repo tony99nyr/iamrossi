@@ -9,18 +9,13 @@ interface StrategyIndicatorsProps {
 }
 
 export default function StrategyIndicators({ session }: StrategyIndicatorsProps) {
-  const { lastSignal, currentIndicators, regimeHistory, config } = session;
+  const { lastSignal, currentIndicators } = session;
   const signalStrength = lastSignal.signal;
   const signalAction = lastSignal.action;
   const signalConfidence = lastSignal.confidence;
   const positionMultiplier = lastSignal.positionSizeMultiplier || 1.0;
   
-  // Calculate regime persistence for display
-  const recentRegimes = regimeHistory?.slice(-5) || [];
-  const currentRegimeCount = recentRegimes.filter(r => r.regime === session.currentRegime.regime).length;
-  const requiredPeriods = config.regimePersistencePeriods || 2;
-  const persistenceProgress = requiredPeriods > 0 ? Math.min(100, (currentRegimeCount / requiredPeriods) * 100) : 0;
-  const regimePersistenceStatus = `${currentRegimeCount}/5 periods (need ${requiredPeriods}, ${persistenceProgress.toFixed(0)}%)`;
+  // Regime persistence removed - shown in StrategyExecutionPanel and RegimeDisplay
 
   // Extract MACD and RSI from indicators if available
   const getIndicatorValue = (key: string): number | null => {
@@ -147,21 +142,7 @@ export default function StrategyIndicators({ session }: StrategyIndicatorsProps)
             </div>
           )}
 
-          {lastSignal.kellyMultiplier !== undefined && lastSignal.kellyMultiplier !== 1.0 && (
-            <div className={css({
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            })}>
-              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Kelly Multiplier</span>
-              <span className={css({ 
-                color: lastSignal.kellyMultiplier > 1 ? '#3fb950' : '#7d8590',
-                fontWeight: 'semibold',
-              })}>
-                {lastSignal.kellyMultiplier.toFixed(2)}x
-              </span>
-            </div>
-          )}
+          {/* Kelly Multiplier removed - shown in RiskManagementPanel */}
         </div>
 
         {/* Strategy Execution Info */}
@@ -180,24 +161,7 @@ export default function StrategyIndicators({ session }: StrategyIndicatorsProps)
             </span>
           </div>
 
-          <div className={css({
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          })}>
-            <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Regime Persistence</span>
-            <span className={css({ color: '#e6edf3', fontWeight: 'semibold', fontSize: 'sm' })}>
-              {regimePersistenceStatus}
-            </span>
-          </div>
-          <div className={css({
-            fontSize: 'xs',
-            color: '#7d8590',
-            marginTop: '-6px',
-            marginBottom: '4px',
-          })}>
-            (1 period = 5 min update)
-          </div>
+          {/* Regime Persistence removed - shown in StrategyExecutionPanel and RegimeDisplay */}
 
           <div className={css({
             display: 'flex',

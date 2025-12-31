@@ -30,8 +30,8 @@ function getCacheKey(symbol: string, interval: string, startTime: number, endTim
 
 /**
  * Get file path for historical price data
- * For dates after 2025-12-27, uses rolling file format: ethusdt_1d_rolling.json.gz (fixed name)
- * For dates up to 2025-12-27, uses date range format: YYYY-MM-DD_YYYY-MM-DD.json.gz
+ * For dates after 2025-12-30, uses rolling file format: ethusdt_1d_rolling.json.gz (fixed name)
+ * For dates up to 2025-12-30, uses date range format: YYYY-MM-DD_YYYY-MM-DD.json.gz
  * If the range spans the cutoff, use rolling file if endDate is after cutoff
  */
 function getHistoricalDataPath(symbol: string, interval: string, startDate: string, endDate: string): string {
@@ -39,15 +39,15 @@ function getHistoricalDataPath(symbol: string, interval: string, startDate: stri
   const sanitizedStart = startDate.replace(/[^0-9-]/g, '');
   const sanitizedEnd = endDate.replace(/[^0-9-]/g, '');
   
-  // Use rolling file format if endDate is after 2025-12-27 (even if startDate is before)
-  const cutoffDate = '2025-12-27';
+  // Use rolling file format if endDate is after 2025-12-30 (even if startDate is before)
+  const cutoffDate = '2025-12-30';
   if (sanitizedEnd > cutoffDate) {
     // Rolling file: fixed name that gets updated
     const filename = `${symbol.toLowerCase()}_${interval}_rolling.json`;
     return path.join(HISTORICAL_DATA_DIR, symbol.toLowerCase(), interval, filename);
   }
   
-  // Original format for dates up to 2025-12-27
+  // Original format for dates up to 2025-12-30
   const filename = `${sanitizedStart}_${sanitizedEnd}.json`;
   return path.join(HISTORICAL_DATA_DIR, symbol.toLowerCase(), interval, filename);
 }
@@ -491,7 +491,10 @@ export async function fetchPriceCandles(
   skipAPIFetch?: boolean // Optional: if true, skip API fetches (for backfill tests on historical data)
 ): Promise<PriceCandle[]> {
   const startTime = new Date(startDate).getTime();
-  const endTime = new Date(endDate).getTime();
+  // For endDate, use end of day to include all candles from that date
+  const endDateObj = new Date(endDate);
+  endDateObj.setUTCHours(23, 59, 59, 999);
+  const endTime = endDateObj.getTime();
   
   // For intraday intervals, ensure we have the full time range (not just date boundaries)
   // This is important for 5m/1h candles where we want all data in the range
@@ -500,7 +503,7 @@ export async function fetchPriceCandles(
     : endTime;
   const now = Date.now();
   const interval = mapTimeframeToInterval(timeframe);
-  const cutoffDate = '2025-12-27';
+  const cutoffDate = '2025-12-30';
   const startDateStr = startDate.replace(/[^0-9-]/g, '');
   const endDateStr = endDate.replace(/[^0-9-]/g, '');
 
@@ -508,62 +511,73 @@ export async function fetchPriceCandles(
   // If date range spans the cutoff, we need to load from both historical and rolling files
   let allCandles: PriceCandle[] = [];
   
-  // Load from historical file (if startDate is before cutoff)
+  // Load from historical file (if startDate is before or equal to cutoff)
+  // Always try to load historical file if startDate is before cutoff, even if endDate is after
   if (startDateStr <= cutoffDate) {
-    const historicalEndDate = endDateStr <= cutoffDate ? endDateStr : cutoffDate;
+    // Use cutoff date as the end date for historical file lookup
+    // The actual file may contain data beyond the cutoff, but we use cutoff for the filename
+    const historicalEndDate = cutoffDate;
     const historicalFilePath = getHistoricalDataPath(symbol, interval, startDateStr, historicalEndDate);
     const historicalData = await loadFromFile(historicalFilePath);
     
     if (historicalData && historicalData.length > 0) {
-      // Filter to date range
+      // Filter to date range (don't filter by cutoff - file may contain data beyond cutoff)
       const filtered = historicalData.filter(c => 
-        c.timestamp >= startTime && c.timestamp <= endTime
+        c.timestamp >= startTime && c.timestamp <= actualEndTime
       );
       allCandles.push(...filtered);
-      console.log(`📁 Loaded ${filtered.length} candles from historical file`);
-    } else {
-      // Try to find any historical file that might cover this range
-      try {
-        const dir = path.dirname(historicalFilePath);
-        const files = await fs.readdir(dir);
-        // Look for both naming patterns:
-        // 1. Symbol-based: ethusdt_8h_YYYY-MM-DD_YYYY-MM-DD.json.gz
-        // 2. Date-based: YYYY-MM-DD_YYYY-MM-DD.json.gz
-        const historicalFiles = files.filter(f => 
-          f.endsWith('.json.gz') &&
-          !f.includes('rolling') &&
-          (f.startsWith(`${symbol.toLowerCase()}_${interval}_`) || /^\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.json\.gz$/.test(f))
-        );
-        
-        for (const file of historicalFiles) {
-          const filePath = path.join(dir, file);
-          try {
-            const compressed = await fs.readFile(filePath);
-            const decompressed = gunzipSync(compressed);
-            const jsonString = decompressed.toString('utf-8');
-            const candles = JSON.parse(jsonString) as PriceCandle[];
-            
-            const filtered = candles.filter(c => 
-              c.timestamp >= startTime && c.timestamp <= endTime && c.timestamp <= new Date(cutoffDate + 'T23:59:59Z').getTime()
-            );
-            
-            if (filtered.length > 0) {
-              allCandles.push(...filtered);
-              console.log(`📁 Loaded ${filtered.length} candles from historical file: ${file}`);
-            }
-          } catch {
-            continue;
+      console.log(`📁 Loaded ${filtered.length} candles from historical file (${historicalFilePath})`);
+    }
+    
+    // Always try to find additional historical files that might cover this range
+    // This ensures we load all relevant files, not just the primary one
+    try {
+      const dir = path.dirname(historicalFilePath);
+      const files = await fs.readdir(dir);
+      // Look for both naming patterns:
+      // 1. Symbol-based: ethusdt_8h_YYYY-MM-DD_YYYY-MM-DD.json.gz
+      // 2. Date-based: YYYY-MM-DD_YYYY-MM-DD.json.gz
+      const historicalFiles = files.filter(f => 
+        f.endsWith('.json.gz') &&
+        !f.includes('rolling') &&
+        (f.startsWith(`${symbol.toLowerCase()}_${interval}_`) || /^\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.json\.gz$/.test(f)) &&
+        f !== path.basename(historicalFilePath) // Don't reload the primary file
+      );
+      
+      for (const file of historicalFiles) {
+        const filePath = path.join(dir, file);
+        try {
+          const compressed = await fs.readFile(filePath);
+          const decompressed = gunzipSync(compressed);
+          const jsonString = decompressed.toString('utf-8');
+          const candles = JSON.parse(jsonString) as PriceCandle[];
+          
+          // Don't filter by cutoff date here - the file may contain data beyond the cutoff
+          // The cutoff is only for determining which file to load, not for filtering the data
+          // Use actualEndTime to include all candles up to now for intraday intervals
+          const filtered = candles.filter(c => 
+            c.timestamp >= startTime && c.timestamp <= actualEndTime
+          );
+          
+          if (filtered.length > 0) {
+            allCandles.push(...filtered);
+            const first = filtered[0]!;
+            const last = filtered[filtered.length - 1]!;
+            console.log(`📁 Loaded ${filtered.length} candles from historical file: ${file}`);
+            console.log(`   Range: ${new Date(first.timestamp).toISOString()} to ${new Date(last.timestamp).toISOString()}`);
           }
+        } catch {
+          continue;
         }
-      } catch {
-        // Directory doesn't exist or can't read - continue
       }
+    } catch {
+      // Directory doesn't exist or can't read - continue
     }
   }
   
   // Load from rolling file (if endDate is after cutoff)
   if (endDateStr > cutoffDate) {
-    const rollingStartDate = startDateStr > cutoffDate ? startDateStr : '2025-12-28';
+    const rollingStartDate = startDateStr > cutoffDate ? startDateStr : '2025-12-31';
     const rollingFilePath = getHistoricalDataPath(symbol, interval, rollingStartDate, endDateStr);
     const rollingData = await loadFromFile(rollingFilePath);
     
@@ -582,6 +596,13 @@ export async function fetchPriceCandles(
     const uniqueCandles = Array.from(
       new Map(allCandles.map(c => [c.timestamp, c])).values()
     ).sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Debug: log what we have before merging today's candle
+    if (uniqueCandles.length > 0) {
+      const first = uniqueCandles[0]!;
+      const last = uniqueCandles[uniqueCandles.length - 1]!;
+      console.log(`📊 After deduplication: ${uniqueCandles.length} unique candles from ${new Date(first.timestamp).toISOString()} to ${new Date(last.timestamp).toISOString()}`);
+    }
     
     // Merge in today's candle from Redis cache if available (more up-to-date than file)
     // This is critical because:
@@ -606,11 +627,22 @@ export async function fetchPriceCandles(
         if (cached) {
           const cachedCandles = JSON.parse(cached) as PriceCandle[];
           // Find today's candle in cache
-          todayCandle = cachedCandles.find(c => {
-            const candleDate = new Date(c.timestamp);
-            candleDate.setUTCHours(0, 0, 0, 0);
-            return candleDate.getTime() === todayStart;
-          }) || null;
+          // For 8h/12h candles, "today's candle" is the first period of the day (00:00)
+          // For daily candles, it's the candle with timestamp at day start
+          if (interval === '8h' || interval === '12h') {
+            // For 8h/12h, find the candle that starts at 00:00 (first period of the day)
+            todayCandle = cachedCandles.find(c => {
+              const candleDate = new Date(c.timestamp);
+              return candleDate.getUTCHours() === 0 && candleDate.getUTCMinutes() === 0;
+            }) || null;
+          } else {
+            // For daily candles, match by day start
+            todayCandle = cachedCandles.find(c => {
+              const candleDate = new Date(c.timestamp);
+              candleDate.setUTCHours(0, 0, 0, 0);
+              return candleDate.getTime() === todayStart;
+            }) || null;
+          }
           
           // Check if the cached candle is synthetic
           // A candle is synthetic if: all OHLC are the same AND volume is 0 AND it's stale
@@ -687,11 +719,20 @@ export async function fetchPriceCandles(
                 const retryCached = await redis.get(cacheKey);
                 if (retryCached) {
                   const retryCandles = JSON.parse(retryCached) as PriceCandle[];
-                  todayCandle = retryCandles.find(c => {
-                    const candleDate = new Date(c.timestamp);
-                    candleDate.setUTCHours(0, 0, 0, 0);
-                    return candleDate.getTime() === todayStart;
-                  }) || null;
+                  // For 8h/12h candles, find the candle that starts at 00:00 (first period of the day)
+                  // For daily candles, match by day start
+                  if (interval === '8h' || interval === '12h') {
+                    todayCandle = retryCandles.find(c => {
+                      const candleDate = new Date(c.timestamp);
+                      return candleDate.getUTCHours() === 0 && candleDate.getUTCMinutes() === 0;
+                    }) || null;
+                  } else {
+                    todayCandle = retryCandles.find(c => {
+                      const candleDate = new Date(c.timestamp);
+                      candleDate.setUTCHours(0, 0, 0, 0);
+                      return candleDate.getTime() === todayStart;
+                    }) || null;
+                  }
                 }
               } catch (priceError) {
                 console.warn('Failed to fetch latest price for today candle:', priceError);
@@ -709,11 +750,21 @@ export async function fetchPriceCandles(
                 const retryCached = await redis.get(cacheKey);
                 if (retryCached) {
                   const retryCandles = JSON.parse(retryCached) as PriceCandle[];
-                  const retryTodayCandle = retryCandles.find(c => {
-                    const candleDate = new Date(c.timestamp);
-                    candleDate.setUTCHours(0, 0, 0, 0);
-                    return candleDate.getTime() === todayStart;
-                  });
+                  // For 8h/12h candles, find the candle that starts at 00:00 (first period of the day)
+                  // For daily candles, match by day start
+                  let retryTodayCandle: PriceCandle | undefined;
+                  if (interval === '8h' || interval === '12h') {
+                    retryTodayCandle = retryCandles.find(c => {
+                      const candleDate = new Date(c.timestamp);
+                      return candleDate.getUTCHours() === 0 && candleDate.getUTCMinutes() === 0;
+                    });
+                  } else {
+                    retryTodayCandle = retryCandles.find(c => {
+                      const candleDate = new Date(c.timestamp);
+                      candleDate.setUTCHours(0, 0, 0, 0);
+                      return candleDate.getTime() === todayStart;
+                    });
+                  }
                   
                   if (retryTodayCandle) {
                     todayCandle = retryTodayCandle;
@@ -734,11 +785,23 @@ export async function fetchPriceCandles(
         }
         
         if (todayCandle) {
+          // Debug: check if 08:00 candle exists before merge
+          const has0800Before = uniqueCandles.some(c => new Date(c.timestamp).toISOString() === '2025-12-31T08:00:00.000Z');
+          console.log(`🔍 Before merge - Has 08:00 candle? ${has0800Before}, Total: ${uniqueCandles.length}, Today candle: ${new Date(todayCandle.timestamp).toISOString()}`);
+          
           // Merge today's candle (overwrite if exists, add if not)
+          // For 8h/12h candles, match by exact timestamp (period start)
+          // For daily candles, match by day start
           const existingIndex = uniqueCandles.findIndex(c => {
-            const candleDate = new Date(c.timestamp);
-            candleDate.setUTCHours(0, 0, 0, 0);
-            return candleDate.getTime() === todayStart;
+            if (interval === '8h' || interval === '12h') {
+              // For 8h/12h candles, match exact timestamp (period start)
+              return c.timestamp === todayCandle.timestamp;
+            } else {
+              // For daily candles, match by day start
+              const candleDate = new Date(c.timestamp);
+              candleDate.setUTCHours(0, 0, 0, 0);
+              return candleDate.getTime() === todayStart;
+            }
           });
           
           if (existingIndex >= 0) {
@@ -753,6 +816,32 @@ export async function fetchPriceCandles(
           
           // Re-sort after adding/updating
           uniqueCandles.sort((a, b) => a.timestamp - b.timestamp);
+          
+          // Debug: check if 08:00 candle exists after merge
+          const has0800After = uniqueCandles.some(c => new Date(c.timestamp).toISOString() === '2025-12-31T08:00:00.000Z');
+          console.log(`🔍 After merge - Has 08:00 candle? ${has0800After}, Total: ${uniqueCandles.length}`);
+          
+          // Also update allCandles so it has today's candle if early return isn't taken
+          // For 8h/12h candles, match by exact timestamp (period start)
+          // For daily candles, match by day start
+          const allCandlesExistingIndex = allCandles.findIndex(c => {
+            if (interval === '8h' || interval === '12h') {
+              // For 8h/12h candles, match exact timestamp (period start)
+              return c.timestamp === todayCandle.timestamp;
+            } else {
+              // For daily candles, match by day start
+              const candleDate = new Date(c.timestamp);
+              candleDate.setUTCHours(0, 0, 0, 0);
+              return candleDate.getTime() === todayStart;
+            }
+          });
+          
+          if (allCandlesExistingIndex >= 0) {
+            allCandles[allCandlesExistingIndex] = todayCandle;
+          } else {
+            allCandles.push(todayCandle);
+          }
+          allCandles.sort((a, b) => a.timestamp - b.timestamp);
         } else {
           console.warn(`⚠️ Could not create today's candle (key: ${cacheKey})`);
         }
@@ -836,9 +925,21 @@ export async function fetchPriceCandles(
     }
     
     // If we have enough data AND complete coverage, return early
-    // Otherwise, we need to fetch from API to fill gaps
-    if ((uniqueCandles.length >= 50 || uniqueCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime)) && hasCompleteCoverage) {
-      console.log(`ℹ️ Using existing data: ${uniqueCandles.length} candles with complete coverage of requested range`);
+    // OR if skipAPIFetch is true, return early with what we have (even if incomplete coverage)
+    // OR if we have enough data (>=50 candles) and coverage is incomplete but we're requesting a very large historical range
+    // (in which case incomplete coverage is expected and we should use what we have)
+    const hasEnoughData = uniqueCandles.length >= 50 || uniqueCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime);
+    const isLargeHistoricalRange = (endTime - startTime) > 365 * 24 * 60 * 60 * 1000; // More than 1 year
+    const shouldReturnEarly = hasEnoughData && (hasCompleteCoverage || skipAPIFetch || (isLargeHistoricalRange && !hasCompleteCoverage));
+    
+    if (shouldReturnEarly) {
+      if (skipAPIFetch && !hasCompleteCoverage) {
+        console.log(`ℹ️ Using existing data: ${uniqueCandles.length} candles (skipAPIFetch=true, coverage incomplete but acceptable)`);
+      } else if (isLargeHistoricalRange && !hasCompleteCoverage) {
+        console.log(`ℹ️ Using existing data: ${uniqueCandles.length} candles (large historical range, incomplete coverage expected)`);
+      } else {
+        console.log(`ℹ️ Using existing data: ${uniqueCandles.length} candles with complete coverage of requested range`);
+      }
       
       // Skip API fetches if:
       // 1. skipAPIFetch is true (explicit flag for backfill tests)
@@ -850,10 +951,17 @@ export async function fetchPriceCandles(
       
       // Skip today's candle fetch if skipAPIFetch is true or it's a historical period
       if (!skipAPIFetch && !isHistoricalPeriod && endTime >= todayStart) {
+        // For 8h/12h candles, find the candle that starts at 00:00 (first period of the day)
+        // For daily candles, match by day start
         const todayCandleIndex = uniqueCandles.findIndex(c => {
-          const candleDate = new Date(c.timestamp);
-          candleDate.setUTCHours(0, 0, 0, 0);
-          return candleDate.getTime() === todayStart;
+          if (interval === '8h' || interval === '12h') {
+            const candleDate = new Date(c.timestamp);
+            return candleDate.getUTCHours() === 0 && candleDate.getUTCMinutes() === 0;
+          } else {
+            const candleDate = new Date(c.timestamp);
+            candleDate.setUTCHours(0, 0, 0, 0);
+            return candleDate.getTime() === todayStart;
+          }
         });
         
         const hasTodayCandle = todayCandleIndex >= 0;
@@ -913,6 +1021,13 @@ export async function fetchPriceCandles(
             console.warn('Could not fetch today candle from API:', apiError instanceof Error ? apiError.message : apiError);
           }
         }
+      }
+      
+      // Debug: log what we're returning
+      if (uniqueCandles.length > 0) {
+        const first = uniqueCandles[0]!;
+        const last = uniqueCandles[uniqueCandles.length - 1]!;
+        console.log(`📤 Returning ${uniqueCandles.length} candles: ${new Date(first.timestamp).toISOString()} to ${new Date(last.timestamp).toISOString()}`);
       }
       
       return uniqueCandles;
@@ -990,7 +1105,15 @@ export async function fetchPriceCandles(
 
   try {
     // If we need today's candle, try fetching it specifically first
-    if (shouldFetchToday && allCandles.length > 0) {
+    // But only if we haven't already added it from Redis (which happens in the early return path)
+    // Check if we already have today's candle in allCandles
+    const hasTodayCandleInAllCandles = allCandles.some(c => {
+      const candleDate = new Date(c.timestamp);
+      candleDate.setUTCHours(0, 0, 0, 0);
+      return candleDate.getTime() === todayStart;
+    });
+    
+    if (shouldFetchToday && allCandles.length > 0 && !hasTodayCandleInAllCandles) {
       try {
         // Fetch just today's candle from API to get fresh OHLC data
         const todayCandles = await fetchBinanceCandles(symbol, interval, todayStart, Date.now());
@@ -1024,8 +1147,15 @@ export async function fetchPriceCandles(
     
     if (!skipAPIFetch && !isHistoricalPeriod && (allCandles.length < 50 || !allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime) || !hasCompleteCoverage)) {
       console.log(`📡 Fetching from API: need to fill gaps (have ${allCandles.length} candles, coverage: ${hasCompleteCoverage ? 'complete' : 'incomplete'})`);
+      // Save allCandles count before API fetch to verify merge
+      const allCandlesBeforeAPI = allCandles.length;
+      const has0800BeforeAPI = allCandles.some(c => new Date(c.timestamp).toISOString() === '2025-12-31T08:00:00.000Z');
+      console.log(`📊 Before API: ${allCandlesBeforeAPI} candles in allCandles, Has 08:00? ${has0800BeforeAPI}`);
       // Try Binance first
+      // Note: API might not return the most recent 08:00 candle if it's still in progress
+      // We'll merge API data with file data to preserve all candles from files
       candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
+      console.log(`📡 API returned ${candles.length} candles`);
     } else {
       if (skipAPIFetch || isHistoricalPeriod) {
         console.log(`ℹ️ Using existing data: ${allCandles.length} candles (skipping API fetch for historical period)`);
@@ -1039,7 +1169,10 @@ export async function fetchPriceCandles(
     if (skipAPIFetch || isHistoricalPeriod) {
       console.log(`ℹ️ Skipping API fallbacks (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod}) - using file data only`);
       if (allCandles.length > 0) {
-        candles = allCandles;
+        // Deduplicate and sort allCandles to ensure we have all candles from files
+        candles = Array.from(
+          new Map(allCandles.map(c => [c.timestamp, c])).values()
+        ).sort((a, b) => a.timestamp - b.timestamp);
       }
     } else {
       console.error('Binance API failed, trying CryptoCompare:', error);
@@ -1091,8 +1224,11 @@ export async function fetchPriceCandles(
         // If skipAPIFetch or historical period, use file data and return early
         if (skipAPIFetch || isHistoricalPeriod) {
           if (allCandles.length > 0) {
-            console.log(`ℹ️ Using file data only (${allCandles.length} candles) - skipping all API fallbacks`);
-            candles = allCandles;
+            // Deduplicate and sort allCandles to ensure we have all candles from files
+            candles = Array.from(
+              new Map(allCandles.map(c => [c.timestamp, c])).values()
+            ).sort((a, b) => a.timestamp - b.timestamp);
+            console.log(`ℹ️ Using file data only (${candles.length} candles after dedup) - skipping all API fallbacks`);
           } else {
             throw new Error(`No file data available and API fetch is disabled (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod})`);
           }
@@ -1148,17 +1284,34 @@ export async function fetchPriceCandles(
   }
   
   // Merge API data with file data
-  if (candles.length > 0 && allCandles.length > 0) {
+  // Always start with file data (allCandles) as the base, then merge in API data
+  // This ensures we preserve all candles from files, even if API doesn't return them
+  if (allCandles.length > 0) {
     const existingMap = new Map(allCandles.map(c => [c.timestamp, c]));
-    candles.forEach(c => {
-      existingMap.set(c.timestamp, c); // API data overwrites file data
-    });
+    const fileCandleCount = existingMap.size;
+    // Merge in API data (API data overwrites file data for same timestamps)
+    if (candles.length > 0) {
+      candles.forEach(c => {
+        existingMap.set(c.timestamp, c); // API data overwrites file data
+      });
+    }
     candles = Array.from(existingMap.values()).sort((a, b) => a.timestamp - b.timestamp);
-  } else if (allCandles.length > 0 && candles.length === 0) {
+    const has0800 = candles.some(c => new Date(c.timestamp).toISOString() === '2025-12-31T08:00:00.000Z');
+    console.log(`📊 After merge: ${candles.length} candles (${fileCandleCount} from files, ${candles.length - fileCandleCount} from API), Has 08:00? ${has0800}`);
+  } else if (candles.length > 0) {
     // No API data, but we have file data
+    // Use allCandles directly (already deduplicated and sorted from file loading)
     candles = Array.from(
       new Map(allCandles.map(c => [c.timestamp, c])).values()
     ).sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Debug: log what we're returning from file data only
+    if (candles.length > 0) {
+      const first = candles[0]!;
+      const last = candles[candles.length - 1]!;
+      console.log(`📤 Returning ${candles.length} candles from file data only: ${new Date(first.timestamp).toISOString()} to ${new Date(last.timestamp).toISOString()}`);
+      console.log(`📊 Requested range: ${new Date(startTime).toISOString()} to ${new Date(actualEndTime).toISOString()}`);
+    }
   }
 
   // 4. Save to Redis only (file writes handled by GitHub Actions workflow)

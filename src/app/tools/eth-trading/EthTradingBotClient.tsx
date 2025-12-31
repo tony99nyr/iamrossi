@@ -6,17 +6,15 @@ import { css } from '@styled-system/css';
 import { stack, flex } from '@styled-system/patterns';
 import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
-import PortfolioDisplay from './components/PortfolioDisplay';
-import RegimeDisplay from './components/RegimeDisplay';
-import StrategyIndicators from './components/StrategyIndicators';
 import PriceChart from './components/PriceChart';
 import HealthStatusPanel from './components/HealthStatusPanel';
-import PerformanceMetricsPanel from './components/PerformanceMetricsPanel';
-import StrategyExecutionPanel from './components/StrategyExecutionPanel';
+import PortfolioPerformancePanel from './components/PortfolioPerformancePanel';
+import RegimeDisplay from './components/RegimeDisplay';
+import StrategySignalPanel from './components/StrategySignalPanel';
 import TradeAnalyticsPanel from './components/TradeAnalyticsPanel';
 import RiskManagementPanel from './components/RiskManagementPanel';
 
-type TimeRange = 'all' | 'ytd' | '6m' | '3m' | '1m' | '14d' | '7d' | '1d';
+type TimeRange = 'all' | 'ytd' | '6m' | '3m' | '1m' | '14d' | '7d' | '48h';
 
 export default function EthTradingBotClient() {
   const searchParams = useSearchParams();
@@ -33,7 +31,7 @@ export default function EthTradingBotClient() {
   // Initialize timeRange from URL params, default to '7d'
   const getInitialTimeRange = (): TimeRange => {
     const urlRange = searchParams.get('range');
-    const validRanges: TimeRange[] = ['all', 'ytd', '6m', '3m', '1m', '14d', '7d', '1d'];
+    const validRanges: TimeRange[] = ['all', 'ytd', '6m', '3m', '1m', '14d', '7d', '48h'];
     if (urlRange && validRanges.includes(urlRange as TimeRange)) {
       return urlRange as TimeRange;
     }
@@ -95,7 +93,7 @@ export default function EthTradingBotClient() {
   // Sync timeRange with URL params when they change (e.g., browser back/forward)
   useEffect(() => {
     const urlRange = searchParams.get('range');
-    const validRanges: TimeRange[] = ['all', 'ytd', '6m', '3m', '1m', '14d', '7d', '1d'];
+    const validRanges: TimeRange[] = ['all', 'ytd', '6m', '3m', '1m', '14d', '7d', '48h'];
     if (urlRange && validRanges.includes(urlRange as TimeRange) && urlRange !== timeRange) {
       setTimeRange(urlRange as TimeRange);
     } else if (!urlRange && timeRange !== '7d') {
@@ -288,9 +286,28 @@ export default function EthTradingBotClient() {
   return (
     <div className={containerStyles}>
       <div className={stack({ gap: '16px' })}>
-        <h1 className={css({ fontSize: '2xl', fontWeight: 'bold', color: '#e6edf3' })}>
-          ETH Trading Bot - Paper Trading
-        </h1>
+        <div className={flex({ justifyContent: 'space-between', alignItems: 'center' })}>
+          <h1 className={css({ fontSize: '2xl', fontWeight: 'bold', color: '#e6edf3' })}>
+            ETH Trading Bot - Paper Trading
+          </h1>
+          {session && (
+            <button
+              onClick={() => router.push('/tools/eth-trading/audit')}
+              className={css({
+                padding: '8px 16px',
+                bg: '#21262d',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                color: '#e6edf3',
+                cursor: 'pointer',
+                fontSize: 'sm',
+                _hover: { bg: '#30363d' },
+              })}
+            >
+              View Trade Audit
+            </button>
+          )}
+        </div>
 
         {error && (
           <div className={css({
@@ -422,22 +439,19 @@ export default function EthTradingBotClient() {
           </div>
         ) : session ? (
           <div className={stack({ gap: '16px' })}>
-            {/* Dashboard Cards Grid */}
+            {/* Dashboard Cards Grid - Consolidated 6 Panels */}
             <div className={css({
               display: 'grid',
               gridTemplateColumns: { base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' },
-              gap: '8px',
+              gap: '12px',
             })}>
+              {/* Row 1: System Status, Portfolio, Regime */}
               <HealthStatusPanel session={session} />
-              <PerformanceMetricsPanel session={session} />
-              <PortfolioDisplay portfolio={session.portfolio} />
-              <RegimeDisplay
-                regime={session.currentRegime}
-                activeStrategy={session.lastSignal.activeStrategy?.name}
-                momentumConfirmed={session.lastSignal.momentumConfirmed}
-              />
-              <StrategyIndicators session={session} />
-              <StrategyExecutionPanel session={session} />
+              <PortfolioPerformancePanel session={session} />
+              <RegimeDisplay regime={session.currentRegime} />
+              
+              {/* Row 2: Strategy, Trades, Risk */}
+              <StrategySignalPanel session={session} />
               <TradeAnalyticsPanel session={session} />
               <RiskManagementPanel session={session} />
             </div>
@@ -476,9 +490,9 @@ export default function EthTradingBotClient() {
                     );
                   })}
                 </div>
-                {/* Second row: 14D, 7D, 1D */}
+                {/* Second row: 14D, 7D, 48H */}
                 <div className={flex({ gap: '0px', minWidth: 'fit-content' })}>
-                  {(['14d', '7d', '1d'] as const).map((range, index) => {
+                  {(['14d', '7d', '48h'] as const).map((range, index) => {
                     const isFirst = index === 0;
                     const isLast = index === 2;
                     return (
@@ -503,7 +517,7 @@ export default function EthTradingBotClient() {
                           },
                         })}
                       >
-                        {range === '14d' ? '14D' : range === '7d' ? '7D' : '1D'}
+                        {range === '14d' ? '14D' : range === '7d' ? '7D' : '48H'}
                       </button>
                     );
                   })}

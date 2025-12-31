@@ -156,7 +156,7 @@ export default function StrategyExecutionPanel({ session }: StrategyExecutionPan
       borderRadius: '8px',
     })}>
       <h2 className={css({ fontSize: 'md', fontWeight: 'semibold', marginBottom: '12px', color: '#e6edf3' })}>
-        Trade Readiness
+        Algo Thinking & Trade Readiness
       </h2>
       
       <div className={stack({ gap: '8px' })}>
@@ -281,6 +281,95 @@ export default function StrategyExecutionPanel({ session }: StrategyExecutionPan
                 {executionMetrics.sellConditions.persistenceMet ? '✓' : '○'} Persistence: {executionMetrics.bearishCount}/5
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Distance to Buy/Sell Thresholds */}
+        <div>
+          <div className={css({ fontSize: 'sm', fontWeight: 'semibold', marginBottom: '6px', color: '#e6edf3' })}>
+            Distance to Action Thresholds
+          </div>
+          {lastSignal.activeStrategy && (
+            <div className={stack({ gap: '4px', fontSize: 'xs' })}>
+              <div className={css({
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              })}>
+                <span className={css({ color: '#7d8590' })}>Buy Threshold</span>
+                <div className={css({ display: 'flex', alignItems: 'center', gap: '8px' })}>
+                  <span className={css({ color: '#7d8590' })}>
+                    {lastSignal.activeStrategy.buyThreshold.toFixed(2)}
+                  </span>
+                  <span className={css({
+                    color: lastSignal.signal >= lastSignal.activeStrategy.buyThreshold ? '#3fb950' : '#7d8590',
+                    fontWeight: 'semibold',
+                  })}>
+                    ({((lastSignal.signal / lastSignal.activeStrategy.buyThreshold) * 100).toFixed(0)}%)
+                  </span>
+                </div>
+              </div>
+              <div className={css({
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              })}>
+                <span className={css({ color: '#7d8590' })}>Sell Threshold</span>
+                <div className={css({ display: 'flex', alignItems: 'center', gap: '8px' })}>
+                  <span className={css({ color: '#7d8590' })}>
+                    {lastSignal.activeStrategy.sellThreshold.toFixed(2)}
+                  </span>
+                  <span className={css({
+                    color: lastSignal.signal <= lastSignal.activeStrategy.sellThreshold ? '#f85149' : '#7d8590',
+                    fontWeight: 'semibold',
+                  })}>
+                    ({((lastSignal.signal / Math.abs(lastSignal.activeStrategy.sellThreshold)) * 100).toFixed(0)}%)
+                  </span>
+                </div>
+              </div>
+              <div className={css({
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginTop: '4px',
+              })}>
+                <span className={css({ color: '#7d8590' })}>Current Signal</span>
+                <span className={css({
+                  color: lastSignal.signal > 0 ? '#3fb950' : lastSignal.signal < 0 ? '#f85149' : '#7d8590',
+                  fontWeight: 'semibold',
+                })}>
+                  {lastSignal.signal > 0 ? '+' : ''}{lastSignal.signal.toFixed(3)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className={css({ height: '1px', bg: '#30363d', margin: '6px 0' })} />
+
+        {/* Next Likely Action */}
+        <div>
+          <div className={css({ fontSize: 'sm', fontWeight: 'semibold', marginBottom: '6px', color: '#e6edf3' })}>
+            Next Likely Action
+          </div>
+          <div className={css({ fontSize: 'xs', color: '#7d8590', marginBottom: '4px' })}>
+            {executionMetrics.buyReady && (
+              <span className={css({ color: '#3fb950', fontWeight: 'semibold' })}>
+                → Will BUY on next update (all conditions met)
+              </span>
+            )}
+            {executionMetrics.sellReady && (
+              <span className={css({ color: '#f85149', fontWeight: 'semibold' })}>
+                → Will SELL on next update (all conditions met)
+              </span>
+            )}
+            {!executionMetrics.buyReady && !executionMetrics.sellReady && (
+              <span>
+                → Will HOLD (waiting for conditions: {executionMetrics.buyProgress > executionMetrics.sellProgress 
+                  ? `BUY ${executionMetrics.buyProgress.toFixed(0)}%` 
+                  : `SELL ${executionMetrics.sellProgress.toFixed(0)}%`})
+              </span>
+            )}
           </div>
         </div>
 

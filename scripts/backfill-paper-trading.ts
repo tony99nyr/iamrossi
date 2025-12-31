@@ -19,8 +19,10 @@ import { fetchPriceCandles } from '../src/lib/eth-price-service';
 import { generateEnhancedAdaptiveSignal, clearRegimeHistory } from '../src/lib/adaptive-strategy-enhanced';
 import { calculateConfidence } from '../src/lib/confidence-calculator';
 import { calculateMACD, calculateRSI, getLatestIndicatorValue } from '../src/lib/indicators';
+import { executeTrade as executeTradeUnified } from '../src/lib/trade-executor';
 import type { PriceCandle, Trade, PortfolioSnapshot, Portfolio } from '../src/types';
 import type { EnhancedAdaptiveStrategyConfig } from '../src/lib/adaptive-strategy-enhanced';
+import type { OpenPosition } from '../src/lib/atr-stop-loss';
 
 // Load environment variables
 const envPath = path.resolve(process.cwd(), '.env.local');

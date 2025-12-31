@@ -12,9 +12,10 @@ import { generateEnhancedAdaptiveSignal, clearRegimeHistory, clearRegimeHistoryF
 import { calculateConfidence } from './confidence-calculator';
 import { redis, ensureConnected } from './kv';
 import { validateDataQuality, type DataQualityReport } from './data-quality-validator';
-import { calculateKellyCriterion, getKellyMultiplier } from './kelly-criterion';
 import { getATRValue } from './indicators';
-import { createOpenPosition, updateStopLoss, checkStopLosses, type StopLossConfig, type OpenPosition } from './atr-stop-loss';
+import { type StopLossConfig, type OpenPosition } from './atr-stop-loss';
+import { executeTrade, type TradeExecutionOptions } from './trade-executor';
+import { calculateKellyCriterion, getKellyMultiplier } from './kelly-criterion';
 
 export interface EnhancedPaperTradingSession {
   id: string;
@@ -71,7 +72,8 @@ export class PaperTradingService {
     const startDate = '2020-01-01'; // Early enough to capture all available historical data
     // Use timeframe from config (default to 8h if not specified)
     const timeframe = config.bullishStrategy.timeframe || '8h';
-    const candles = await fetchPriceCandles('ETHUSDT', timeframe, startDate, endDate, initialPrice);
+    // Use skipAPIFetch=false to allow API fetches for recent data, but ensure file data is preserved
+    const candles = await fetchPriceCandles('ETHUSDT', timeframe, startDate, endDate, initialPrice, false);
 
     if (candles.length < 50) {
       throw new Error('Not enough historical data to start paper trading');
@@ -361,6 +363,13 @@ export class PaperTradingService {
       throw new Error('Not enough historical data to update session');
     }
 
+    // Log candle info for debugging
+    if (candles.length > 0) {
+      const firstCandle = candles[0]!;
+      const lastCandle = candles[candles.length - 1]!;
+      console.log(`[Paper Trading] Loaded ${candles.length} candles: ${new Date(firstCandle.timestamp).toISOString()} to ${new Date(lastCandle.timestamp).toISOString()}`);
+    }
+
     // Generate signal with enhanced adaptive strategy (pass session ID for regime history tracking)
     const currentIndex = candles.length - 1;
     
@@ -372,6 +381,11 @@ export class PaperTradingService {
     const endTime = new Date(endDate).getTime();
     const maxAgeMinutes = timeframe === '8h' ? 480 : timeframe === '12h' ? 720 : 1440;
     const dataQuality = validateDataQuality(candles, timeframe, startTime, endTime, currentIndex, maxAgeMinutes);
+    
+    // Log data quality for debugging
+    if (dataQuality.issues && dataQuality.issues.length > 0) {
+      console.log(`[Paper Trading] Data quality issues:`, dataQuality.issues);
+    }
     
     if (!dataQuality.isValid) {
       console.warn('Data quality issues detected:', dataQuality.issues);
@@ -407,226 +421,64 @@ export class PaperTradingService {
       atrPeriod: 14,
     };
 
-    // Calculate current ATR for stop loss checks
+    // Calculate current ATR for display
     let currentATR: number | null = null;
     if (useStopLoss) {
       currentATR = getATRValue(candles, currentIndex, effectiveStopLossConfig.atrPeriod, effectiveStopLossConfig.useEMA);
       updatedSession.currentATR = currentATR || undefined;
     }
 
-    // Check stop losses first (before new trades)
-    if (useStopLoss && updatedSession.openPositions.length > 0 && currentATR) {
-      const stopLossResults = checkStopLosses(updatedSession.openPositions, currentPrice, currentATR, effectiveStopLossConfig);
-      
-      for (const { position, result } of stopLossResults) {
-        if (result.shouldExit) {
-          // Exit position due to stop loss
-          const ethToSell = position.buyTrade.ethAmount;
-          const saleValue = ethToSell * currentPrice;
-          const fee = saleValue * 0.001;
-          const netProceeds = saleValue - fee;
-          
-          portfolio.ethBalance -= ethToSell;
-          portfolio.usdcBalance += netProceeds;
-          portfolio.totalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
-          portfolio.tradeCount++;
+    // Use unified trade executor
+    const executionOptions: TradeExecutionOptions = {
+      candles,
+      candleIndex: currentIndex,
+      portfolioHistory: updatedSession.portfolioHistory,
+      config: session.config,
+      trades: updatedSession.trades,
+      openPositions: updatedSession.openPositions,
+      useKellyCriterion: useKelly,
+      useStopLoss,
+      kellyFractionalMultiplier,
+      stopLossConfig: effectiveStopLossConfig,
+      generateAudit: false, // Paper trading doesn't need audit data
+      recordTradeResult: (isWin: boolean) => recordTradeResult(session.id, isWin),
+    };
 
-          // Calculate P&L
-          const buyCost = position.buyTrade.costBasis || position.buyTrade.usdcAmount;
-          const pnl = netProceeds - buyCost;
-          const isWin = pnl > 0;
-          if (isWin) portfolio.winCount++;
-
-          const trade: Trade = {
-            id: uuidv4(),
-            timestamp: Date.now(),
-            type: 'sell',
-            ethPrice: currentPrice,
-            ethAmount: ethToSell,
-            usdcAmount: saleValue,
-            signal: signal.signal,
-            confidence,
-            portfolioValue: portfolio.totalValue,
-            costBasis: buyCost,
-            pnl,
-          };
-
-          updatedSession.trades.push(trade);
-          recordTradeResult(session.id, isWin);
-          
-          // Remove position from open positions
-          const index = updatedSession.openPositions.indexOf(position);
-          if (index > -1) {
-            updatedSession.openPositions.splice(index, 1);
-          }
-        } else {
-          // Update trailing stop loss (updateStopLoss modifies position in place)
-          updateStopLoss(position, currentPrice, currentATR, effectiveStopLossConfig);
-        }
-      }
-    }
-
-    // Calculate Kelly multiplier if enabled
+    // Execute trade (result is stored in trades array and portfolio is updated)
+    executeTrade(
+      signal,
+      confidence,
+      currentPrice,
+      portfolio,
+      executionOptions
+    );
+    
+    // Calculate Kelly multiplier for display (after trade execution)
     let kellyMultiplier = 1.0;
+
+    // Update Kelly multiplier for display (calculate from completed trades)
     if (useKelly && updatedSession.trades.length >= (kellyConfig?.minTrades || 10)) {
       const completedTrades = updatedSession.trades.filter((t): t is Trade & { pnl: number } => 
         t.type === 'sell' && t.pnl !== undefined && t.pnl !== null
       );
-      if (completedTrades.length >= (kellyConfig?.minTrades || 10)) {
-        const kellyResult = calculateKellyCriterion(completedTrades, {
+      if (completedTrades.length >= (kellyConfig?.minTrades || 10) && signal.activeStrategy) {
+        const recentTrades = completedTrades.slice(-(kellyConfig?.lookbackPeriod || 50));
+        const kellyResult = calculateKellyCriterion(recentTrades, {
           minTrades: kellyConfig?.minTrades || 10,
           lookbackPeriod: kellyConfig?.lookbackPeriod || 50,
           fractionalMultiplier: kellyFractionalMultiplier,
         });
         if (kellyResult) {
-          // Get Kelly multiplier based on result and base position size
-          const basePositionPct = signal.activeStrategy?.maxPositionPct || 0.9;
-          kellyMultiplier = getKellyMultiplier(kellyResult, basePositionPct);
+          kellyMultiplier = getKellyMultiplier(kellyResult, signal.activeStrategy.maxPositionPct || 0.9);
+          updatedSession.kellyMultiplier = kellyMultiplier;
+        } else {
+          updatedSession.kellyMultiplier = 1.0;
         }
+      } else {
+        updatedSession.kellyMultiplier = 1.0;
       }
-    }
-    updatedSession.kellyMultiplier = kellyMultiplier;
-
-    // Execute buy signal
-    if (signal.action === 'buy' && portfolio.usdcBalance > 0 && signal.signal > 0) {
-      const activeStrategy = signal.activeStrategy;
-      if (!activeStrategy) return updatedSession;
-
-      const maxPositionPct = activeStrategy.maxPositionPct || 0.75;
-      const positionSizeMultiplier = signal.positionSizeMultiplier || 1.0;
-      
-      // Apply Kelly multiplier to position size
-      const kellyAdjustedMultiplier = positionSizeMultiplier * kellyMultiplier;
-      const adjustedPositionPct = Math.min(maxPositionPct * kellyAdjustedMultiplier, session.config.maxBullishPosition || 0.95);
-      
-      const positionSize = portfolio.usdcBalance * confidence * adjustedPositionPct;
-      const ethAmount = positionSize / currentPrice;
-
-      if (ethAmount > 0 && positionSize <= portfolio.usdcBalance) {
-        // Track cost basis for P&L calculation
-        const costBasis = positionSize;
-        const fee = positionSize * 0.001;
-        const netCost = positionSize + fee;
-        
-        portfolio.usdcBalance -= netCost;
-        portfolio.ethBalance += ethAmount;
-
-        const trade: Trade = {
-          id: uuidv4(),
-          timestamp: Date.now(),
-          type: 'buy',
-          ethPrice: currentPrice,
-          ethAmount,
-          usdcAmount: positionSize,
-          signal: signal.signal,
-          confidence,
-          portfolioValue: portfolio.usdcBalance + portfolio.ethBalance * currentPrice,
-          costBasis, // Store cost basis for P&L calculation
-        };
-
-        updatedSession.trades.push(trade);
-        portfolio.tradeCount++;
-
-        // Create open position with stop loss if enabled
-        if (useStopLoss && currentATR) {
-          const openPosition = createOpenPosition(trade, currentPrice, currentATR, effectiveStopLossConfig);
-          if (openPosition) {
-            updatedSession.openPositions.push(openPosition);
-          }
-        }
-      }
-    }
-
-    // Execute sell signal
-    if (signal.action === 'sell' && portfolio.ethBalance > 0 && signal.signal < 0) {
-      const activeStrategy = signal.activeStrategy;
-      if (!activeStrategy) return updatedSession;
-
-      const maxPositionPct = activeStrategy.maxPositionPct || 0.5;
-      const positionSize = portfolio.ethBalance * confidence * maxPositionPct;
-      const saleValue = positionSize * currentPrice;
-      const fee = saleValue * 0.001;
-      const netProceeds = saleValue - fee;
-
-      if (positionSize > 0 && positionSize <= portfolio.ethBalance) {
-        // Calculate P&L: find matching buy trades using FIFO
-        let remainingToSell = positionSize;
-        let totalCostBasis = 0;
-        
-        // Find buy trades that haven't been fully sold yet (FIFO)
-        for (const buyTrade of updatedSession.trades.filter(t => t.type === 'buy' && !t.fullySold)) {
-          if (remainingToSell <= 0) break;
-          
-          const buyAmount = buyTrade.ethAmount;
-          const sellAmount = Math.min(remainingToSell, buyAmount);
-          const costBasisRatio = sellAmount / buyAmount;
-          const costBasis = (buyTrade.costBasis || buyTrade.usdcAmount) * costBasisRatio;
-          
-          totalCostBasis += costBasis;
-          remainingToSell -= sellAmount;
-          
-          // Mark buy trade as fully or partially sold
-          if (sellAmount >= buyAmount) {
-            buyTrade.fullySold = true;
-          } else {
-            buyTrade.ethAmount -= sellAmount;
-            buyTrade.costBasis = (buyTrade.costBasis || buyTrade.usdcAmount) - costBasis;
-            buyTrade.usdcAmount = buyTrade.costBasis;
-          }
-        }
-        
-        // If we couldn't match to a buy (shouldn't happen in normal operation), use average cost
-        if (totalCostBasis === 0 && updatedSession.trades.filter(t => t.type === 'buy').length > 0) {
-          const avgCost = updatedSession.trades
-            .filter(t => t.type === 'buy' && !t.fullySold)
-            .reduce((sum, t) => sum + (t.costBasis || t.usdcAmount), 0) /
-            updatedSession.trades
-              .filter(t => t.type === 'buy' && !t.fullySold)
-              .reduce((sum, t) => sum + t.ethAmount, 0);
-          totalCostBasis = positionSize * avgCost;
-        }
-        
-        const pnl = netProceeds - totalCostBasis;
-        const isWin = pnl > 0;
-        
-        // Record trade result for circuit breaker
-        recordTradeResult(session.id, isWin);
-        
-        portfolio.ethBalance -= positionSize;
-        portfolio.usdcBalance += netProceeds;
-
-        const trade: Trade = {
-          id: uuidv4(),
-          timestamp: Date.now(),
-          type: 'sell',
-          ethPrice: currentPrice,
-          ethAmount: positionSize,
-          usdcAmount: saleValue,
-          signal: signal.signal,
-          confidence,
-          portfolioValue: portfolio.usdcBalance + portfolio.ethBalance * currentPrice,
-          costBasis: totalCostBasis,
-          pnl,
-        };
-
-        updatedSession.trades.push(trade);
-        portfolio.tradeCount++;
-
-        // Update win count based on actual trade P&L
-        if (isWin) {
-          portfolio.winCount++;
-        }
-
-        // Remove matching open positions (FIFO)
-        let remainingToRemove = positionSize;
-        for (let i = updatedSession.openPositions.length - 1; i >= 0 && remainingToRemove > 0; i--) {
-          const position = updatedSession.openPositions[i]!;
-          if (position.buyTrade.id === trade.id || remainingToRemove >= position.buyTrade.ethAmount) {
-            updatedSession.openPositions.splice(i, 1);
-            remainingToRemove -= position.buyTrade.ethAmount;
-          }
-        }
-      }
+    } else {
+      updatedSession.kellyMultiplier = 1.0;
     }
 
     // Update portfolio values

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { css } from '@styled-system/css';
 import type { PortfolioSnapshot, Trade, PriceCandle } from '@/types';
 import { calculateSMA, calculateEMA, calculateRSI, calculateMACD } from '@/lib/indicators';
@@ -10,20 +10,96 @@ import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 interface PriceChartProps {
   portfolioHistory: PortfolioSnapshot[];
   trades: Trade[];
-  timeRange?: 'all' | 'ytd' | '6m' | '3m' | '1m' | '14d' | '7d' | '1d';
+  timeRange?: 'all' | 'ytd' | '6m' | '3m' | '1m' | '14d' | '7d' | '48h';
   session?: EnhancedPaperTradingSession | null;
 }
 
-export default function PriceChart({ portfolioHistory, trades, timeRange = 'all', session }: PriceChartProps) {
+export default function PriceChart({ portfolioHistory: _portfolioHistory, trades, timeRange = 'all', session }: PriceChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
+  const [actualCandles, setActualCandles] = useState<PriceCandle[] | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Filter history based on time range (matching Pokemon chart logic)
-  const filteredHistory = useMemo(() => {
-    if (timeRange === 'all') return portfolioHistory;
+  // Fetch appropriate candles based on timeRange
+  // For 48h: use 5m candles, for all others: use 8h candles
+  useEffect(() => {
+    if (!session) {
+      setActualCandles(null);
+      return;
+    }
+
+    const fetchCandles = async () => {
+      try {
+        // Determine timeframe based on timeRange
+        const timeframe = timeRange === '48h' ? '5m' : (session.config.bullishStrategy.timeframe || '8h');
+        
+        // Calculate startDate based on timeRange
+        const now = Date.now();
+        let startDate: string;
+        const endDate = new Date().toISOString().split('T')[0];
+        
+        switch (timeRange) {
+          case '48h':
+            // For 48h, fetch last 48 hours (add buffer for 5m candles)
+            const cutoff48h = now - (48 * 60 * 60 * 1000);
+            startDate = new Date(cutoff48h - (24 * 60 * 60 * 1000)).toISOString().split('T')[0]; // Add 1 day buffer
+            break;
+          case '7d':
+            startDate = new Date(now - (7 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+            break;
+          case '14d':
+            startDate = new Date(now - (14 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+            break;
+          case '1m':
+            startDate = new Date(now - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+            break;
+          case '3m':
+            startDate = new Date(now - (90 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+            break;
+          case '6m':
+            startDate = new Date(now - (180 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+            break;
+          case 'ytd': {
+            const ytdDate = new Date();
+            ytdDate.setMonth(0, 1);
+            startDate = ytdDate.toISOString().split('T')[0];
+            break;
+          }
+          case 'all':
+          default:
+            // For 'all', fetch from earliest available date
+            startDate = '2020-01-01';
+            break;
+        }
+        
+        // Fetch candles using the same parameters as the strategy
+        // Use skipAPIFetch=false to match strategy behavior
+        const response = await fetch(`/api/trading/candles?symbol=ETHUSDT&timeframe=${timeframe}&startDate=${startDate}&endDate=${endDate}&skipAPIFetch=false`, {
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setActualCandles(data.candles || []);
+        } else {
+          console.warn('Failed to fetch candles for chart');
+          setActualCandles(null);
+        }
+      } catch (error) {
+        console.warn('Error fetching candles for chart:', error);
+        setActualCandles(null);
+      }
+    };
+
+    fetchCandles();
+  }, [session, timeRange]);
+
+  // Filter candles based on time range
+  // Use actual candles instead of portfolioHistory for consistent intervals
+  const filteredCandles = useMemo(() => {
+    if (!actualCandles || actualCandles.length === 0) return [];
     
     // eslint-disable-next-line react-hooks/purity -- Date.now() is safe in useMemo
     const now = Date.now();
@@ -61,15 +137,16 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
       case '7d':
         cutoffTime = now - 7 * 24 * 60 * 60 * 1000;
         break;
-      case '1d':
-        cutoffTime = now - 24 * 60 * 60 * 1000;
+      case '48h':
+        cutoffTime = now - 48 * 60 * 60 * 1000;
         break;
+      case 'all':
       default:
-        return portfolioHistory;
+        return actualCandles;
     }
     
-    return portfolioHistory.filter(p => p.timestamp >= cutoffTime);
-  }, [portfolioHistory, timeRange]);
+    return actualCandles.filter(c => c.timestamp >= cutoffTime);
+  }, [actualCandles, timeRange]);
 
   const width = 1200;
   const height = 550;
@@ -77,22 +154,29 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  const prices = useMemo(() => filteredHistory.map(p => p.ethPrice), [filteredHistory]);
-  const min = useMemo(() => Math.min(...prices), [prices]);
-  const max = useMemo(() => Math.max(...prices), [prices]);
+  // Use candle close prices instead of portfolioHistory
+  const prices = useMemo(() => filteredCandles.map(c => c.close), [filteredCandles]);
+  const min = useMemo(() => prices.length > 0 ? Math.min(...prices) : 0, [prices]);
+  const max = useMemo(() => prices.length > 0 ? Math.max(...prices) : 0, [prices]);
   const pad = useMemo(() => (max - min) * 0.1 || 10, [max, min]);
   const yMin = useMemo(() => min - pad, [min, pad]);
   const yMax = useMemo(() => max + pad, [max, pad]);
 
-  // Calculate moving averages
-  const sma7 = useMemo(() => {
-    const ma = calculateSMA(prices, 7);
+  // Calculate moving averages (matching strategy indicators)
+  // Strategy uses SMA 20, SMA 50, SMA 200 for regime detection
+  const sma20 = useMemo(() => {
+    const ma = calculateSMA(prices, 20);
     // Pad with nulls at the beginning to align with price data
     return Array(prices.length - ma.length).fill(null).concat(ma);
   }, [prices]);
 
-  const sma30 = useMemo(() => {
-    const ma = calculateSMA(prices, 30);
+  const sma50 = useMemo(() => {
+    const ma = calculateSMA(prices, 50);
+    return Array(prices.length - ma.length).fill(null).concat(ma);
+  }, [prices]);
+
+  const sma200 = useMemo(() => {
+    const ma = calculateSMA(prices, 200);
     return Array(prices.length - ma.length).fill(null).concat(ma);
   }, [prices]);
 
@@ -124,126 +208,270 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
     };
   }, [prices]);
 
-  // Calculate regimes for visualization (if session is available) - must be before early return
+  // Calculate regimes for visualization
+  // For data BEFORE session started: calculate using detectMarketRegimeCached (same algorithm strategy uses)
+  // For data AFTER session started: use session.regimeHistory (actual recorded changes)
   const regimeRegions = useMemo(() => {
-    if (!session || filteredHistory.length < 50) return [];
+    if (!session || filteredCandles.length === 0) return [];
     
-    // Clear cache to ensure fresh calculation with proper smoothing and hysteresis
-    // This ensures the smoothing builds up correctly from the start
+    // Get the time range of the filtered candles for mapping
+    const historyStart = filteredCandles[0]?.timestamp;
+    const historyEnd = filteredCandles[filteredCandles.length - 1]?.timestamp;
+    if (!historyStart || !historyEnd) return [];
+    
+    // Get session start time to know when regimeHistory data begins
+    const sessionStartTime = session.startedAt;
+    const regimeHistory = session.regimeHistory || [];
+    
+    // We need candles for calculating historical regimes
+    // Use actualCandles if available (they have buffer for calculation), otherwise filteredCandles
+    const candlesForRegime = actualCandles && actualCandles.length > 0 ? actualCandles : filteredCandles;
+    
+    // Clear indicator cache for fresh calculation
     clearIndicatorCache();
     
-    // Create synthetic candles from portfolioHistory for regime detection
-    const candles: PriceCandle[] = filteredHistory.map((snapshot, index) => {
-      const prevPrice = index > 0 ? filteredHistory[index - 1]!.ethPrice : snapshot.ethPrice;
-      return {
-        timestamp: snapshot.timestamp,
-        open: prevPrice,
-        high: Math.max(snapshot.ethPrice, prevPrice),
-        low: Math.min(snapshot.ethPrice, prevPrice),
-        close: snapshot.ethPrice,
-        volume: 0,
-      };
-    });
+    // Build regions
+    const regions: Array<{ 
+      startTime: number; 
+      endTime: number; 
+      regime: 'bullish' | 'bearish' | 'neutral'; 
+      confidence: number 
+    }> = [];
     
-    // Calculate regimes for all points
-    const regions: Array<{ start: number; end: number; regime: 'bullish' | 'bearish' | 'neutral'; confidence: number }> = [];
-    let currentRegime: 'bullish' | 'bearish' | 'neutral' | null = null;
-    let currentStart = 0;
-    let currentConfidence = 0;
-    
-    for (let i = 50; i < candles.length; i++) {
-      const regimeSignal = detectMarketRegimeCached(candles, i);
-      const regime = regimeSignal.regime;
-      const confidence = regimeSignal.confidence;
+    // PART 1: Calculate regimes for period BEFORE session started
+    // This uses the same algorithm the strategy would use
+    if (historyStart < sessionStartTime && candlesForRegime.length >= 50) {
+      let lastRegime: 'bullish' | 'bearish' | 'neutral' | null = null;
+      let regionStart = historyStart;
+      let regionConfidence = 0;
       
-      if (regime !== currentRegime) {
-        // Save previous region
-        if (currentRegime !== null && i > currentStart) {
-          regions.push({
-            start: currentStart,
-            end: i - 1,
-            regime: currentRegime,
-            confidence: currentConfidence,
-          });
+      // Iterate through candles in the historical period
+      for (let i = 50; i < candlesForRegime.length; i++) {
+        const candle = candlesForRegime[i];
+        if (!candle) continue;
+        
+        // Stop if we've passed session start (we'll use regimeHistory from here)
+        if (candle.timestamp >= sessionStartTime) break;
+        
+        // Skip candles before our visible range
+        if (candle.timestamp < historyStart) continue;
+        
+        const signal = detectMarketRegimeCached(candlesForRegime, i);
+        const regime = signal.regime;
+        
+        if (regime !== lastRegime) {
+          // Save previous region
+          if (lastRegime !== null && candle.timestamp > regionStart) {
+            regions.push({
+              startTime: regionStart,
+              endTime: candle.timestamp - 1,
+              regime: lastRegime,
+              confidence: regionConfidence,
+            });
+          }
+          // Start new region
+          lastRegime = regime;
+          regionStart = candle.timestamp;
+          regionConfidence = signal.confidence;
+        } else {
+          regionConfidence = Math.max(regionConfidence, signal.confidence);
         }
-        // Start new region
-        currentRegime = regime;
-        currentStart = i;
-        currentConfidence = confidence;
-      } else {
-        // Update confidence for current region
-        currentConfidence = Math.max(currentConfidence, confidence);
+      }
+      
+      // Close the last pre-session region at session start (or historyEnd if session is after)
+      const preSessionEnd = Math.min(sessionStartTime - 1, historyEnd);
+      if (lastRegime !== null && preSessionEnd >= regionStart) {
+        regions.push({
+          startTime: regionStart,
+          endTime: preSessionEnd,
+          regime: lastRegime,
+          confidence: regionConfidence,
+        });
       }
     }
     
-    // Add final region
-    if (currentRegime !== null && candles.length > currentStart) {
+    // PART 2: Use regimeHistory for period AFTER session started
+    if (historyEnd >= sessionStartTime && regimeHistory.length > 0) {
+      // Sort history by timestamp
+      const sortedHistory = [...regimeHistory].sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Start from session start (or historyStart if it's after session start)
+      const sessionPeriodStart = Math.max(historyStart, sessionStartTime);
+      
+      // Find the regime that was active at sessionPeriodStart
+      let activeRegimeIndex = -1;
+      for (let i = sortedHistory.length - 1; i >= 0; i--) {
+        if (sortedHistory[i]!.timestamp <= sessionPeriodStart) {
+          activeRegimeIndex = i;
+          break;
+        }
+      }
+      
+      // If no regime before sessionPeriodStart, use first one
+      let currentRegimeEntry = activeRegimeIndex >= 0 
+        ? sortedHistory[activeRegimeIndex]! 
+        : sortedHistory[0]!;
+      
+      let regionStart = sessionPeriodStart;
+      
+      // Iterate through regime changes after our start point
+      for (let i = Math.max(0, activeRegimeIndex + 1); i < sortedHistory.length; i++) {
+        const change = sortedHistory[i]!;
+        
+        // Skip changes before our start
+        if (change.timestamp <= sessionPeriodStart) continue;
+        
+        // Stop if past visible range
+        if (change.timestamp > historyEnd) break;
+        
+        // Create region up to this change
+        if (change.timestamp > regionStart) {
+          regions.push({
+            startTime: regionStart,
+            endTime: change.timestamp - 1,
+            regime: currentRegimeEntry.regime,
+            confidence: currentRegimeEntry.confidence,
+          });
+        }
+        
+        currentRegimeEntry = change;
+        regionStart = change.timestamp;
+      }
+      
+      // Add final region using session.currentRegime
+      if (historyEnd >= regionStart) {
+        regions.push({
+          startTime: regionStart,
+          endTime: historyEnd,
+          regime: session.currentRegime.regime,
+          confidence: session.currentRegime.confidence,
+        });
+      }
+    } else if (historyEnd >= sessionStartTime && regimeHistory.length === 0) {
+      // Session started but no history - use current regime for session period
+      const sessionPeriodStart = Math.max(historyStart, sessionStartTime);
       regions.push({
-        start: currentStart,
-        end: candles.length - 1,
-        regime: currentRegime,
-        confidence: currentConfidence,
+        startTime: sessionPeriodStart,
+        endTime: historyEnd,
+        regime: session.currentRegime.regime,
+        confidence: session.currentRegime.confidence,
       });
     }
     
-    // Convert to chart coordinates
-    return regions.map(region => {
-      const startX = (region.start / Math.max(filteredHistory.length - 1, 1)) * chartWidth + padding.left;
-      const endX = (region.end / Math.max(filteredHistory.length - 1, 1)) * chartWidth + padding.left;
+    // Convert time-based regions to chart coordinates
+    const timeRangeMs = historyEnd - historyStart;
+    
+    const mappedRegions = regions.map(region => {
+      // Check if region overlaps with visible time range
+      if (region.startTime > historyEnd || region.endTime < historyStart) {
+        return null;
+      }
+      
+      // Clamp region to visible time range
+      const visibleStart = Math.max(region.startTime, historyStart);
+      const visibleEnd = Math.min(region.endTime, historyEnd);
+      
+      // Calculate X positions based on timestamp
+      const startX = padding.left + ((visibleStart - historyStart) / timeRangeMs) * chartWidth;
+      const endX = padding.left + ((visibleEnd - historyStart) / timeRangeMs) * chartWidth;
+      
+      // Ensure positions are within chart bounds
+      const clampedStartX = Math.max(padding.left, Math.min(padding.left + chartWidth, startX));
+      const clampedEndX = Math.max(padding.left, Math.min(padding.left + chartWidth, endX));
+      
+      const regionWidth = Math.max(1, clampedEndX - clampedStartX);
+      
       return {
-        ...region,
-        x: startX,
-        width: endX - startX,
+        regime: region.regime,
+        confidence: region.confidence,
+        x: clampedStartX,
+        width: regionWidth,
       };
-    });
-  }, [session, filteredHistory, chartWidth, padding.left]);
+    }).filter((region): region is NonNullable<typeof region> => region !== null);
+    
+    return mappedRegions;
+  }, [session, filteredCandles, actualCandles, chartWidth, padding.left]);
 
   // Calculate regime for hovered point (for tooltip) - must be before early return
+  // For historical data: calculate using detectMarketRegimeCached
+  // For session data: use regimeHistory
   const hoveredRegime = useMemo(() => {
-    if (!session || hoveredIndex === null || hoveredIndex < 50) return null;
+    if (!session || hoveredIndex === null || filteredCandles.length === 0) return null;
     
-    const candles: PriceCandle[] = filteredHistory.map((snapshot, index) => {
-      const prevPrice = index > 0 ? filteredHistory[index - 1]!.ethPrice : snapshot.ethPrice;
+    const hoveredCandle = filteredCandles[hoveredIndex];
+    if (!hoveredCandle) return null;
+    
+    const hoveredTime = hoveredCandle.timestamp;
+    const sessionStartTime = session.startedAt;
+    
+    // If this is the most recent point, use session.currentRegime
+    if (hoveredIndex === filteredCandles.length - 1) {
+      return session.currentRegime;
+    }
+    
+    // For data BEFORE session started, calculate the regime
+    if (hoveredTime < sessionStartTime) {
+      const candlesForRegime = actualCandles && actualCandles.length > 0 ? actualCandles : filteredCandles;
+      
+      // Find the index in candlesForRegime for this timestamp
+      const candleIndex = candlesForRegime.findIndex(c => c.timestamp === hoveredTime);
+      
+      if (candleIndex >= 50) {
+        clearIndicatorCache();
+        return detectMarketRegimeCached(candlesForRegime, candleIndex);
+      }
+      
+      // Not enough data for calculation, use session current
+      return session.currentRegime;
+    }
+    
+    // For data AFTER session started, look up from regimeHistory
+    const regimeHistory = session.regimeHistory || [];
+    if (regimeHistory.length === 0) {
+      return session.currentRegime;
+    }
+    
+    // Find the regime that was active at hoveredTime
+    let activeRegime = null;
+    for (let i = regimeHistory.length - 1; i >= 0; i--) {
+      if (regimeHistory[i]!.timestamp <= hoveredTime) {
+        activeRegime = regimeHistory[i];
+        break;
+      }
+    }
+    
+    if (activeRegime) {
       return {
-        timestamp: snapshot.timestamp,
-        open: prevPrice,
-        high: Math.max(snapshot.ethPrice, prevPrice),
-        low: Math.min(snapshot.ethPrice, prevPrice),
-        close: snapshot.ethPrice,
-        volume: 0,
+        regime: activeRegime.regime,
+        confidence: activeRegime.confidence,
+        indicators: session.currentRegime.indicators,
       };
-    });
+    }
     
-    return detectMarketRegimeCached(candles, hoveredIndex);
-  }, [session, hoveredIndex, filteredHistory]);
-
-  // Early return after all hooks
-  if (filteredHistory.length === 0) {
-    return (
-      <div className={css({
-        padding: '24px',
-        bg: '#161b22',
-        border: '1px solid #30363d',
-        borderRadius: '8px',
-        textAlign: 'center',
-        color: '#7d8590',
-      })}>
-        No price data available
-      </div>
-    );
-  }
+    // If hovered time is before all regime history, use first regime
+    const firstRegime = regimeHistory[0];
+    if (firstRegime) {
+      return {
+        regime: firstRegime.regime,
+        confidence: firstRegime.confidence,
+        indicators: session.currentRegime.indicators,
+      };
+    }
+    
+    return session.currentRegime;
+  }, [session, hoveredIndex, filteredCandles, actualCandles]);
 
   const project = (value: number, index: number): { x: number; y: number } => {
-    const x = (index / Math.max(filteredHistory.length - 1, 1)) * chartWidth + padding.left;
+    const x = (index / Math.max(filteredCandles.length - 1, 1)) * chartWidth + padding.left;
     const ratio = (value - yMin) / (yMax - yMin || 1);
     const y = padding.top + chartHeight - ratio * chartHeight;
     return { x, y };
   };
 
-  // Build price line path
-  const pricePath = filteredHistory
-    .map((p, i) => {
-      const { x, y } = project(p.ethPrice, i);
+  // Build price line path using candle close prices
+  const pricePath = filteredCandles
+    .map((c, i) => {
+      const { x, y } = project(c.close, i);
       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
     })
     .join(' ');
@@ -252,7 +480,7 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
   const buildMAPath = (maValues: (number | null)[]): string | null => {
     const points: string[] = [];
     maValues.forEach((value, i) => {
-      if (value !== null && i < filteredHistory.length) {
+      if (value !== null && i < filteredCandles.length) {
         const { x, y } = project(value, i);
         points.push(`${x},${y}`);
       }
@@ -260,23 +488,24 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
     return points.length > 0 ? points.join(' ') : null;
   };
 
-  const sma7Path = buildMAPath(sma7);
-  const sma30Path = buildMAPath(sma30);
+  const sma20Path = buildMAPath(sma20);
+  const sma50Path = buildMAPath(sma50);
+  const sma200Path = buildMAPath(sma200);
   const ema12Path = buildMAPath(ema12);
   const ema26Path = buildMAPath(ema26);
 
-  // Map trades to chart positions
+  // Map trades to chart positions (align with nearest candle)
   const tradeMarkers = trades
     .filter(t => {
       const tradeTime = t.timestamp;
-      return filteredHistory.some(p => Math.abs(p.timestamp - tradeTime) < 60 * 60 * 1000); // Within 1 hour
+      return filteredCandles.some(c => Math.abs(c.timestamp - tradeTime) < 60 * 60 * 1000); // Within 1 hour
     })
     .map(trade => {
-      const closestSnapshot = filteredHistory.reduce((closest, p) => {
-        return Math.abs(p.timestamp - trade.timestamp) < Math.abs(closest.timestamp - trade.timestamp) ? p : closest;
-      }, filteredHistory[0]);
-      const index = filteredHistory.indexOf(closestSnapshot);
-      const { x, y } = project(closestSnapshot.ethPrice, index);
+      const closestCandle = filteredCandles.reduce((closest, c) => {
+        return Math.abs(c.timestamp - trade.timestamp) < Math.abs(closest.timestamp - trade.timestamp) ? c : closest;
+      }, filteredCandles[0]!);
+      const index = filteredCandles.indexOf(closestCandle);
+      const { x, y } = project(closestCandle.close, index);
       return { ...trade, x, y };
     });
 
@@ -295,12 +524,15 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
     const y = (e.clientY - svgRect.top) * scaleY;
     
     // Find the closest data point
+    // Note: x is mouse position WITHOUT padding.left, px is WITH padding.left
+    // So we need to add padding.left to x when calculating distance
     let closestIndex = 0;
     let minDistance = Infinity;
     
-    filteredHistory.forEach((_, index) => {
-      const { x: px } = project(filteredHistory[index].ethPrice, index);
-      const distance = Math.abs(x - px);
+    filteredCandles.forEach((_, index) => {
+      const { x: px } = project(filteredCandles[index]!.close, index);
+      // Add padding.left back to x to match px coordinates
+      const distance = Math.abs((x + padding.left) - px);
       if (distance < minDistance) {
         minDistance = distance;
         closestIndex = index;
@@ -313,7 +545,7 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
       setHoveredIndex(closestIndex);
       
       // Get the actual data point's position in SVG coordinates
-      const dataPoint = project(filteredHistory[closestIndex].ethPrice, closestIndex);
+      const dataPoint = project(filteredCandles[closestIndex]!.close, closestIndex);
       
       // Convert data point's SVG X position to container-relative coordinates
       // SVG X is in viewBox coordinates (0 to width), convert to actual pixel position
@@ -355,7 +587,38 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
     setTooltipStyle({});
   };
 
-  const hoveredData = hoveredIndex !== null ? filteredHistory[hoveredIndex] : null;
+  const hoveredCandle = hoveredIndex !== null && hoveredIndex < filteredCandles.length ? filteredCandles[hoveredIndex] : null;
+
+  // Early return if no candles available (after all hooks)
+  if (filteredCandles.length === 0) {
+    return (
+      <div className={css({
+        padding: { base: '12px', md: '24px' },
+        bg: '#161b22',
+        border: '1px solid #30363d',
+        borderRadius: '8px',
+      })}>
+        <h2 className={css({ 
+          fontSize: { base: 'md', md: 'lg' }, 
+          fontWeight: 'semibold', 
+          marginBottom: { base: '12px', md: '16px' }, 
+          color: '#e6edf3' 
+        })}>
+          Price Chart ({timeRange === 'all' ? 'All' : timeRange === 'ytd' ? 'YTD' : timeRange === '6m' ? '6M' : timeRange === '3m' ? '3M' : timeRange === '1m' ? '1M' : timeRange === '14d' ? '14D' : timeRange === '7d' ? '7D' : '48H'})
+        </h2>
+        <div className={css({
+          padding: '24px',
+          bg: '#161b22',
+          border: '1px solid #30363d',
+          borderRadius: '8px',
+          textAlign: 'center',
+          color: '#7d8590',
+        })}>
+          {!actualCandles ? 'Loading chart data...' : 'No price data available for selected time range'}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={css({
@@ -371,7 +634,7 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
         marginBottom: { base: '12px', md: '16px' }, 
         color: '#e6edf3' 
       })}>
-        Price Chart ({timeRange === 'all' ? 'All' : timeRange === 'ytd' ? 'YTD' : timeRange === '6m' ? '6M' : timeRange === '3m' ? '3M' : timeRange === '1m' ? '1M' : timeRange === '14d' ? '14D' : timeRange === '7d' ? '7D' : '1D'})
+        Price Chart ({timeRange === 'all' ? 'All' : timeRange === 'ytd' ? 'YTD' : timeRange === '6m' ? '6M' : timeRange === '3m' ? '3M' : timeRange === '1m' ? '1M' : timeRange === '14d' ? '14D' : timeRange === '7d' ? '7D' : '48H'})
       </h2>
       <div 
         ref={containerRef}
@@ -390,17 +653,26 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
         >
           <rect x="0" y="0" width={width} height={height} fill="#161b22" />
           
-          {/* Regime background regions */}
+          {/* Regime background regions - render first so they're behind price line */}
           {regimeRegions.map((region, i) => {
-            const color = region.regime === 'bullish' ? 'rgba(63, 185, 80, 0.1)' :
-                          region.regime === 'bearish' ? 'rgba(248, 81, 73, 0.1)' :
-                          'rgba(125, 133, 144, 0.05)';
+            const color = region.regime === 'bullish' ? 'rgba(63, 185, 80, 0.2)' :
+                          region.regime === 'bearish' ? 'rgba(248, 81, 73, 0.2)' :
+                          'rgba(125, 133, 144, 0.1)';
+            // Ensure width is at least 1px and region is within chart bounds
+            const validWidth = Math.max(1, region.width);
+            const validX = Math.max(padding.left, Math.min(padding.left + chartWidth - validWidth, region.x));
+            
+            // Only render if region is actually visible
+            if (validWidth <= 0 || validX >= padding.left + chartWidth || validX + validWidth <= padding.left) {
+              return null;
+            }
+            
             return (
               <rect
-                key={i}
-                x={region.x}
+                key={`regime-${i}-${region.regime}-${region.x}-${region.width}`}
+                x={validX}
                 y={padding.top}
-                width={region.width}
+                width={validWidth}
                 height={chartHeight}
                 fill={color}
               />
@@ -454,10 +726,22 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
             />
           )}
 
-          {/* SMA 30 */}
-          {sma30Path && (
+          {/* SMA 200 (long-term trend) */}
+          {sma200Path && (
             <polyline
-              points={sma30Path}
+              points={sma200Path}
+              fill="none"
+              stroke="#8b5cf6"
+              strokeWidth="2"
+              strokeDasharray="6 6"
+              opacity={0.7}
+            />
+          )}
+
+          {/* SMA 50 (medium-term trend) */}
+          {sma50Path && (
+            <polyline
+              points={sma50Path}
               fill="none"
               stroke="#22c55e"
               strokeWidth="2"
@@ -465,10 +749,10 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
             />
           )}
 
-          {/* SMA 7 */}
-          {sma7Path && (
+          {/* SMA 20 (short-term trend) */}
+          {sma20Path && (
             <polyline
-              points={sma7Path}
+              points={sma20Path}
               fill="none"
               stroke="#60a5fa"
               strokeWidth="1.5"
@@ -491,20 +775,20 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
           ))}
 
           {/* Hover indicator */}
-          {hoveredData && (
+          {hoveredCandle && hoveredIndex !== null && (
             <>
               <line
-                x1={project(hoveredData.ethPrice, filteredHistory.indexOf(hoveredData)).x}
+                x1={project(hoveredCandle.close, hoveredIndex).x}
                 y1={padding.top}
-                x2={project(hoveredData.ethPrice, filteredHistory.indexOf(hoveredData)).x}
+                x2={project(hoveredCandle.close, hoveredIndex).x}
                 y2={height - padding.bottom}
                 stroke="#7d8590"
                 strokeWidth="1"
                 strokeDasharray="4 4"
               />
               <circle
-                cx={project(hoveredData.ethPrice, filteredHistory.indexOf(hoveredData)).x}
-                cy={project(hoveredData.ethPrice, filteredHistory.indexOf(hoveredData)).y}
+                cx={project(hoveredCandle.close, hoveredIndex).x}
+                cy={project(hoveredCandle.close, hoveredIndex).y}
                 r="4"
                 fill="#58a6ff"
               />
@@ -533,7 +817,7 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
         </svg>
 
         {/* Tooltip */}
-        {tooltipPosition && hoveredData && hoveredIndex !== null && (
+        {tooltipPosition && hoveredCandle && hoveredIndex !== null && (
           <div
             className={css({
               position: 'absolute',
@@ -555,7 +839,7 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
               fontWeight: 600,
               marginBottom: '6px',
             })}>
-              {new Date(hoveredData.timestamp).toLocaleString()}
+              {new Date(hoveredCandle.timestamp).toLocaleString()}
             </div>
             <div className={css({
               display: 'flex',
@@ -568,9 +852,9 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
                 justifyContent: 'space-between',
                 gap: '12px',
               })}>
-                <span className={css({ color: '#9ca3af' })}>Price:</span>
+                <span className={css({ color: '#9ca3af' })}>Close:</span>
                 <span className={css({ color: '#58a6ff', fontWeight: 500 })}>
-                  ${hoveredData.ethPrice.toFixed(2)}
+                  ${hoveredCandle.close.toFixed(2)}
                 </span>
               </div>
               <div className={css({
@@ -578,32 +862,76 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
                 justifyContent: 'space-between',
                 gap: '12px',
               })}>
-                <span className={css({ color: '#9ca3af' })}>Value:</span>
+                <span className={css({ color: '#9ca3af' })}>Open:</span>
                 <span className={css({ color: '#e5e7eb', fontWeight: 500 })}>
-                  ${hoveredData.totalValue.toFixed(2)}
+                  ${hoveredCandle.open.toFixed(2)}
                 </span>
               </div>
-              {sma7[hoveredIndex] !== null && (
+              <div className={css({
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: '12px',
+              })}>
+                <span className={css({ color: '#9ca3af' })}>High:</span>
+                <span className={css({ color: '#3fb950', fontWeight: 500 })}>
+                  ${hoveredCandle.high.toFixed(2)}
+                </span>
+              </div>
+              <div className={css({
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: '12px',
+              })}>
+                <span className={css({ color: '#9ca3af' })}>Low:</span>
+                <span className={css({ color: '#f85149', fontWeight: 500 })}>
+                  ${hoveredCandle.low.toFixed(2)}
+                </span>
+              </div>
+              {hoveredCandle.volume > 0 && (
                 <div className={css({
                   display: 'flex',
                   justifyContent: 'space-between',
                   gap: '12px',
                 })}>
-                  <span className={css({ color: '#9ca3af' })}>SMA 7:</span>
-                  <span className={css({ color: '#60a5fa', fontWeight: 500 })}>
-                    ${sma7[hoveredIndex]!.toFixed(2)}
+                  <span className={css({ color: '#9ca3af' })}>Volume:</span>
+                  <span className={css({ color: '#e5e7eb', fontWeight: 500 })}>
+                    {hoveredCandle.volume.toLocaleString()}
                   </span>
                 </div>
               )}
-              {sma30[hoveredIndex] !== null && (
+              {sma20[hoveredIndex] !== null && (
                 <div className={css({
                   display: 'flex',
                   justifyContent: 'space-between',
                   gap: '12px',
                 })}>
-                  <span className={css({ color: '#9ca3af' })}>SMA 30:</span>
+                  <span className={css({ color: '#9ca3af' })}>SMA 20:</span>
+                  <span className={css({ color: '#60a5fa', fontWeight: 500 })}>
+                    ${sma20[hoveredIndex]!.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {sma50[hoveredIndex] !== null && (
+                <div className={css({
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                })}>
+                  <span className={css({ color: '#9ca3af' })}>SMA 50:</span>
                   <span className={css({ color: '#22c55e', fontWeight: 500 })}>
-                    ${sma30[hoveredIndex]!.toFixed(2)}
+                    ${sma50[hoveredIndex]!.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {sma200[hoveredIndex] !== null && (
+                <div className={css({
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                })}>
+                  <span className={css({ color: '#9ca3af' })}>SMA 200:</span>
+                  <span className={css({ color: '#8b5cf6', fontWeight: 500 })}>
+                    ${sma200[hoveredIndex]!.toFixed(2)}
                   </span>
                 </div>
               )}
@@ -722,16 +1050,22 @@ export default function PriceChart({ portfolioHistory, trades, timeRange = 'all'
           <div className={css({ width: '12px', height: '2px', bg: '#58a6ff' })} />
           <span>Price</span>
         </div>
-        {sma7Path && (
+        {sma20Path && (
           <div className={css({ display: 'flex', alignItems: 'center', gap: '6px' })}>
             <div className={css({ width: '12px', height: '1.5px', bg: '#60a5fa', borderStyle: 'dashed', borderWidth: '1px', borderColor: '#60a5fa' })} />
-            <span>SMA 7</span>
+            <span>SMA 20</span>
           </div>
         )}
-        {sma30Path && (
+        {sma50Path && (
           <div className={css({ display: 'flex', alignItems: 'center', gap: '6px' })}>
             <div className={css({ width: '12px', height: '2px', bg: '#22c55e', borderStyle: 'dashed', borderWidth: '1px', borderColor: '#22c55e' })} />
-            <span>SMA 30</span>
+            <span>SMA 50</span>
+          </div>
+        )}
+        {sma200Path && (
+          <div className={css({ display: 'flex', alignItems: 'center', gap: '6px' })}>
+            <div className={css({ width: '12px', height: '2px', bg: '#8b5cf6', borderStyle: 'dashed', borderWidth: '1px', borderColor: '#8b5cf6' })} />
+            <span>SMA 200</span>
           </div>
         )}
         {ema12Path && (

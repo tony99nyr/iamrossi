@@ -1,4 +1,3 @@
-import { head } from '@vercel/blob';
 import { css, cx } from '@styled-system/css';
 
 const containerStyle = css({
@@ -29,36 +28,13 @@ const videoStyle = css({
     zIndex: -1,
 });
 
-const VIDEO_BLOB_PATH = process.env.RICK_ROLL_BLOB_PATH ?? 'rick.mp4';
-
-async function resolveVideoSource() {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-
-    if (!token) {
-        console.warn('BLOB_READ_WRITE_TOKEN missing; falling back to static 404 background.');
-        return null;
-    }
-
-    try {
-        const { downloadUrl } = await head(VIDEO_BLOB_PATH, { token });
-        return downloadUrl;
-    } catch (error) {
-        console.error('Failed to resolve Blob video for 404 page:', error);
-        return null;
-    }
-}
-
-export default async function NotFound() {
-    const videoSrc = await resolveVideoSource();
-
+export default function NotFound() {
     return (
         <div className={cx('not-found-page', containerStyle)}>
-            {videoSrc ? (
-                <video autoPlay loop muted playsInline className={videoStyle}>
-                    <source src={videoSrc} type="video/mp4" />
-                    Your browser does not support the video tag.
-                </video>
-            ) : null}
+            <video autoPlay loop muted playsInline className={videoStyle}>
+                <source src="/rick.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+            </video>
         </div>
     );
 }

@@ -37,7 +37,6 @@ yarn-error.log*
 .vercel
 
 # large assets (should be hosted externally)
-/public/*.mp4
 /public/*.mov
 /public/*.avi
 
