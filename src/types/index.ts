@@ -333,7 +333,7 @@ export interface PriceCandle {
 }
 
 export interface IndicatorConfig {
-  type: 'sma' | 'ema' | 'macd' | 'rsi' | 'bollinger';
+  type: 'sma' | 'ema' | 'macd' | 'rsi' | 'bollinger' | 'vwap' | 'obv' | 'volume_roc' | 'vwmacd';
   weight: number; // 0-1, sum should be ~1.0
   params: Record<string, number>; // e.g., { period: 20 }
 }
@@ -341,7 +341,7 @@ export interface IndicatorConfig {
 export interface TradingConfig {
   name?: string; // Optional strategy name
   description?: string; // Optional strategy description
-  timeframe: '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+  timeframe: '1m' | '5m' | '15m' | '1h' | '4h' | '8h' | '12h' | '1d';
   indicators: IndicatorConfig[];
   buyThreshold: number;
   sellThreshold: number;
@@ -370,6 +370,63 @@ export interface Trade {
   costBasis?: number; // Cost basis for P&L calculation (buy: usdcAmount, sell: matched buy cost)
   pnl?: number; // Profit/Loss for sell trades (usdcAmount - costBasis)
   fullySold?: boolean; // For buy trades: whether this position has been fully sold
+  // Audit information (optional, populated by trade audit generator)
+  audit?: TradeAudit;
+}
+
+export interface TradeAudit {
+  // When
+  date: string; // Human-readable date
+  timeframe: string; // e.g., '8h'
+  
+  // Why - Signal Details
+  regime: 'bullish' | 'bearish' | 'neutral';
+  regimeConfidence: number;
+  activeStrategy: string; // Strategy name used
+  momentumConfirmed: boolean;
+  
+  // Why - Indicator Breakdown
+  indicatorSignals: Record<string, number>; // Individual indicator contributions
+  indicatorWeights: Record<string, number>; // Indicator weights used
+  buyThreshold: number; // Threshold that triggered buy
+  sellThreshold: number; // Threshold that triggered sell
+  
+  // Why - Market Context
+  priceAtTrade: number;
+  volatility: number; // Current volatility
+  volume: number; // Volume at time of trade
+  priceChange24h?: number; // Price change in last 24h
+  
+  // Why - Risk Management
+  riskFilters: {
+    volatilityFilter: boolean; // Was volatility filter active?
+    whipsawDetection: boolean; // Was whipsaw detected?
+    circuitBreaker: boolean; // Was circuit breaker active?
+    regimePersistence: boolean; // Did regime persistence pass?
+  };
+  
+  // Why - Position Sizing
+  positionSizePct: number; // Percentage of portfolio used
+  positionSizeMultiplier: number; // Dynamic multiplier applied
+  maxPositionAllowed: number; // Maximum position allowed
+  
+  // How Successful - Trade Performance Analysis
+  holdingPeriod?: number; // Days/candles held (for sell trades)
+  maxFavorableExcursion?: number; // Best price reached while holding
+  maxAdverseExcursion?: number; // Worst price reached while holding
+  exitReason?: 'signal' | 'stop-loss' | 'take-profit' | 'time-based';
+  
+  // How Successful - Outcome Classification
+  outcome: 'win' | 'loss' | 'breakeven' | 'pending'; // For buy trades, 'pending' until sold
+  winLossAmount: number; // Absolute win/loss amount
+  roi?: number; // Return on investment for this trade
+  
+  // Context - Market Conditions
+  marketConditions: {
+    trend: 'up' | 'down' | 'sideways';
+    momentum: 'strong' | 'moderate' | 'weak';
+    volatility: 'high' | 'medium' | 'low';
+  };
 }
 
 export interface Portfolio {

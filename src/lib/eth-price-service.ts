@@ -470,6 +470,8 @@ function mapTimeframeToInterval(timeframe: string): string {
     '15m': '15m',
     '1h': '1h',
     '4h': '4h',
+    '8h': '8h',
+    '12h': '12h',
     '1d': '1d',
   };
   return mapping[timeframe] || '1d';
@@ -485,7 +487,8 @@ export async function fetchPriceCandles(
   timeframe: string,
   startDate: string,
   endDate: string,
-  currentPrice?: number // Optional: if provided, use this for today's candle instead of fetching
+  currentPrice?: number, // Optional: if provided, use this for today's candle instead of fetching
+  skipAPIFetch?: boolean // Optional: if true, skip API fetches (for backfill tests on historical data)
 ): Promise<PriceCandle[]> {
   const startTime = new Date(startDate).getTime();
   const endTime = new Date(endDate).getTime();
@@ -523,10 +526,13 @@ export async function fetchPriceCandles(
       try {
         const dir = path.dirname(historicalFilePath);
         const files = await fs.readdir(dir);
+        // Look for both naming patterns:
+        // 1. Symbol-based: ethusdt_8h_YYYY-MM-DD_YYYY-MM-DD.json.gz
+        // 2. Date-based: YYYY-MM-DD_YYYY-MM-DD.json.gz
         const historicalFiles = files.filter(f => 
-          f.startsWith(`${symbol.toLowerCase()}_${interval}_`) && 
           f.endsWith('.json.gz') &&
-          !f.includes('rolling')
+          !f.includes('rolling') &&
+          (f.startsWith(`${symbol.toLowerCase()}_${interval}_`) || /^\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.json\.gz$/.test(f))
         );
         
         for (const file of historicalFiles) {
@@ -591,8 +597,8 @@ export async function fetchPriceCandles(
       const todayStart = today.getTime();
       const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1;
       
-      // Always check for today's candle if endDate includes today
-      if (endTime >= todayStart) {
+      // Always check for today's candle if endDate includes today (unless skipAPIFetch is true)
+      if (endTime >= todayStart && !skipAPIFetch) {
         const cacheKey = getCacheKey(symbol, interval, todayStart, todayEnd);
         const cached = await redis.get(cacheKey);
         let todayCandle: PriceCandle | null = null;
@@ -635,7 +641,8 @@ export async function fetchPriceCandles(
         
         // If not in Redis (or synthetic), try to fetch today's candle from API first (has real OHLC data)
         // Then fall back to creating from currentPrice if API doesn't have it yet
-        if (!todayCandle) {
+        // Skip API fetch if skipAPIFetch is true or it's a historical period
+        if (!todayCandle && !skipAPIFetch && endTime >= todayStart) {
           // Try to fetch today's candle from Binance API (has real OHLC, not just close price)
           try {
             console.log(`📡 Fetching today's candle from Binance API...`);
@@ -662,7 +669,8 @@ export async function fetchPriceCandles(
           }
           
           // If API didn't have it, create from currentPrice (if provided) or fetch latest price
-          if (!todayCandle) {
+          // Skip price fetch if skipAPIFetch is true
+          if (!todayCandle && !skipAPIFetch) {
             let priceToUse: number | null = null;
             
             // Use provided currentPrice if available (avoids redundant API call)
@@ -670,7 +678,7 @@ export async function fetchPriceCandles(
               priceToUse = currentPrice;
               console.log(`📅 Using provided current price for today's candle: $${priceToUse.toFixed(2)}`);
             } else {
-              // Fallback: fetch latest price
+              // Fallback: fetch latest price (only if not skipping API)
               try {
                 priceToUse = await fetchLatestPrice(symbol);
                 // Wait a bit for updateTodayCandle to complete
@@ -761,6 +769,12 @@ export async function fetchPriceCandles(
       expectedInterval = 5 * 60 * 1000; // 5 minutes in ms
     } else if (timeframe === '1h') {
       expectedInterval = 60 * 60 * 1000; // 1 hour in ms
+    } else if (timeframe === '4h') {
+      expectedInterval = 4 * 60 * 60 * 1000; // 4 hours in ms
+    } else if (timeframe === '8h') {
+      expectedInterval = 8 * 60 * 60 * 1000; // 8 hours in ms
+    } else if (timeframe === '12h') {
+      expectedInterval = 12 * 60 * 60 * 1000; // 12 hours in ms
     } else if (timeframe === '1d') {
       expectedInterval = 24 * 60 * 60 * 1000; // 1 day in ms
     } else {
@@ -807,7 +821,11 @@ export async function fetchPriceCandles(
         
         if (!hasCompleteCoverage && (timeframe !== '5m' && timeframe !== '1h')) {
           // Only warn about incomplete coverage for daily candles (intraday partial coverage is OK)
-          console.log(`⚠️ Incomplete coverage: have ${uniqueIntervals.size} unique ${intervalLabel}, need ${intervalsInRange} ${intervalLabel} in range - will fetch from API`);
+          if (skipAPIFetch || endTime < Date.now()) {
+            console.log(`⚠️ Incomplete coverage: have ${uniqueIntervals.size} unique ${intervalLabel}, need ${intervalsInRange} ${intervalLabel} in range - but skipping API fetch (historical period or skipAPIFetch=true)`);
+          } else {
+            console.log(`⚠️ Incomplete coverage: have ${uniqueIntervals.size} unique ${intervalLabel}, need ${intervalsInRange} ${intervalLabel} in range - will fetch from API`);
+          }
         } else if (timeframe === '5m' || timeframe === '1h') {
           console.log(`ℹ️ Partial coverage OK for intraday: have ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${((uniqueIntervals.size / intervalsInRange) * 100).toFixed(1)}%)`);
         }
@@ -821,12 +839,17 @@ export async function fetchPriceCandles(
     // Otherwise, we need to fetch from API to fill gaps
     if ((uniqueCandles.length >= 50 || uniqueCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime)) && hasCompleteCoverage) {
       console.log(`ℹ️ Using existing data: ${uniqueCandles.length} candles with complete coverage of requested range`);
-      // Check if we have today's candle - if not, try to fetch it from API
+      
+      // Skip API fetches if:
+      // 1. skipAPIFetch is true (explicit flag for backfill tests)
+      // 2. endDate is in the past (historical data, no need for today's candle)
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       const todayStart = today.getTime();
+      const isHistoricalPeriod = endTime < todayStart;
       
-      if (endTime >= todayStart) {
+      // Skip today's candle fetch if skipAPIFetch is true or it's a historical period
+      if (!skipAPIFetch && !isHistoricalPeriod && endTime >= todayStart) {
         const todayCandleIndex = uniqueCandles.findIndex(c => {
           const candleDate = new Date(c.timestamp);
           candleDate.setUTCHours(0, 0, 0, 0);
@@ -994,18 +1017,44 @@ export async function fetchPriceCandles(
       allCandles[0]!.timestamp <= startTime && 
       allCandles[allCandles.length - 1]!.timestamp >= endTime;
     
-    if (allCandles.length < 50 || !allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime) || !hasCompleteCoverage) {
+    // Skip API fetch if:
+    // 1. skipAPIFetch is true (explicit flag for backfill tests)
+    // 2. endDate is in the past (historical data, no need for API)
+    const isHistoricalPeriod = endTime < Date.now();
+    
+    if (!skipAPIFetch && !isHistoricalPeriod && (allCandles.length < 50 || !allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime) || !hasCompleteCoverage)) {
       console.log(`📡 Fetching from API: need to fill gaps (have ${allCandles.length} candles, coverage: ${hasCompleteCoverage ? 'complete' : 'incomplete'})`);
       // Try Binance first
       candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
     } else {
-      console.log(`ℹ️ Using existing data: ${allCandles.length} candles with complete coverage`);
+      if (skipAPIFetch || isHistoricalPeriod) {
+        console.log(`ℹ️ Using existing data: ${allCandles.length} candles (skipping API fetch for historical period)`);
+      } else {
+        console.log(`ℹ️ Using existing data: ${allCandles.length} candles with complete coverage`);
+      }
     }
   } catch (error) {
-    console.error('Binance API failed, trying CoinGecko OHLC:', error);
-    
-    // Try CoinGecko OHLC endpoint first (new method - returns 30-minute candles)
-    try {
+    // Skip API fallbacks if skipAPIFetch is true or this is a historical period
+    const isHistoricalPeriod = endTime < Date.now();
+    if (skipAPIFetch || isHistoricalPeriod) {
+      console.log(`ℹ️ Skipping API fallbacks (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod}) - using file data only`);
+      if (allCandles.length > 0) {
+        candles = allCandles;
+      }
+    } else {
+      console.error('Binance API failed, trying CryptoCompare:', error);
+      
+      // Try CryptoCompare first (free tier, good historical data)
+      try {
+        const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
+        console.log(`📡 Trying CryptoCompare API for ${interval} candles...`);
+        candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
+        console.log(`✅ CryptoCompare succeeded: ${candles.length} ${interval} candles`);
+      } catch (cryptoCompareError) {
+      console.error('CryptoCompare API failed, trying CoinGecko OHLC:', cryptoCompareError);
+      
+      // Try CoinGecko OHLC endpoint (new method - returns 30-minute candles)
+        try {
       // Calculate days needed - if start and end are the same, we still need at least 1 day
       // Add 1 day buffer to ensure we get complete data coverage
       const daysSinceStart = Math.max(1, Math.ceil((endTime - startTime) / (24 * 60 * 60 * 1000)) + 1);
@@ -1026,18 +1075,28 @@ export async function fetchPriceCandles(
       if (filteredCandles.length > 0) {
         candles = filteredCandles;
         console.log(`✅ CoinGecko OHLC succeeded: ${candles.length} ${interval} candles`);
-      } else {
-        throw new Error('CoinGecko OHLC returned no candles in requested range');
-      }
-    } catch (ohlcError) {
-      console.error('CoinGecko OHLC failed, trying CoinGecko market_chart (old method):', ohlcError);
-      // Fallback to CoinGecko market_chart (will aggregate price points into candles)
-      try {
-        console.log(`📡 Fetching from CoinGecko market_chart and aggregating into ${interval} candles...`);
-        candles = await fetchCoinGeckoCandles(symbol, startTime, endTime, interval);
-      } catch (fallbackError) {
+        } else {
+          throw new Error('CoinGecko OHLC returned no candles in requested range');
+        }
+        } catch (ohlcError) {
+        console.error('CoinGecko OHLC failed, trying CoinGecko market_chart (old method):', ohlcError);
+        // Fallback to CoinGecko market_chart (will aggregate price points into candles)
+          try {
+            console.log(`📡 Fetching from CoinGecko market_chart and aggregating into ${interval} candles...`);
+            candles = await fetchCoinGeckoCandles(symbol, startTime, endTime, interval);
+          } catch (fallbackError) {
         const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
         console.error('CoinGecko API also failed:', fallbackError);
+        
+        // If skipAPIFetch or historical period, use file data and return early
+        if (skipAPIFetch || isHistoricalPeriod) {
+          if (allCandles.length > 0) {
+            console.log(`ℹ️ Using file data only (${allCandles.length} candles) - skipping all API fallbacks`);
+            candles = allCandles;
+          } else {
+            throw new Error(`No file data available and API fetch is disabled (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod})`);
+          }
+        } else {
       
         // NO SYNTHETIC DATA - Only use real API data
         // If CoinGecko doesn't have the data, we fail gracefully
@@ -1046,7 +1105,23 @@ export async function fetchPriceCandles(
           console.error(`❌ CoinGecko doesn't have ${interval} data for this period - cannot create synthetic data for trading`);
           console.error(`   Missing data range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
           // Don't create synthetic data - fail gracefully
-          throw new Error(`No real API data available for ${interval} candles in requested range - cannot use synthetic data for trading`);
+          // Last resort: try CryptoCompare if we haven't already
+          if (!candles || candles.length === 0) {
+            try {
+              const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
+              console.log(`📡 Last resort: Trying CryptoCompare API...`);
+              candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
+              if (candles.length > 0) {
+                console.log(`✅ CryptoCompare succeeded: ${candles.length} ${interval} candles`);
+              }
+            } catch (cryptoCompareError2) {
+              console.error('CryptoCompare also failed:', cryptoCompareError2);
+            }
+          }
+          
+          if (!candles || candles.length === 0) {
+            throw new Error(`No real API data available for ${interval} candles in requested range - cannot use synthetic data for trading`);
+          }
         }
         
         // NO SYNTHETIC DATA - Only use real API data
@@ -1065,6 +1140,9 @@ export async function fetchPriceCandles(
         }
         
         throw new Error(`No real API data available and no file data - cannot proceed without real data`);
+          }
+        }
+      }
       }
     }
   }

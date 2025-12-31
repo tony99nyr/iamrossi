@@ -475,7 +475,9 @@ async function main() {
     const actualHistoryStart = lookbackDateStr < minHistoryDate ? minHistoryDate : lookbackDateStr;
     
     console.log(`📈 Fetching candles from ${actualHistoryStart} to ${endDateStr}...`);
-    const candles = await fetchPriceCandles('ETHUSDT', '1d', actualHistoryStart, endDateStr);
+    // Configurable timeframe - default to 8h
+    const TIMEFRAME = (process.env.TIMEFRAME as '8h' | '12h' | '1d') || '8h';
+    const candles = await fetchPriceCandles('ETHUSDT', TIMEFRAME, actualHistoryStart, endDateStr);
     
     if (candles.length < 50) {
       console.error('❌ Error: Not enough historical data');

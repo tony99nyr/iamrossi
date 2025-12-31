@@ -241,7 +241,7 @@ export const pokemonIndexSettingsSchema = z.object({
 // ============================================================================
 
 export const indicatorConfigSchema = z.object({
-  type: z.enum(['sma', 'ema', 'macd', 'rsi', 'bollinger']),
+  type: z.enum(['sma', 'ema', 'macd', 'rsi', 'bollinger', 'vwap', 'obv', 'volume_roc', 'vwmacd']),
   weight: z.number().min(0).max(1),
   params: z.record(z.string(), z.number()),
 });
@@ -249,7 +249,7 @@ export const indicatorConfigSchema = z.object({
 export const tradingConfigSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
-  timeframe: z.enum(['1m', '5m', '15m', '1h', '4h', '1d']),
+  timeframe: z.enum(['1m', '5m', '15m', '1h', '4h', '8h', '12h', '1d']),
   indicators: z.array(indicatorConfigSchema),
   buyThreshold: z.number().min(-1).max(1),
   sellThreshold: z.number().min(-1).max(1),

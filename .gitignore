@@ -60,3 +60,5 @@ styled-system
 .cursor/debug.log
 
 data/backfill-reports/*
+s
+data/trading-baselines/*

@@ -2,6 +2,8 @@
  * Technical indicator calculations for trading signals
  */
 
+import type { PriceCandle } from '@/types';
+
 /**
  * Calculate Simple Moving Average (SMA)
  */
@@ -151,6 +153,70 @@ export function calculateBollingerBands(
 }
 
 /**
+ * Calculate Average True Range (ATR)
+ * ATR measures market volatility by averaging true ranges over a period
+ * 
+ * True Range = max(
+ *   high - low,
+ *   abs(high - previousClose),
+ *   abs(low - previousClose)
+ * )
+ * 
+ * ATR = EMA or SMA of True Range
+ */
+export function calculateATR(
+  candles: PriceCandle[],
+  period: number = 14,
+  useEMA: boolean = true
+): number[] {
+  if (candles.length < period + 1) return [];
+
+  const trueRanges: number[] = [];
+
+  // Calculate True Range for each candle
+  for (let i = 1; i < candles.length; i++) {
+    const current = candles[i]!;
+    const previous = candles[i - 1]!;
+
+    const tr1 = current.high - current.low;
+    const tr2 = Math.abs(current.high - previous.close);
+    const tr3 = Math.abs(current.low - previous.close);
+
+    const trueRange = Math.max(tr1, tr2, tr3);
+    trueRanges.push(trueRange);
+  }
+
+  // Calculate ATR using EMA or SMA
+  if (useEMA) {
+    return calculateEMA(trueRanges, period);
+  } else {
+    return calculateSMA(trueRanges, period);
+  }
+}
+
+/**
+ * Get ATR value at a specific candle index
+ */
+export function getATRValue(
+  candles: PriceCandle[],
+  index: number,
+  period: number = 14,
+  useEMA: boolean = true
+): number | null {
+  if (index < 1 || candles.length < period + 1) return null;
+
+  const atr = calculateATR(candles, period, useEMA);
+  // ATR array starts at index 1 (since we need previous candle for TR)
+  const atrIndex = index - 1;
+  
+  if (atrIndex >= 0 && atrIndex < atr.length) {
+    return atr[atrIndex];
+  }
+  
+  return null;
+}
+
+/**
  * Get the latest value from an indicator array (handles alignment with price data)
  */
 export function getLatestIndicatorValue(
@@ -164,6 +230,7 @@ export function getLatestIndicatorValue(
   }
   return null;
 }
+
 
 
 

@@ -4,6 +4,9 @@
  * Tests various time periods to ensure profitability in all scenarios
  */
 
+// Configurable timeframe - default to 8h
+const TIMEFRAME = (process.env.TIMEFRAME as '8h' | '12h' | '1d') || '8h';
+
 import { fetchPriceCandles } from '../src/lib/eth-price-service';
 import { generateEnhancedAdaptiveSignal, recordTradeResult, clearRegimeHistory } from '../src/lib/adaptive-strategy-enhanced';
 import { calculateConfidence } from '../src/lib/confidence-calculator';
@@ -38,7 +41,7 @@ interface PeriodMetrics {
 const OPTION1_CONFIG: EnhancedAdaptiveStrategyConfig = {
   bullishStrategy: {
     name: 'Bullish-Optimized',
-    timeframe: '1d',
+    timeframe: TIMEFRAME,
     indicators: [
       { type: 'sma', weight: 0.3, params: { period: 20 } },
       { type: 'ema', weight: 0.3, params: { period: 12 } },
@@ -52,7 +55,7 @@ const OPTION1_CONFIG: EnhancedAdaptiveStrategyConfig = {
   },
   bearishStrategy: {
     name: 'Bearish-Conservative',
-    timeframe: '1d',
+    timeframe: TIMEFRAME,
     indicators: [
       { type: 'sma', weight: 0.5, params: { period: 20 } },
       { type: 'ema', weight: 0.5, params: { period: 12 } },

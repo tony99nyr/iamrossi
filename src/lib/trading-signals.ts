@@ -7,6 +7,13 @@ import {
   calculateBollingerBands,
   getLatestIndicatorValue,
 } from './indicators';
+import {
+  calculateVWAP,
+  calculateOBV,
+  calculateVolumeROC,
+  calculateVolumeWeightedMACD,
+  getLatestVolumeIndicatorValue,
+} from './volume-indicators';
 
 /**
  * Calculate individual indicator signal value (-1 to +1)
@@ -15,7 +22,8 @@ function calculateIndicatorSignal(
   indicatorType: string,
   params: Record<string, number>,
   prices: number[],
-  currentIndex: number
+  currentIndex: number,
+  candles?: PriceCandle[]
 ): number {
   switch (indicatorType) {
     case 'sma': {
@@ -109,6 +117,72 @@ function calculateIndicatorSignal(
       }
     }
 
+    // Volume Indicators
+    case 'vwap': {
+      if (!candles) return 0;
+      const period = params.period || 20;
+      const vwap = calculateVWAP(candles, period, currentIndex);
+      if (vwap === null) return 0;
+
+      const currentPrice = prices[currentIndex];
+      // Signal: positive if price > VWAP (bullish), negative if price < VWAP (bearish)
+      const diff = (currentPrice - vwap) / vwap;
+      return Math.max(-1, Math.min(1, diff * 10));
+    }
+
+    case 'obv': {
+      if (!candles) return 0;
+      const obv = calculateOBV(candles);
+      if (obv.length === 0) return 0;
+
+      // Calculate OBV momentum (rate of change)
+      const lookback = params.lookback || 10;
+      if (currentIndex < lookback) return 0;
+
+      const currentOBV = obv[currentIndex];
+      const pastOBV = obv[currentIndex - lookback];
+      
+      if (pastOBV === 0) return 0;
+      
+      // Signal based on OBV trend
+      const obvChange = (currentOBV - pastOBV) / Math.abs(pastOBV);
+      return Math.max(-1, Math.min(1, obvChange * 5));
+    }
+
+    case 'volume_roc': {
+      if (!candles) return 0;
+      const period = params.period || 10;
+      const roc = calculateVolumeROC(candles, period, currentIndex);
+      if (roc === null) return 0;
+
+      // Signal: positive volume ROC = bullish, negative = bearish
+      // Normalize to -1 to +1 (assume max 200% change)
+      return Math.max(-1, Math.min(1, roc / 200));
+    }
+
+    case 'vwmacd': {
+      if (!candles) return 0;
+      const fastPeriod = params.fastPeriod || 12;
+      const slowPeriod = params.slowPeriod || 26;
+      const signalPeriod = params.signalPeriod || 9;
+      const { histogram } = calculateVolumeWeightedMACD(candles, fastPeriod, slowPeriod, signalPeriod);
+
+      if (histogram.length === 0) return 0;
+
+      // Use histogram for signal (similar to regular MACD)
+      const histogramValue = getLatestVolumeIndicatorValue(
+        histogram,
+        currentIndex,
+        slowPeriod + signalPeriod - 1
+      );
+      if (histogramValue === null) return 0;
+
+      // Normalize histogram to -1 to +1 range
+      const priceRange = Math.max(...prices.slice(-20)) - Math.min(...prices.slice(-20));
+      const scale = priceRange > 0 ? priceRange / 100 : 1;
+      return Math.max(-1, Math.min(1, histogramValue / scale));
+    }
+
     default:
       return 0;
   }
@@ -139,7 +213,8 @@ export function generateSignal(
       indicator.type,
       indicator.params,
       prices,
-      currentIndex
+      currentIndex,
+      candles // Pass candles for volume indicators
     );
 
     indicators[`${indicator.type}_${JSON.stringify(indicator.params)}`] = indicatorSignal;

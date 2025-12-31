@@ -2,6 +2,7 @@
 /**
  * Backfill test for specific date ranges
  * Tests the new smoothed regime detection method
+ * Supports both historical data and synthetic 2026 data
  */
 
 import { fetchPriceCandles } from '../src/lib/eth-price-service';
@@ -9,10 +10,16 @@ import { generateEnhancedAdaptiveSignal } from '../src/lib/adaptive-strategy-enh
 import { calculateConfidence } from '../src/lib/confidence-calculator';
 import { clearRegimeHistory } from '../src/lib/adaptive-strategy-enhanced';
 import { clearIndicatorCache } from '../src/lib/market-regime-detector-cached';
-import type { PriceCandle, Portfolio, Trade } from '@/types';
+import { generateTradeAudit } from '../src/lib/trade-audit';
+import { calculateKellyCriterion, getKellyMultiplier } from '../src/lib/kelly-criterion';
+import { getATRValue } from '../src/lib/indicators';
+import { createOpenPosition, updateStopLoss, checkStopLosses, type StopLossConfig, type OpenPosition } from '../src/lib/atr-stop-loss';
+import { disconnectRedis } from '../src/lib/kv';
+import type { PriceCandle, Portfolio, Trade, PortfolioSnapshot } from '@/types';
 import type { EnhancedAdaptiveStrategyConfig } from '@/lib/adaptive-strategy-enhanced';
 import * as fs from 'fs';
 import * as path from 'path';
+import { gunzipSync } from 'zlib';
 
 interface PeriodAnalysis {
   timestamp: number;
@@ -54,48 +61,129 @@ interface BacktestResult {
   };
 }
 
+// Configurable timeframe - default to 8h
+const TIMEFRAME = (process.env.TIMEFRAME as '8h' | '12h' | '1d') || '8h';
+
 const DEFAULT_CONFIG: EnhancedAdaptiveStrategyConfig = {
   bullishStrategy: {
-    name: 'Bullish-Conservative',
-    timeframe: '1d',
+    name: 'Bullish-Hybrid',
+    timeframe: TIMEFRAME,
     indicators: [
-      { type: 'sma', weight: 0.3, params: { period: 20 } },
-      { type: 'ema', weight: 0.3, params: { period: 12 } },
-      { type: 'macd', weight: 0.2, params: { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 } },
-      { type: 'rsi', weight: 0.2, params: { period: 14 } },
+      { type: 'sma', weight: 0.35, params: { period: 20 } },
+      { type: 'ema', weight: 0.35, params: { period: 12 } },
+      { type: 'macd', weight: 0.2, params: { fastPeriod: 9, slowPeriod: 19, signalPeriod: 9 } },
+      { type: 'rsi', weight: 0.1, params: { period: 14 } },
     ],
-    buyThreshold: 0.35,
-    sellThreshold: -0.3,
-    maxPositionPct: 0.75,
+    buyThreshold: 0.41,  // Optimized - between conservative and trend
+    sellThreshold: -0.45,  // Hold through dips
+    maxPositionPct: 0.90,
     initialCapital: 1000,
   },
   bearishStrategy: {
-    name: 'Strategy1',
-    timeframe: '1d',
+    name: 'Bearish-Recovery',
+    timeframe: TIMEFRAME,
     indicators: [
       { type: 'sma', weight: 0.5, params: { period: 20 } },
       { type: 'ema', weight: 0.5, params: { period: 12 } },
     ],
-    buyThreshold: 0.45,
-    sellThreshold: -0.2,
-    maxPositionPct: 0.5,
+    buyThreshold: 0.65,  // Lower - catch recovery signals
+    sellThreshold: -0.25,
+    maxPositionPct: 0.3,  // Larger positions for recovery
     initialCapital: 1000,
   },
-  regimeConfidenceThreshold: 0.2,
-  momentumConfirmationThreshold: 0.25,
-  bullishPositionMultiplier: 1.1,
-  regimePersistencePeriods: 2,
-  dynamicPositionSizing: true,
-  maxBullishPosition: 0.95,
+  regimeConfidenceThreshold: 0.22,  // Lower - more flexible
+  momentumConfirmationThreshold: 0.26,  // Slightly lower
+  bullishPositionMultiplier: 1.0,
+  regimePersistencePeriods: 1,  // Faster switching
+  dynamicPositionSizing: false,
+  maxBullishPosition: 0.90,
+  maxVolatility: 0.019,  // Higher tolerance
+  circuitBreakerWinRate: 0.18,  // Slightly lower
+  circuitBreakerLookback: 12,
+  whipsawDetectionPeriods: 5,
+  whipsawMaxChanges: 3,
 };
+;
+;
+;
 
 function executeTrade(
   signal: ReturnType<typeof generateEnhancedAdaptiveSignal>,
   confidence: number,
   currentPrice: number,
   portfolio: Portfolio,
-  trades: Trade[]
+  trades: Trade[],
+  candles: PriceCandle[],
+  candleIndex: number,
+  portfolioHistory: PortfolioSnapshot[],
+  config: EnhancedAdaptiveStrategyConfig,
+  openPositions: OpenPosition[],
+  useKellyCriterion: boolean = true,
+  useStopLoss: boolean = true,
+  kellyFractionalMultiplier: number = 0.25,
+  stopLossConfig?: StopLossConfig
 ): Trade | null {
+  // Use provided stop loss config or default
+  const effectiveStopLossConfig = stopLossConfig || {
+    enabled: true,
+    atrMultiplier: 2.0,
+    trailing: true,
+    useEMA: true,
+    atrPeriod: 14,
+  };
+  
+  // Check stop losses first (before new trades)
+  if (useStopLoss && openPositions.length > 0) {
+    const currentATR = getATRValue(candles, candleIndex, effectiveStopLossConfig.atrPeriod, effectiveStopLossConfig.useEMA);
+    const stopLossResults = checkStopLosses(openPositions, currentPrice, currentATR, effectiveStopLossConfig);
+    
+    for (const { position, result } of stopLossResults) {
+      if (result.shouldExit) {
+        // Exit position due to stop loss
+        const ethToSell = position.buyTrade.ethAmount;
+        const saleValue = ethToSell * currentPrice;
+        const fee = saleValue * 0.001;
+        const netProceeds = saleValue - fee;
+        
+        portfolio.ethBalance -= ethToSell;
+        portfolio.usdcBalance += netProceeds;
+        portfolio.totalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
+        portfolio.tradeCount++;
+        portfolio.totalReturn = portfolio.totalValue - portfolio.initialCapital;
+
+        // Calculate P&L
+        const buyCost = position.buyTrade.costBasis || position.buyTrade.usdcAmount;
+        const pnl = netProceeds - (ethToSell * (buyCost / position.buyTrade.ethAmount));
+        if (pnl > 0) portfolio.winCount++;
+
+        const trade: Trade = {
+          id: `trade-${Date.now()}-${Math.random()}`,
+          type: 'sell',
+          timestamp: candles[candleIndex]?.timestamp || Date.now(),
+          ethPrice: currentPrice,
+          ethAmount: ethToSell,
+          usdcAmount: saleValue,
+          signal: signal.signal,
+          confidence,
+          portfolioValue: portfolio.totalValue,
+          costBasis: buyCost,
+          pnl,
+        };
+
+        trades.push(trade);
+        
+        // Remove position from open positions
+        const index = openPositions.indexOf(position);
+        if (index > -1) {
+          openPositions.splice(index, 1);
+        }
+
+        // Return early - stop loss exit takes precedence
+        return trade;
+      }
+    }
+  }
+
   // Use signal.action instead of signal.signal to respect buy/sell thresholds
   if (signal.action === 'hold') return null;
 
@@ -103,9 +191,36 @@ function executeTrade(
   const activeStrategy = signal.activeStrategy;
   if (!activeStrategy) return null;
 
-  // Calculate position size
+  // Calculate Kelly multiplier if enabled and we have enough trades
+  let kellyMultiplier = 1.0;
+  if (useKellyCriterion && trades.length >= 10) {
+    // Calculate P&L for completed trades
+    const tradesWithPnl = trades.map((t, idx) => {
+      if (t.type === 'sell' && idx > 0) {
+        // Find matching buy trade
+        const buyTrade = trades.slice(0, idx).reverse().find(bt => bt.type === 'buy');
+        if (buyTrade) {
+          const pnl = t.usdcAmount - buyTrade.usdcAmount;
+          return { ...t, pnl };
+        }
+      }
+      return t;
+    }).filter(t => 'pnl' in t) as Array<Trade & { pnl: number }>;
+
+    const kellyResult = calculateKellyCriterion(tradesWithPnl, {
+      minTrades: 10,
+      lookbackPeriod: 50, // Use last 50 trades
+      fractionalMultiplier: kellyFractionalMultiplier, // Use provided multiplier
+    });
+
+    if (kellyResult) {
+      kellyMultiplier = getKellyMultiplier(kellyResult, activeStrategy.maxPositionPct || 0.9);
+    }
+  }
+
+  // Calculate position size with Kelly adjustment
   const basePositionSize = portfolio.usdcBalance * (activeStrategy.maxPositionPct || 0.75);
-  const positionSize = signal.positionSizeMultiplier * basePositionSize * confidence;
+  const positionSize = signal.positionSizeMultiplier * basePositionSize * confidence * kellyMultiplier;
 
   if (isBuy && portfolio.usdcBalance >= positionSize) {
     const ethAmount = positionSize / currentPrice;
@@ -122,32 +237,50 @@ function executeTrade(
       const trade: Trade = {
         id: `trade-${Date.now()}-${Math.random()}`,
         type: 'buy',
-        timestamp: Date.now(),
+        timestamp: candles[candleIndex]?.timestamp || Date.now(),
         ethPrice: currentPrice,
         ethAmount: ethAmount,
         usdcAmount: positionSize,
         signal: signal.signal,
         confidence,
         portfolioValue: portfolio.totalValue,
+        costBasis: totalCost,
       };
+
+      // Generate audit information
+      try {
+        trade.audit = generateTradeAudit(
+          trade,
+          signal,
+          candles,
+          portfolioHistory,
+          {
+            timeframe: config.bullishStrategy.timeframe,
+            buyThreshold: activeStrategy.buyThreshold,
+            sellThreshold: activeStrategy.sellThreshold,
+            maxPositionPct: activeStrategy.maxPositionPct,
+            riskFilters: {
+              volatilityFilter: false,
+              whipsawDetection: false,
+              circuitBreaker: false,
+              regimePersistence: true,
+            },
+          }
+        );
+      } catch (error) {
+        console.warn('Failed to generate trade audit:', error);
+      }
 
       trades.push(trade);
       return trade;
     }
   } else if (!isBuy && portfolio.ethBalance > 0) {
-    const ethToSell = Math.min(portfolio.ethBalance, (portfolio.ethBalance * activeStrategy.maxPositionPct));
+    // Apply Kelly multiplier to sell size as well
+    const baseSellSize = portfolio.ethBalance * activeStrategy.maxPositionPct;
+    const ethToSell = Math.min(portfolio.ethBalance, baseSellSize * kellyMultiplier);
     const saleValue = ethToSell * currentPrice;
     const fee = saleValue * 0.001;
     const netProceeds = saleValue - fee;
-
-    // Check if this was a winning trade BEFORE updating portfolio
-    const lastBuyTrade = [...trades].reverse().find(t => t.type === 'buy');
-    if (lastBuyTrade) {
-      const buyCost = lastBuyTrade.usdcAmount;
-      const sellProceeds = saleValue - fee;
-      const profit = sellProceeds - buyCost;
-      if (profit > 0) portfolio.winCount++;
-    }
 
     portfolio.ethBalance -= ethToSell;
     portfolio.usdcBalance += netProceeds;
@@ -155,51 +288,234 @@ function executeTrade(
     portfolio.tradeCount++;
     portfolio.totalReturn = portfolio.totalValue - portfolio.initialCapital;
 
+    // Calculate P&L
+    const buyTrades = [...trades].reverse().filter(t => t.type === 'buy' && !t.fullySold);
+    let totalCostBasis = 0;
+    let totalAmount = 0;
+    
+    for (const buyTrade of buyTrades) {
+      if (totalAmount < ethToSell) {
+        const remaining = ethToSell - totalAmount;
+        const used = Math.min(remaining, buyTrade.ethAmount);
+        totalCostBasis += (buyTrade.costBasis || buyTrade.usdcAmount) * (used / buyTrade.ethAmount);
+        totalAmount += used;
+        if (used >= buyTrade.ethAmount) {
+          buyTrade.fullySold = true;
+        }
+      }
+    }
+
+    const avgCost = totalAmount > 0 ? totalCostBasis / totalAmount : currentPrice;
+    const pnl = netProceeds - (ethToSell * avgCost);
+    
+    // Check if this was a winning trade
+    if (pnl > 0) portfolio.winCount++;
+
     const trade: Trade = {
       id: `trade-${Date.now()}-${Math.random()}`,
       type: 'sell',
-      timestamp: Date.now(),
+      timestamp: candles[candleIndex]?.timestamp || Date.now(),
       ethPrice: currentPrice,
       ethAmount: ethToSell,
       usdcAmount: saleValue,
       signal: signal.signal,
       confidence,
       portfolioValue: portfolio.totalValue,
+      costBasis: totalCostBasis,
+      pnl,
     };
 
+    // Generate audit information
+    try {
+      trade.audit = generateTradeAudit(
+        trade,
+        signal,
+        candles,
+        portfolioHistory,
+        {
+          timeframe: config.bullishStrategy.timeframe,
+          buyThreshold: activeStrategy.buyThreshold,
+          sellThreshold: activeStrategy.sellThreshold,
+          maxPositionPct: activeStrategy.maxPositionPct,
+          riskFilters: {
+            volatilityFilter: false,
+            whipsawDetection: false,
+            circuitBreaker: false,
+            regimePersistence: true,
+          },
+        }
+      );
+    } catch (error) {
+      console.warn('Failed to generate trade audit:', error);
+    }
+
     trades.push(trade);
+
+    // Remove matching open position
+    if (useStopLoss) {
+      const buyTrades = [...trades].reverse().filter(t => t.type === 'buy' && !t.fullySold);
+      for (const buyTrade of buyTrades) {
+        const positionIndex = openPositions.findIndex(p => p.buyTrade.id === buyTrade.id);
+        if (positionIndex > -1) {
+          openPositions.splice(positionIndex, 1);
+        }
+      }
+    }
+
     return trade;
   }
 
   return null;
 }
 
-async function runBacktest(
+/**
+ * Load synthetic data for a given year
+ */
+function loadSyntheticData(year: number): PriceCandle[] {
+  const dataDir = path.join(process.cwd(), 'data', 'historical-prices', 'synthetic');
+  
+  // Try multiple filename patterns
+  const possibleFilenames = [
+    `ethusdt_8h_${year}-01-01_${year}-12-31.json.gz`,
+    `ethusdt_8h_${year}-01-01_${year}-12-30.json.gz`,
+  ];
+  
+  let filepath: string | null = null;
+  for (const filename of possibleFilenames) {
+    const testPath = path.join(dataDir, filename);
+    if (fs.existsSync(testPath)) {
+      filepath = testPath;
+      break;
+    }
+  }
+  
+  if (!filepath) {
+    // Try to find any file matching the year
+    const files = fs.readdirSync(dataDir);
+    const matchingFile = files.find(f => f.includes(`${year}`) && f.endsWith('.json.gz'));
+    if (matchingFile) {
+      filepath = path.join(dataDir, matchingFile);
+    }
+  }
+  
+  if (!filepath || !fs.existsSync(filepath)) {
+    throw new Error(`Synthetic 8h data not found for ${year}. Run 'npx tsx scripts/generate-synthetic-${year}-data-enhanced.ts' first.`);
+  }
+  
+  const compressed = fs.readFileSync(filepath);
+  const decompressed = gunzipSync(compressed);
+  const candles = JSON.parse(decompressed.toString()) as PriceCandle[];
+  
+  console.log(`📊 Loaded ${candles.length} synthetic 8h candles from ${path.basename(filepath)}`);
+  return candles;
+}
+
+export async function runBacktest(
   startDate: string,
-  endDate: string
+  endDate: string,
+  isSynthetic: boolean = false,
+  configOverride?: EnhancedAdaptiveStrategyConfig,
+  kellyMultiplier?: number,
+  atrMultiplier?: number
 ): Promise<BacktestResult> {
-  console.log(`\n📊 Running backtest: ${startDate} to ${endDate}`);
+  const year = new Date(startDate).getFullYear();
+  console.log(`\n📊 Running backtest: ${startDate} to ${endDate}${isSynthetic ? ` (Synthetic ${year})` : ''}`);
   
   // Clear caches
   clearRegimeHistory();
   clearIndicatorCache();
   
-  // Fetch candles (need extra history for indicators, but use available data)
-  const historyStartDate = new Date(startDate);
-  historyStartDate.setDate(historyStartDate.getDate() - 200); // Get 200 days before for indicators
-  const historyStart = historyStartDate.toISOString().split('T')[0];
+  let candles: PriceCandle[];
   
-  // Use available historical data (starts at 2025-01-01)
-  const minHistoryDate = '2025-01-01';
-  const actualHistoryStart = historyStart < minHistoryDate ? minHistoryDate : historyStart;
-  
-  const candles = await fetchPriceCandles('ETHUSDT', '1d', actualHistoryStart, endDate);
-  console.log(`📈 Loaded ${candles.length} candles from ${actualHistoryStart} to ${endDate}`);
+  if (isSynthetic) {
+    // For multi-year periods, load and combine multiple years
+    const startYear = new Date(startDate).getFullYear();
+    const endYear = new Date(endDate).getFullYear();
+    
+    if (startYear === endYear) {
+      // Single year
+      candles = loadSyntheticData(startYear);
+    } else {
+      // Multi-year: load and combine
+      candles = [];
+      for (let year = startYear; year <= endYear; year++) {
+        try {
+          const yearCandles = loadSyntheticData(year);
+          candles.push(...yearCandles);
+        } catch (error) {
+          console.warn(`⚠️  Could not load synthetic data for ${year}: ${error}`);
+        }
+      }
+      // Sort by timestamp
+      candles.sort((a, b) => a.timestamp - b.timestamp);
+    }
+    
+    // Filter to requested date range
+    const startTime = new Date(startDate).getTime();
+    const endTime = new Date(endDate).getTime();
+    candles = candles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
+    
+    if (candles.length < 50) {
+      throw new Error(`Not enough synthetic candles: ${candles.length}. Need at least 50 for indicators.`);
+    }
+    
+    console.log(`📈 Filtered to ${candles.length} candles for period ${startDate} to ${endDate}`);
+  } else {
+    // For multi-year historical periods, we need to handle them specially
+    const startYear = new Date(startDate).getFullYear();
+    const endYear = new Date(endDate).getFullYear();
+    
+    if (startYear === endYear && startYear === 2025) {
+      // Single year 2025 - use existing logic
+      const historyStartDate = new Date(startDate);
+      historyStartDate.setDate(historyStartDate.getDate() - 200); // Get 200 days before for indicators
+      const historyStart = historyStartDate.toISOString().split('T')[0];
+      
+      // Use available historical data (starts at 2025-01-01)
+      const minHistoryDate = '2025-01-01';
+      const actualHistoryStart = historyStart < minHistoryDate ? minHistoryDate : historyStart;
+      
+      candles = await fetchPriceCandles('ETHUSDT', TIMEFRAME, actualHistoryStart, endDate, undefined, true); // skipAPIFetch=true for backfill tests
+      console.log(`📈 Loaded ${candles.length} candles from ${actualHistoryStart} to ${endDate}`);
+    } else {
+      // Multi-year: combine historical 2025 with synthetic 2026/2027
+      candles = [];
+      
+      // Load 2025 historical
+      if (startYear <= 2025 && endYear >= 2025) {
+        const history2025 = await fetchPriceCandles('ETHUSDT', TIMEFRAME, '2025-01-01', '2025-12-31', undefined, true); // skipAPIFetch=true for backfill tests
+        candles.push(...history2025);
+      }
+      
+      // Load synthetic years
+      for (let year = Math.max(2026, startYear); year <= endYear; year++) {
+        try {
+          const yearCandles = loadSyntheticData(year);
+          candles.push(...yearCandles);
+        } catch (error) {
+          console.warn(`⚠️  Could not load synthetic data for ${year}: ${error}`);
+        }
+      }
+      
+      // Sort by timestamp
+      candles.sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Filter to requested date range
+      const startTime = new Date(startDate).getTime();
+      const endTime = new Date(endDate).getTime();
+      candles = candles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
+      
+      console.log(`📈 Loaded ${candles.length} candles (multi-year: ${startYear}-${endYear})`);
+    }
+  }
   
   if (candles.length < 50) {
     throw new Error(`Not enough candles loaded: ${candles.length}. Need at least 50 for indicators.`);
   }
   
+  // Use provided config override or default
+  const config = configOverride || DEFAULT_CONFIG;
+
   // Find start index (need at least 50 candles for indicators)
   const startTime = new Date(startDate).getTime();
   let startIndex = candles.findIndex(c => c.timestamp >= startTime);
@@ -208,17 +524,31 @@ async function runBacktest(
   
   // Initialize portfolio
   const portfolio: Portfolio = {
-    usdcBalance: DEFAULT_CONFIG.bullishStrategy.initialCapital,
+    usdcBalance: config.bullishStrategy.initialCapital,
     ethBalance: 0,
-    totalValue: DEFAULT_CONFIG.bullishStrategy.initialCapital,
-    initialCapital: DEFAULT_CONFIG.bullishStrategy.initialCapital,
+    totalValue: config.bullishStrategy.initialCapital,
+    initialCapital: config.bullishStrategy.initialCapital,
     totalReturn: 0,
     tradeCount: 0,
     winCount: 0,
   };
   
   const trades: Trade[] = [];
+  const openPositions: OpenPosition[] = [];
   const periods: PeriodAnalysis[] = [];
+  
+  // Use provided multipliers or defaults
+  const effectiveKellyMultiplier = kellyMultiplier ?? 0.25;
+  const effectiveATRMultiplier = atrMultiplier ?? 2.0;
+  
+  // Create stop loss config with provided multiplier
+  const effectiveStopLossConfig: StopLossConfig = {
+    enabled: true,
+    atrMultiplier: effectiveATRMultiplier,
+    trailing: true,
+    useEMA: true,
+    atrPeriod: 14,
+  };
   
   // Track regime history manually for persistence
   const regimeHistory: Array<'bullish' | 'bearish' | 'neutral'> = [];
@@ -236,7 +566,7 @@ async function runBacktest(
   // Calculate buy-and-hold baselines
   const startPrice = candles[startIndex]!.close;
   const endPrice = candles[candles.length - 1]!.close;
-  const initialCapital = DEFAULT_CONFIG.bullishStrategy.initialCapital;
+  const initialCapital = config.bullishStrategy.initialCapital;
   
   // USDC hold (just keep cash)
   const usdcHoldValue = initialCapital;
@@ -260,19 +590,59 @@ async function runBacktest(
   for (let i = startIndex; i < candles.length; i++) {
     const candle = candles[i]!;
     const currentPrice = candle.close;
+
+    // Update open positions (for trailing stops)
+    if (openPositions.length > 0) {
+      const currentATR = getATRValue(candles, i, effectiveStopLossConfig.atrPeriod, effectiveStopLossConfig.useEMA);
+      for (const position of openPositions) {
+        updateStopLoss(position, currentPrice, currentATR, effectiveStopLossConfig);
+      }
+    }
     
     // Generate signal
     const signal = generateEnhancedAdaptiveSignal(
       candles,
-      DEFAULT_CONFIG,
+      config, // Use provided config, not DEFAULT_CONFIG
       i,
       sessionId
     );
     
     const confidence = calculateConfidence(signal, candles, i);
     
+    // Build portfolio history snapshot
+    const portfolioSnapshot: PortfolioSnapshot = {
+      timestamp: candle.timestamp,
+      usdcBalance: portfolio.usdcBalance,
+      ethBalance: portfolio.ethBalance,
+      totalValue: portfolio.totalValue,
+      ethPrice: currentPrice,
+    };
+    const portfolioHistory: PortfolioSnapshot[] = periods.map(p => ({
+      timestamp: p.timestamp,
+      usdcBalance: portfolio.usdcBalance, // Approximate
+      ethBalance: portfolio.ethBalance, // Approximate
+      totalValue: portfolio.totalValue,
+      ethPrice: p.price,
+    }));
+    portfolioHistory.push(portfolioSnapshot);
+
     // Execute trade
-    const trade = executeTrade(signal, confidence, currentPrice, portfolio, trades);
+    const trade = executeTrade(
+      signal, 
+      confidence, 
+      currentPrice, 
+      portfolio, 
+      trades,
+      candles,
+      i,
+      portfolioHistory,
+      config, // Use provided config, not DEFAULT_CONFIG
+      openPositions,
+      effectiveKellyMultiplier > 0, // Use Kelly if multiplier > 0
+      effectiveStopLossConfig.enabled,  // Use Stop Loss if enabled
+      effectiveKellyMultiplier, // Pass Kelly multiplier
+      effectiveStopLossConfig // Pass stop loss config
+    );
     
     // Update portfolio value
     portfolio.totalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
@@ -459,30 +829,101 @@ function generateReport(
 async function main() {
   console.log('🔄 Running backfill tests for specific periods...\n');
   
+  const historicalPeriods = [
+    { name: 'Bullish Period', start: '2025-04-01', end: '2025-08-23', synthetic: false },
+    { name: 'Bearish Period', start: '2025-01-01', end: '2025-06-01', synthetic: false },
+    { name: 'Full Year 2025', start: '2025-01-01', end: '2025-12-27', synthetic: false },
+  ];
+  
+  const synthetic2026Periods = [
+    { name: '2026 Full Year', start: '2026-01-01', end: '2026-12-31', synthetic: true },
+    { name: '2026 Q1 (Bull Run)', start: '2026-01-01', end: '2026-03-31', synthetic: true },
+    { name: '2026 Q2 (Crash→Recovery)', start: '2026-04-01', end: '2026-06-30', synthetic: true },
+    { name: '2026 Q3 (Bear Market)', start: '2026-07-01', end: '2026-09-30', synthetic: true },
+    { name: '2026 Q4 (Bull Recovery)', start: '2026-10-01', end: '2026-12-31', synthetic: true },
+    { name: '2026 Bull Run Period', start: '2026-03-01', end: '2026-04-30', synthetic: true },
+    { name: '2026 Crash Period', start: '2026-05-01', end: '2026-05-15', synthetic: true },
+    { name: '2026 Bear Market', start: '2026-07-01', end: '2026-08-31', synthetic: true },
+    { name: '2026 Whipsaw Period', start: '2026-09-01', end: '2026-09-30', synthetic: true },
+  ];
+  
+  const synthetic2027Periods = [
+    { name: '2027 Full Year', start: '2027-01-01', end: '2027-12-31', synthetic: true },
+    { name: '2027 Q1 (False Breakout→Bull)', start: '2027-01-01', end: '2027-03-31', synthetic: true },
+    { name: '2027 Q2 (Volatility Squeeze→Breakout)', start: '2027-04-01', end: '2027-06-30', synthetic: true },
+    { name: '2027 Q3 (Extended Bear Market)', start: '2027-07-01', end: '2027-09-30', synthetic: true },
+    { name: '2027 Q4 (Slow Grind→Recovery)', start: '2027-10-01', end: '2027-12-31', synthetic: true },
+    { name: '2027 False Bull Breakout', start: '2027-01-01', end: '2027-01-31', synthetic: true },
+    { name: '2027 Extended Consolidation', start: '2027-02-01', end: '2027-02-28', synthetic: true },
+    { name: '2027 Extended Bull Run', start: '2027-03-01', end: '2027-04-30', synthetic: true },
+    { name: '2027 Volatility Squeeze', start: '2027-05-01', end: '2027-05-31', synthetic: true },
+    { name: '2027 Explosive Breakout', start: '2027-06-01', end: '2027-06-30', synthetic: true },
+    { name: '2027 Extended Bear Market', start: '2027-07-01', end: '2027-09-30', synthetic: true },
+    { name: '2027 Slow Grind Down', start: '2027-10-01', end: '2027-10-31', synthetic: true },
+    { name: '2027 False Bear Breakout', start: '2027-11-01', end: '2027-11-15', synthetic: true },
+    { name: '2027 Recovery Rally', start: '2027-11-16', end: '2027-12-31', synthetic: true },
+  ];
+  
+  // Multi-year periods
+  const multiYearPeriods = [
+    { name: '2025-2026 (2 Years)', start: '2025-01-01', end: '2026-12-31', synthetic: false }, // Mix historical + synthetic
+    { name: '2026-2027 (2 Years Synthetic)', start: '2026-01-01', end: '2027-12-31', synthetic: true },
+    { name: '2025-2027 (3 Years)', start: '2025-01-01', end: '2027-12-31', synthetic: false }, // Mix historical + synthetic
+  ];
+  
   const testPeriods = [
-    { name: 'Bullish Period', start: '2025-04-01', end: '2025-08-23' },
-    { name: 'Bearish Period', start: '2025-01-01', end: '2025-06-01' },
-    { name: 'Full Year 2025', start: '2025-01-01', end: '2025-12-27' }, // Use available data end date
+    ...historicalPeriods,
+    ...synthetic2026Periods,
+    ...synthetic2027Periods,
+    ...multiYearPeriods,
   ];
   
   const reports: string[] = [];
+  const historicalResults: BacktestResult[] = [];
+  const syntheticResults: BacktestResult[] = [];
   
   for (const period of testPeriods) {
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`Testing: ${period.name} (${period.start} to ${period.end})`);
+    const periodYear = new Date(period.start).getFullYear();
+    const periodType = period.synthetic 
+      ? `[Synthetic ${periodYear}]` 
+      : period.start.startsWith('2025') && period.end.startsWith('2025')
+        ? '[Historical 2025]'
+        : '[Multi-Year]';
+    console.log(`Testing: ${period.name} (${period.start} to ${period.end}) ${periodType}`);
     console.log('='.repeat(60));
     
-    const result = await runBacktest(period.start, period.end);
-    
-    const report = generateReport(result, period.name);
-    reports.push(report);
-    
-    console.log(`\n✅ Completed: ${period.name}`);
-    console.log(`   ${result.totalTrades} trades, $${result.totalReturn.toFixed(2)} return (${result.totalReturnPct.toFixed(2)}%)`);
+    try {
+      const result = await runBacktest(period.start, period.end, period.synthetic);
+      
+      const report = generateReport(result, period.name);
+      reports.push(report);
+      
+      // Categorize results
+      if (period.synthetic) {
+        syntheticResults.push(result);
+      } else {
+        historicalResults.push(result);
+      }
+      
+      console.log(`\n✅ Completed: ${period.name}`);
+      console.log(`   ${result.totalTrades} trades, $${result.totalReturn.toFixed(2)} return (${result.totalReturnPct.toFixed(2)}%)`);
+    } catch (error) {
+      console.error(`\n❌ Failed: ${period.name}`);
+      console.error(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   
+  // Calculate summary statistics
+  const historicalAvgReturn = historicalResults.length > 0
+    ? historicalResults.reduce((sum, r) => sum + r.totalReturnPct, 0) / historicalResults.length
+    : 0;
+  const syntheticAvgReturn = syntheticResults.length > 0
+    ? syntheticResults.reduce((sum, r) => sum + r.totalReturnPct, 0) / syntheticResults.length
+    : 0;
+  
   // Combine all reports
-  const fullReport = `# Backfill Test Results - 2025 Periods
+  const fullReport = `# Backfill Test Results - Historical 2025, Synthetic 2026 & 2027 Periods
 
 This report shows backfill test results using the **new smoothed regime detection with hysteresis**.
 
@@ -517,5 +958,26 @@ This reduces whipsaw and provides more stable regime detection.
   console.log(`📄 Report saved to: ${reportPath}`);
 }
 
-main().catch(console.error);
+// Only run main() if this file is executed directly (not imported)
+if (require.main === module) {
+  main()
+    .then(async () => {
+      // Close Redis connection to allow script to exit
+      try {
+        await disconnectRedis();
+      } catch (error) {
+        // Ignore disconnect errors
+      }
+      process.exit(0);
+    })
+    .catch(async (error) => {
+      console.error('Error:', error);
+      try {
+        await disconnectRedis();
+      } catch {
+        // Ignore disconnect errors
+      }
+      process.exit(1);
+    });
+}
 

@@ -5,6 +5,9 @@
  * Ranks by profit and risk metrics
  */
 
+// Configurable timeframe - default to 8h
+const TIMEFRAME = (process.env.TIMEFRAME as '8h' | '12h' | '1d') || '8h';
+
 import { fetchPriceCandles } from '../src/lib/eth-price-service';
 import { generateEnhancedAdaptiveSignal } from '../src/lib/adaptive-strategy-enhanced';
 import { calculateConfidence } from '../src/lib/confidence-calculator';
@@ -279,7 +282,7 @@ function generateStrategyConfigs(): Array<{ name: string; config: EnhancedAdapti
     config: {
       bullishStrategy: {
         name: 'Bullish-Conservative',
-        timeframe: '1d',
+        timeframe: TIMEFRAME,
         indicators: bullishIndicators,
         buyThreshold: 0.35,
         sellThreshold: -0.3,
@@ -288,7 +291,7 @@ function generateStrategyConfigs(): Array<{ name: string; config: EnhancedAdapti
       },
       bearishStrategy: {
         name: 'Strategy1',
-        timeframe: '1d',
+        timeframe: TIMEFRAME,
         indicators: bearishIndicators,
         buyThreshold: 0.45,
         sellThreshold: -0.2,
@@ -314,7 +317,7 @@ function generateStrategyConfigs(): Array<{ name: string; config: EnhancedAdapti
         config: {
           bullishStrategy: {
             name: 'Bullish-Balanced',
-            timeframe: '1d',
+            timeframe: TIMEFRAME,
             indicators: bullishIndicators,
             buyThreshold: buyThresh,
             sellThreshold: sellThresh,
@@ -323,7 +326,7 @@ function generateStrategyConfigs(): Array<{ name: string; config: EnhancedAdapti
           },
           bearishStrategy: {
             name: 'Bearish-Balanced',
-            timeframe: '1d',
+            timeframe: TIMEFRAME,
             indicators: bearishIndicators,
             buyThreshold: 0.65,
             sellThreshold: -0.3,
@@ -350,7 +353,7 @@ function generateStrategyConfigs(): Array<{ name: string; config: EnhancedAdapti
         config: {
           bullishStrategy: {
             name: 'Bullish-Persist',
-            timeframe: '1d',
+            timeframe: TIMEFRAME,
             indicators: bullishIndicators,
             buyThreshold: 0.4,
             sellThreshold: -0.35,
@@ -359,7 +362,7 @@ function generateStrategyConfigs(): Array<{ name: string; config: EnhancedAdapti
           },
           bearishStrategy: {
             name: 'Bearish-Persist',
-            timeframe: '1d',
+            timeframe: TIMEFRAME,
             indicators: bearishIndicators,
             buyThreshold: 0.65,
             sellThreshold: -0.3,
@@ -385,7 +388,7 @@ function generateStrategyConfigs(): Array<{ name: string; config: EnhancedAdapti
       config: {
         bullishStrategy: {
           name: 'Bullish-MaxPos',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: bullishIndicators,
           buyThreshold: 0.4,
           sellThreshold: -0.35,
@@ -394,7 +397,7 @@ function generateStrategyConfigs(): Array<{ name: string; config: EnhancedAdapti
         },
         bearishStrategy: {
           name: 'Bearish-MaxPos',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: bearishIndicators,
           buyThreshold: 0.65,
           sellThreshold: -0.3,
@@ -472,7 +475,7 @@ async function loadCandlesForPeriod(startDate: string, endDate: string): Promise
   const minHistoryDate = '2025-01-01';
   const actualHistoryStart = historyStart < minHistoryDate ? minHistoryDate : historyStart;
   
-  const candles = await fetchPriceCandles('ETHUSDT', '1d', actualHistoryStart, endDate);
+  const candles = await fetchPriceCandles('ETHUSDT', TIMEFRAME, actualHistoryStart, endDate);
   if (candles.length < 50) throw new Error(`Not enough candles for period ${startDate} to ${endDate}`);
   return candles;
 }

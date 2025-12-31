@@ -62,7 +62,9 @@ export class PaperTradingService {
     // Use a very early start date - fetchPriceCandles will load all available data from files
     // This ensures we get ALL historical data, not just the last 200 days
     const startDate = '2020-01-01'; // Early enough to capture all available historical data
-    const candles = await fetchPriceCandles('ETHUSDT', '1d', startDate, endDate, initialPrice);
+    // Use timeframe from config (default to 8h if not specified)
+    const timeframe = config.bullishStrategy.timeframe || '8h';
+    const candles = await fetchPriceCandles('ETHUSDT', timeframe, startDate, endDate, initialPrice);
 
     if (candles.length < 50) {
       throw new Error('Not enough historical data to start paper trading');
@@ -335,13 +337,15 @@ export class PaperTradingService {
       console.warn('Failed to fetch hourly candles (non-critical):', hourlyError instanceof Error ? hourlyError.message : hourlyError);
     }
 
-    // Fetch ALL available candles for regime detection (daily candles for strategy)
+    // Fetch ALL available candles for regime detection
     // Load from earliest available date to ensure we have complete historical context
     // Pass currentPrice so fetchPriceCandles can create today's candle if Redis doesn't have it yet
     const endDate = new Date().toISOString().split('T')[0];
     // Use a very early start date - fetchPriceCandles will load all available data from files
     const startDate = '2020-01-01'; // Early enough to capture all available historical data
-    const candles = await fetchPriceCandles('ETHUSDT', '1d', startDate, endDate, currentPrice);
+    // Use timeframe from config (default to 8h if not specified)
+    const timeframe = session.config.bullishStrategy.timeframe || '8h';
+    const candles = await fetchPriceCandles('ETHUSDT', timeframe, startDate, endDate, currentPrice);
 
     if (candles.length < 50) {
       throw new Error('Not enough historical data to update session');

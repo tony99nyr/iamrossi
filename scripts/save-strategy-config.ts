@@ -8,65 +8,71 @@ import * as dotenv from 'dotenv';
 import path from 'path';
 import type { EnhancedAdaptiveStrategyConfig } from '@/lib/adaptive-strategy-enhanced';
 import type { TradingConfig } from '@/types';
-import { saveAdaptiveStrategyConfig } from '@/lib/kv';
+import { saveAdaptiveStrategyConfig, disconnectRedis } from '@/lib/kv';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 async function main() {
+  // Configurable timeframe - default to 8h
+  const TIMEFRAME = (process.env.TIMEFRAME as '8h' | '12h' | '1d') || '8h';
+  
   console.log('💾 Saving Optimized Enhanced Adaptive Strategy Config to Redis\n');
-  console.log('📊 Using Option 1 (Best Risk-Adjusted) with all improvements:\n');
-  console.log('   • Volatility Filter (5% daily threshold)');
-  console.log('   • Circuit Breaker (20% win rate minimum)');
+  console.log(`📊 Using Hybrid-0.41 + Recovery-0.65 (Best Overall) optimized for ${TIMEFRAME} timeframe:\n`);
+  console.log(`   • Timeframe: ${TIMEFRAME}`);
+  console.log(`   • Bullish: Hybrid (buyThreshold: 0.41, sellThreshold: -0.45)`);
+  console.log(`   • Bearish: Recovery (buyThreshold: 0.65, sellThreshold: -0.25)`);
+  console.log(`   • Volatility Filter (${TIMEFRAME === '8h' ? '1.9% per 8H' : '5% daily'} threshold)`);
+  console.log('   • Circuit Breaker (18% win rate minimum)');
   console.log('   • Whipsaw Detection (max 3 changes in 5 periods)');
-  console.log('   • Tighter Bearish Strategy (0.8 buy threshold, 0.2 max position)\n');
+  console.log('   • Expected: +70.72% historical, +33.02% synthetic\n');
 
-  // Option 1: Best Risk-Adjusted Strategy (Config-26-MaxPos0.95)
-  // Full Year Return: +34.44%, vs ETH: +46.64%, Risk-Adjusted Return: 2.14
+  // Hybrid-0.41 + Recovery-0.65 Strategy (Best Overall - Advanced Optimization)
+  // Tested 42 combinations (7 bullish × 6 bearish) - Score: 53.20
   const bullishStrategy: TradingConfig = {
-    name: 'Bullish-Balanced',
-    timeframe: '1d',
+    name: 'Bullish-Hybrid',
+    timeframe: TIMEFRAME,
     indicators: [
-      { type: 'sma', weight: 0.3, params: { period: 20 } },
-      { type: 'ema', weight: 0.3, params: { period: 12 } },
-      { type: 'macd', weight: 0.2, params: { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 } },
-      { type: 'rsi', weight: 0.2, params: { period: 14 } },
+      { type: 'sma', weight: 0.35, params: { period: 20 } },  // Balanced with EMA
+      { type: 'ema', weight: 0.35, params: { period: 12 } },  // Balanced with SMA
+      { type: 'macd', weight: 0.2, params: { fastPeriod: 9, slowPeriod: 19, signalPeriod: 9 } },
+      { type: 'rsi', weight: 0.1, params: { period: 14 } },  // Reduced weight
     ],
-    buyThreshold: 0.4,        // Moderate threshold
-    sellThreshold: -0.35,     // Hold through moderate dips
-    maxPositionPct: 0.95,    // Use almost all capital (KEY DIFFERENCE)
+    buyThreshold: 0.41,        // Optimized - between conservative and trend
+    sellThreshold: -0.45,      // Hold through dips
+    maxPositionPct: 0.90,     // 90% for 8h
     initialCapital: 1000,
   };
 
-  // Tighter Bearish Strategy (with improvements)
+  // Recovery-Focused Bearish Strategy (optimized for catching recovery signals)
   const bearishStrategy: TradingConfig = {
-    name: 'Bearish-Conservative',
-    timeframe: '1d',
+    name: 'Bearish-Recovery',
+    timeframe: TIMEFRAME,
     indicators: [
       { type: 'sma', weight: 0.5, params: { period: 20 } },
       { type: 'ema', weight: 0.5, params: { period: 12 } },
     ],
-    buyThreshold: 0.8,       // Very high threshold - almost never buy (IMPROVED from 0.65)
-    sellThreshold: -0.2,     // Easier to exit (IMPROVED from -0.3)
-    maxPositionPct: 0.2,     // Smaller positions (IMPROVED from 0.4)
+    buyThreshold: 0.65,       // Lower - catch recovery signals
+    sellThreshold: -0.25,     // Moderate
+    maxPositionPct: 0.3,     // Larger positions for recovery
     initialCapital: 1000,
   };
 
-  // Enhanced config with all improvements
+  // Enhanced config with all improvements (optimized for 8h)
   const enhancedConfig: EnhancedAdaptiveStrategyConfig = {
     bullishStrategy,
     bearishStrategy,
-    regimeConfidenceThreshold: 0.25,
-    momentumConfirmationThreshold: 0.3,
+    regimeConfidenceThreshold: 0.22,        // Lower - more flexible (optimized)
+    momentumConfirmationThreshold: 0.26,     // Slightly lower (optimized)
     bullishPositionMultiplier: 1.0,
-    regimePersistencePeriods: 3, // Require 3 out of 5 periods
-    dynamicPositionSizing: false, // Fixed position sizing (top performers use this)
-    maxBullishPosition: 0.95,
-    // Risk management improvements
-    maxVolatility: 0.05,              // Block trading if volatility > 5% daily
-    circuitBreakerWinRate: 0.2,       // Stop trading if win rate < 20%
-    circuitBreakerLookback: 10,       // Check last 10 trades
-    whipsawDetectionPeriods: 5,       // Check last 5 periods
-    whipsawMaxChanges: 3,             // Max 3 regime changes in 5 periods
+    regimePersistencePeriods: 1,            // Faster switching (optimized)
+    dynamicPositionSizing: false,            // Fixed position sizing (top performers use this)
+    maxBullishPosition: 0.90,               // 90% for 8h
+    // Risk management improvements (scaled for 8h)
+    maxVolatility: 0.019,                    // Higher tolerance (optimized)
+    circuitBreakerWinRate: 0.18,             // Slightly lower (optimized)
+    circuitBreakerLookback: 12,              // Increased lookback (optimized)
+    whipsawDetectionPeriods: 5,              // Check last 5 periods
+    whipsawMaxChanges: 3,                   // Max 3 regime changes in 5 periods
   };
 
   try {
@@ -96,7 +102,16 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+main()
+  .then(async () => {
+    await disconnectRedis();
+    process.exit(0);
+  })
+  .catch(async (error) => {
+    console.error('Error:', error);
+    await disconnectRedis();
+    process.exit(1);
+  });
 
 
 

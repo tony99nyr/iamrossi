@@ -4,6 +4,9 @@
  * Tests different strategy configurations to find optimal parameters
  */
 
+// Configurable timeframe - default to 8h
+const TIMEFRAME = (process.env.TIMEFRAME as '8h' | '12h' | '1d') || '8h';
+
 import { fetchPriceCandles } from '../src/lib/eth-price-service';
 import { generateEnhancedAdaptiveSignal } from '../src/lib/adaptive-strategy-enhanced';
 import { calculateConfidence } from '../src/lib/confidence-calculator';
@@ -137,7 +140,9 @@ async function testConfig(
   const minHistoryDate = '2025-01-01';
   const actualHistoryStart = historyStart < minHistoryDate ? minHistoryDate : historyStart;
   
-  const candles = await fetchPriceCandles('ETHUSDT', '1d', actualHistoryStart, endDate);
+  // Configurable timeframe - default to 8h
+  const TIMEFRAME = (process.env.TIMEFRAME as '8h' | '12h' | '1d') || '8h';
+  const candles = await fetchPriceCandles('ETHUSDT', TIMEFRAME, actualHistoryStart, endDate);
   if (candles.length < 50) throw new Error('Not enough candles');
   
   const startTime = new Date(startDate).getTime();
@@ -233,7 +238,7 @@ async function main() {
       config: {
         bullishStrategy: {
           name: 'Bullish-Conservative',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.3, params: { period: 20 } },
             { type: 'ema', weight: 0.3, params: { period: 12 } },
@@ -247,7 +252,7 @@ async function main() {
         },
         bearishStrategy: {
           name: 'Strategy1',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.5, params: { period: 20 } },
             { type: 'ema', weight: 0.5, params: { period: 12 } },
@@ -271,7 +276,7 @@ async function main() {
       config: {
         bullishStrategy: {
           name: 'Bullish-Conservative',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.3, params: { period: 20 } },
             { type: 'ema', weight: 0.3, params: { period: 12 } },
@@ -285,7 +290,7 @@ async function main() {
         },
         bearishStrategy: {
           name: 'Strategy1',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.5, params: { period: 20 } },
             { type: 'ema', weight: 0.5, params: { period: 12 } },
@@ -309,7 +314,7 @@ async function main() {
       config: {
         bullishStrategy: {
           name: 'Bullish-Selective',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.3, params: { period: 20 } },
             { type: 'ema', weight: 0.3, params: { period: 12 } },
@@ -323,7 +328,7 @@ async function main() {
         },
         bearishStrategy: {
           name: 'Bearish-Selective',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.5, params: { period: 20 } },
             { type: 'ema', weight: 0.5, params: { period: 12 } },
@@ -347,7 +352,7 @@ async function main() {
       config: {
         bullishStrategy: {
           name: 'Bullish-Trend',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.4, params: { period: 20 } },
             { type: 'ema', weight: 0.4, params: { period: 12 } },
@@ -360,7 +365,7 @@ async function main() {
         },
         bearishStrategy: {
           name: 'Bearish-Trend',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.5, params: { period: 20 } },
             { type: 'ema', weight: 0.5, params: { period: 12 } },
@@ -384,7 +389,7 @@ async function main() {
       config: {
         bullishStrategy: {
           name: 'Bullish-Minimal',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.3, params: { period: 20 } },
             { type: 'ema', weight: 0.3, params: { period: 12 } },
@@ -398,7 +403,7 @@ async function main() {
         },
         bearishStrategy: {
           name: 'Bearish-Minimal',
-          timeframe: '1d',
+          timeframe: TIMEFRAME,
           indicators: [
             { type: 'sma', weight: 0.5, params: { period: 20 } },
             { type: 'ema', weight: 0.5, params: { period: 12 } },

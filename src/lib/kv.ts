@@ -110,6 +110,14 @@ async function ensureConnected(retries = 0): Promise<void> {
   }
 }
 
+// Function to close Redis connection (useful for scripts that need to exit)
+export async function disconnectRedis(): Promise<void> {
+  if (redis.isOpen) {
+    await redis.quit();
+    isConnected = false;
+  }
+}
+
 // Export redis client and ensureConnected for use in other modules (e.g., eth-price-service.ts)
 export { redis, ensureConnected };
 

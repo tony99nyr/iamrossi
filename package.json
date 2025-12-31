@@ -35,6 +35,11 @@
     "eth:test-strategies": "npx tsx scripts/comprehensive-strategy-test.ts",
     "eth:generate-2026": "npx tsx scripts/generate-synthetic-2026-data.ts",
     "eth:test-2026": "npx tsx scripts/test-strategies-2026.ts",
+    "eth:verify-backtest": "npx tsx scripts/verify-historical-backtest.ts",
+    "eth:update-baseline": "npx tsx scripts/verify-historical-backtest.ts --update-baseline",
+    "eth:convert-8h": "npx tsx scripts/convert-to-8h-timeframe.ts",
+    "eth:audit-report": "npx tsx scripts/generate-trade-audit-report.ts",
+    "validate:full": "pnpm validate && pnpm eth:verify-backtest",
     "redis:analyze": "npx tsx scripts/analyze-redis-memory.ts",
     "google-fit:exchange-token": "npx tsx scripts/exchange-google-fit-token.ts"
   },

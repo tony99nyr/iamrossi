@@ -46,39 +46,47 @@ interface BacktestResult {
   periods: PeriodAnalysis[];
 }
 
+// Configurable timeframe - default to 8h
+const TIMEFRAME = (process.env.TIMEFRAME as '8h' | '12h' | '1d') || '8h';
+
 const DEFAULT_CONFIG: EnhancedAdaptiveStrategyConfig = {
   bullishStrategy: {
     name: 'Bullish-Conservative',
-    timeframe: '1d',
+    timeframe: TIMEFRAME,
     indicators: [
       { type: 'sma', weight: 0.3, params: { period: 20 } },
       { type: 'ema', weight: 0.3, params: { period: 12 } },
-      { type: 'macd', weight: 0.2, params: { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 } },
+      { type: 'macd', weight: 0.2, params: { fastPeriod: 9, slowPeriod: 19, signalPeriod: 9 } },
       { type: 'rsi', weight: 0.2, params: { period: 14 } },
     ],
-    buyThreshold: 0.35,
+    buyThreshold: 0.4,
     sellThreshold: -0.3,
-    maxPositionPct: 0.75,
+    maxPositionPct: 0.90,
     initialCapital: 1000,
   },
   bearishStrategy: {
     name: 'Strategy1',
-    timeframe: '1d',
+    timeframe: TIMEFRAME,
     indicators: [
       { type: 'sma', weight: 0.5, params: { period: 20 } },
       { type: 'ema', weight: 0.5, params: { period: 12 } },
     ],
-    buyThreshold: 0.45,
+    buyThreshold: 0.8,
     sellThreshold: -0.2,
-    maxPositionPct: 0.5,
+    maxPositionPct: 0.2,
     initialCapital: 1000,
   },
-  regimeConfidenceThreshold: 0.2,
-  momentumConfirmationThreshold: 0.25,
-  bullishPositionMultiplier: 1.1,
-  regimePersistencePeriods: 2,
-  dynamicPositionSizing: true,
-  maxBullishPosition: 0.95,
+  regimeConfidenceThreshold: 0.25,
+  momentumConfirmationThreshold: 0.3,
+  bullishPositionMultiplier: 1.0,
+  regimePersistencePeriods: 3,
+  dynamicPositionSizing: false,
+  maxBullishPosition: 0.90,
+  maxVolatility: TIMEFRAME === '8h' ? 0.0167 : 0.05,
+  circuitBreakerWinRate: 0.2,
+  circuitBreakerLookback: 10,
+  whipsawDetectionPeriods: 5,
+  whipsawMaxChanges: 3,
 };
 
 function executeTrade(
@@ -189,7 +197,7 @@ async function runBacktest(
   
   // fetchPriceCandles will use historical files - it should find the data
   // We'll use whatever data is available, even if it's less than 200 days
-  const candles = await fetchPriceCandles('ETHUSDT', '1d', actualHistoryStart, endDate);
+  const candles = await fetchPriceCandles('ETHUSDT', TIMEFRAME, actualHistoryStart, endDate);
   console.log(`📈 Loaded ${candles.length} candles from ${actualHistoryStart} to ${endDate}`);
   
   if (candles.length < 50) {
