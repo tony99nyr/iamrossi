@@ -110,29 +110,55 @@ const DEFAULT_CONFIG: EnhancedAdaptiveStrategyConfig = {
  * Load synthetic data for a given year
  */
 function loadSyntheticData(year: number): PriceCandle[] {
-  const dataDir = path.join(process.cwd(), 'data', 'historical-prices', 'synthetic');
+  const syntheticDir = path.join(process.cwd(), 'data', 'historical-prices', 'synthetic');
+  const ethDir = path.join(process.cwd(), 'data', 'historical-prices', 'ethusdt', '8h');
   
-  // Try multiple filename patterns
-  const possibleFilenames = [
-    `ethusdt_8h_${year}-01-01_${year}-12-31.json.gz`,
-    `ethusdt_8h_${year}-01-01_${year}-12-30.json.gz`,
+  // Try multiple file paths in order of preference
+  const possiblePaths = [
+    // Full year synthetic data
+    path.join(syntheticDir, `ethusdt_8h_${year}-01-01_${year}-12-31.json.gz`),
+    path.join(syntheticDir, `ethusdt_8h_${year}-01-01_${year}-12-30.json.gz`),
   ];
   
+  // Check for files in synthetic dir
   let filepath: string | null = null;
-  for (const filename of possibleFilenames) {
-    const testPath = path.join(dataDir, filename);
+  for (const testPath of possiblePaths) {
     if (fs.existsSync(testPath)) {
       filepath = testPath;
       break;
     }
   }
   
-  if (!filepath) {
-    // Try to find any file matching the year
-    const files = fs.readdirSync(dataDir);
+  // If not found, try to find any file matching the year in synthetic dir
+  if (!filepath && fs.existsSync(syntheticDir)) {
+    const files = fs.readdirSync(syntheticDir);
     const matchingFile = files.find(f => f.includes(`${year}`) && f.endsWith('.json.gz'));
     if (matchingFile) {
-      filepath = path.join(dataDir, matchingFile);
+      filepath = path.join(syntheticDir, matchingFile);
+    }
+  }
+  
+  // If still not found, check ethusdt/8h directory for partial year files (divergence test data)
+  if (!filepath) {
+    const allCandles: PriceCandle[] = [];
+    if (fs.existsSync(ethDir)) {
+      const files = fs.readdirSync(ethDir);
+      const yearFiles = files.filter(f => f.includes(`${year}`) && f.endsWith('.json.gz'));
+      
+      for (const file of yearFiles) {
+        const filePath = path.join(ethDir, file);
+        const compressed = fs.readFileSync(filePath);
+        const decompressed = gunzipSync(compressed);
+        const candles = JSON.parse(decompressed.toString()) as PriceCandle[];
+        console.log(`📊 Loaded ${candles.length} synthetic 8h candles from ${file}`);
+        allCandles.push(...candles);
+      }
+      
+      if (allCandles.length > 0) {
+        // Sort by timestamp and return
+        allCandles.sort((a, b) => a.timestamp - b.timestamp);
+        return allCandles;
+      }
     }
   }
   
@@ -188,16 +214,22 @@ export async function runBacktest(
       candles.sort((a, b) => a.timestamp - b.timestamp);
     }
     
-    // Filter to requested date range
+    // DON'T filter to requested date range - we need warmup candles for indicators
+    // Instead, we'll use startIndex in the main loop to start trading from the right point
     const startTime = new Date(startDate).getTime();
     const endTime = new Date(endDate).getTime();
-    candles = candles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
+    
+    // Filter only the END of the range (keep all warmup candles at the start)
+    candles = candles.filter(c => c.timestamp <= endTime);
+    
+    // Find how many candles are within the test period
+    const candlesInPeriod = candles.filter(c => c.timestamp >= startTime).length;
     
     if (candles.length < 50) {
       throw new Error(`Not enough synthetic candles: ${candles.length}. Need at least 50 for indicators.`);
     }
     
-    console.log(`📈 Filtered to ${candles.length} candles for period ${startDate} to ${endDate}`);
+    console.log(`📈 Loaded ${candles.length} candles (${candlesInPeriod} in test period ${startDate} to ${endDate})`);
   } else {
     // For multi-year historical periods, we need to handle them specially
     const startYear = new Date(startDate).getFullYear();
@@ -612,11 +644,20 @@ async function main() {
     { name: '2025-2027 (3 Years)', start: '2025-01-01', end: '2027-12-31', synthetic: false }, // Mix historical + synthetic
   ];
   
+  // Divergence test periods (2028) - synthetic data with clear divergence patterns
+  // Data includes 250 candle warmup, then bearish divergence (100), bridge (30), bullish divergence (100)
+  const divergenceTestPeriods = [
+    { name: '2028 Bearish Divergence (Top→Crash)', start: '2028-01-01', end: '2028-02-10', synthetic: true },
+    { name: '2028 Bullish Divergence (Bottom→Rally)', start: '2028-02-15', end: '2028-03-17', synthetic: true },
+    { name: '2028 Full Divergence Test', start: '2028-01-01', end: '2028-03-17', synthetic: true },
+  ];
+  
   const testPeriods = [
     ...historicalPeriods,
     ...synthetic2026Periods,
     ...synthetic2027Periods,
     ...multiYearPeriods,
+    ...divergenceTestPeriods,
   ];
   
   const reports: string[] = [];

@@ -19,6 +19,7 @@ export default function PriceChart({ portfolioHistory: _portfolioHistory, trades
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
   const [actualCandles, setActualCandles] = useState<PriceCandle[] | null>(null);
+  const [regimeCandles, setRegimeCandles] = useState<PriceCandle[] | null>(null); // 8h candles for regime calculation
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -36,24 +37,34 @@ export default function PriceChart({ portfolioHistory: _portfolioHistory, trades
         const timeframe = timeRange === '48h' ? '5m' : (session.config.bullishStrategy.timeframe || '8h');
         
         // Calculate startDate based on timeRange
+        // IMPORTANT: Always add buffer for regime calculation
+        // Regime uses SMA200, so we need at least 200 candles of history before visible range
+        // For 8h candles, 200 candles = 1600 hours ≈ 67 days buffer
         const now = Date.now();
         let startDate: string;
         const endDate = new Date().toISOString().split('T')[0];
         
+        // Buffer for regime calculation: 200 candles * 8 hours = 1600 hours ≈ 67 days
+        // This ensures SMA200 and all other indicators are calculated correctly
+        const regimeBufferMs = 200 * 8 * 60 * 60 * 1000;
+        
         switch (timeRange) {
           case '48h':
-            // For 48h, fetch last 48 hours (add buffer for 5m candles)
+            // For 48h, fetch last 48 hours + buffer for regime calculation
             const cutoff48h = now - (48 * 60 * 60 * 1000);
-            startDate = new Date(cutoff48h - (24 * 60 * 60 * 1000)).toISOString().split('T')[0]; // Add 1 day buffer
+            startDate = new Date(cutoff48h - regimeBufferMs).toISOString().split('T')[0];
             break;
           case '7d':
-            startDate = new Date(now - (7 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+            // 7 days + 67 days buffer = 74 days
+            startDate = new Date(now - (7 * 24 * 60 * 60 * 1000) - regimeBufferMs).toISOString().split('T')[0];
             break;
           case '14d':
-            startDate = new Date(now - (14 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+            // 14 days + 67 days buffer = 81 days
+            startDate = new Date(now - (14 * 24 * 60 * 60 * 1000) - regimeBufferMs).toISOString().split('T')[0];
             break;
           case '1m':
-            startDate = new Date(now - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+            // 30 days + 67 days buffer = 97 days
+            startDate = new Date(now - (30 * 24 * 60 * 60 * 1000) - regimeBufferMs).toISOString().split('T')[0];
             break;
           case '3m':
             startDate = new Date(now - (90 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
@@ -83,13 +94,36 @@ export default function PriceChart({ portfolioHistory: _portfolioHistory, trades
         if (response.ok) {
           const data = await response.json();
           setActualCandles(data.candles || []);
+          
+          // For 48H view, also fetch 8h candles for regime calculation
+          // This ensures regime matches what the trading strategy actually calculates
+          if (timeRange === '48h') {
+            const regimeTimeframe = session.config.bullishStrategy.timeframe || '8h';
+            // Need to fetch enough 8h candles for SMA200 calculation
+            const regimeStartDate = new Date(now - regimeBufferMs).toISOString().split('T')[0];
+            const regimeResponse = await fetch(`/api/trading/candles?symbol=ETHUSDT&timeframe=${regimeTimeframe}&startDate=${regimeStartDate}&endDate=${endDate}&skipAPIFetch=false`, {
+              credentials: 'include',
+            });
+            
+            if (regimeResponse.ok) {
+              const regimeData = await regimeResponse.json();
+              setRegimeCandles(regimeData.candles || []);
+            } else {
+              setRegimeCandles(null);
+            }
+          } else {
+            // For non-48H views, actualCandles are already 8h, so use them for regime
+            setRegimeCandles(null);
+          }
         } else {
           console.warn('Failed to fetch candles for chart');
           setActualCandles(null);
+          setRegimeCandles(null);
         }
       } catch (error) {
         console.warn('Error fetching candles for chart:', error);
         setActualCandles(null);
+        setRegimeCandles(null);
       }
     };
 
@@ -224,8 +258,16 @@ export default function PriceChart({ portfolioHistory: _portfolioHistory, trades
     const regimeHistory = session.regimeHistory || [];
     
     // We need candles for calculating historical regimes
-    // Use actualCandles if available (they have buffer for calculation), otherwise filteredCandles
-    const candlesForRegime = actualCandles && actualCandles.length > 0 ? actualCandles : filteredCandles;
+    // For 48H view: use regimeCandles (8h candles) to match strategy
+    // For other views: use actualCandles (already 8h)
+    let candlesForRegime: PriceCandle[];
+    if (timeRange === '48h' && regimeCandles && regimeCandles.length > 0) {
+      candlesForRegime = regimeCandles;
+    } else if (actualCandles && actualCandles.length > 0) {
+      candlesForRegime = actualCandles;
+    } else {
+      candlesForRegime = filteredCandles;
+    }
     
     // Clear indicator cache for fresh calculation
     clearIndicatorCache();
@@ -245,8 +287,23 @@ export default function PriceChart({ portfolioHistory: _portfolioHistory, trades
       let regionStart = historyStart;
       let regionConfidence = 0;
       
+      // Find the index of the first visible candle
+      const firstVisibleIndex = candlesForRegime.findIndex(c => c.timestamp >= historyStart);
+      
+      // If we have at least 50 candles before the first visible candle, we can calculate regime at that point
+      // Otherwise start from index 50
+      const startIndex = Math.max(50, firstVisibleIndex > 0 ? firstVisibleIndex : 50);
+      
+      // Initialize lastRegime with the regime at startIndex if it's before our visible range
+      if (startIndex < candlesForRegime.length && startIndex >= 50) {
+        const initialSignal = detectMarketRegimeCached(candlesForRegime, startIndex);
+        lastRegime = initialSignal.regime;
+        regionConfidence = initialSignal.confidence;
+        // regionStart stays at historyStart to cover the visible range from the beginning
+      }
+      
       // Iterate through candles in the historical period
-      for (let i = 50; i < candlesForRegime.length; i++) {
+      for (let i = startIndex + 1; i < candlesForRegime.length; i++) {
         const candle = candlesForRegime[i];
         if (!candle) continue;
         
@@ -390,7 +447,7 @@ export default function PriceChart({ portfolioHistory: _portfolioHistory, trades
     }).filter((region): region is NonNullable<typeof region> => region !== null);
     
     return mappedRegions;
-  }, [session, filteredCandles, actualCandles, chartWidth, padding.left]);
+  }, [session, filteredCandles, actualCandles, regimeCandles, timeRange, chartWidth, padding.left]);
 
   // Calculate regime for hovered point (for tooltip) - must be before early return
   // For historical data: calculate using detectMarketRegimeCached

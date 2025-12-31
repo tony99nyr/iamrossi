@@ -5,6 +5,7 @@
 
 import type { PriceCandle } from '@/types';
 import { calculateSMA, calculateEMA, calculateMACD, calculateRSI, getLatestIndicatorValue } from './indicators';
+import { detectRSIDivergence, detectMACDDivergence, type DivergenceSignal } from './divergence-detector';
 export type MarketRegime = 'bullish' | 'bearish' | 'neutral';
 
 export interface MarketRegimeSignal {
@@ -14,7 +15,9 @@ export interface MarketRegimeSignal {
     trend: number; // -1 to +1, overall trend direction
     momentum: number; // -1 to +1, momentum strength
     volatility: number; // 0-1, current volatility level
+    divergence?: number; // -1 to +1, divergence signal (positive = bullish divergence)
   };
+  divergenceSignal?: DivergenceSignal; // Details of detected divergence
 }
 
 // Cache for indicator calculations
@@ -266,6 +269,48 @@ export function detectMarketRegimeCached(
   const momentum = momentumSignals > 0 ? momentumScore / momentumSignals : 0;
   const avgMomentumStrength = momentumSignals > 0 ? momentumStrength / momentumSignals : 0;
 
+  // Divergence Detection
+  let divergenceScore = 0;
+  let divergenceSignal: DivergenceSignal | null = null;
+  
+  // Check for RSI divergence
+  const rsiDivergence = detectRSIDivergence(candles, currentIndex);
+  if (rsiDivergence) {
+    divergenceSignal = rsiDivergence;
+    // Bullish divergence is positive (potential reversal up)
+    // Bearish divergence is negative (potential reversal down)
+    if (rsiDivergence.type === 'bullish') {
+      divergenceScore += rsiDivergence.strength * 0.5;
+    } else if (rsiDivergence.type === 'bearish') {
+      divergenceScore -= rsiDivergence.strength * 0.5;
+    } else if (rsiDivergence.type === 'hidden-bullish') {
+      divergenceScore += rsiDivergence.strength * 0.3; // Hidden divergence (trend continuation)
+    } else if (rsiDivergence.type === 'hidden-bearish') {
+      divergenceScore -= rsiDivergence.strength * 0.3;
+    }
+  }
+  
+  // Check for MACD divergence
+  const macdDivergence = detectMACDDivergence(candles, currentIndex);
+  if (macdDivergence) {
+    // Use MACD divergence if stronger, or combine if both present
+    if (!divergenceSignal || macdDivergence.strength > divergenceSignal.strength) {
+      divergenceSignal = macdDivergence;
+    }
+    if (macdDivergence.type === 'bullish') {
+      divergenceScore += macdDivergence.strength * 0.5;
+    } else if (macdDivergence.type === 'bearish') {
+      divergenceScore -= macdDivergence.strength * 0.5;
+    } else if (macdDivergence.type === 'hidden-bullish') {
+      divergenceScore += macdDivergence.strength * 0.3;
+    } else if (macdDivergence.type === 'hidden-bearish') {
+      divergenceScore -= macdDivergence.strength * 0.3;
+    }
+  }
+  
+  // Clamp divergence score to [-1, 1]
+  divergenceScore = Math.max(-1, Math.min(1, divergenceScore));
+
   // Volatility
   const lookback = Math.min(20, currentIndex);
   const recentPrices = prices.slice(currentIndex - lookback, currentIndex + 1);
@@ -280,8 +325,10 @@ export function detectMarketRegimeCached(
     : 0;
   const volatility = Math.min(1, avgVolatility * 20);
 
-  // Combine trend and momentum
-  const rawCombinedSignal = (trend * 0.5 + momentum * 0.5);
+  // Combine trend, momentum, and divergence
+  // Divergence acts as a warning signal - it can moderate the overall signal
+  // Weight: trend 45%, momentum 45%, divergence 10%
+  const rawCombinedSignal = (trend * 0.45 + momentum * 0.45 + divergenceScore * 0.10);
   const signalStrength = (avgTrendStrength + avgMomentumStrength) / 2;
   
   // Apply smoothing to reduce noise (financial professionals use this)
@@ -489,7 +536,9 @@ export function detectMarketRegimeCached(
       trend,
       momentum,
       volatility,
+      divergence: divergenceScore !== 0 ? divergenceScore : undefined,
     },
+    divergenceSignal: divergenceSignal || undefined,
   };
 }
 

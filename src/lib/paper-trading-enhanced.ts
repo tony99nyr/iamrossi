@@ -16,6 +16,7 @@ import { getATRValue } from './indicators';
 import { type StopLossConfig, type OpenPosition } from './atr-stop-loss';
 import { executeTrade, type TradeExecutionOptions } from './trade-executor';
 import { calculateKellyCriterion, getKellyMultiplier } from './kelly-criterion';
+import { sendTradeAlert, sendRegimeChangeAlert, sendSessionAlert, createTradeNotification, isNotificationsEnabled } from './notifications';
 
 export interface EnhancedPaperTradingSession {
   id: string;
@@ -272,6 +273,13 @@ export class PaperTradingService {
     // Save to Redis
     await redis.set(ACTIVE_SESSION_KEY, JSON.stringify(session));
 
+    // Send session start notification
+    if (isNotificationsEnabled()) {
+      sendSessionAlert('start', session.name, session.portfolio.totalValue).catch(err => {
+        console.warn('[Paper Trading] Failed to send session start notification:', err);
+      });
+    }
+
     return session;
   }
 
@@ -445,13 +453,26 @@ export class PaperTradingService {
     };
 
     // Execute trade (result is stored in trades array and portfolio is updated)
-    executeTrade(
+    const executedTrade = executeTrade(
       signal,
       confidence,
       currentPrice,
       portfolio,
       executionOptions
     );
+    
+    // Send trade notification if a trade was executed
+    if (executedTrade && isNotificationsEnabled()) {
+      const notification = createTradeNotification(
+        executedTrade,
+        signal.regime?.regime || 'neutral',
+        portfolio.totalValue,
+        'ETHUSDT'
+      );
+      sendTradeAlert(notification).catch(err => {
+        console.warn('[Paper Trading] Failed to send trade notification:', err);
+      });
+    }
     
     // Calculate Kelly multiplier for display (after trade execution)
     let kellyMultiplier = 1.0;
@@ -584,6 +605,18 @@ export class PaperTradingService {
       if (updatedSession.regimeHistory.length > 100) {
         updatedSession.regimeHistory.shift();
       }
+      
+      // Send regime change notification
+      if (isNotificationsEnabled()) {
+        sendRegimeChangeAlert({
+          previousRegime: previousRegime.regime,
+          newRegime: signal.regime.regime,
+          confidence: signal.regime.confidence,
+          timestamp: Date.now(),
+        }).catch(err => {
+          console.warn('[Paper Trading] Failed to send regime change notification:', err);
+        });
+      }
     } else if (updatedSession.regimeHistory.length === 0) {
       // First regime entry
       updatedSession.regimeHistory.push({
@@ -690,6 +723,13 @@ export class PaperTradingService {
 
     // Save to Redis
     await redis.set(ACTIVE_SESSION_KEY, JSON.stringify(session));
+
+    // Send session stop notification
+    if (isNotificationsEnabled()) {
+      sendSessionAlert('stop', session.name, session.portfolio.totalValue).catch(err => {
+        console.warn('[Paper Trading] Failed to send session stop notification:', err);
+      });
+    }
 
     return session;
   }

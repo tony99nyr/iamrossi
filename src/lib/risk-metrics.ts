@@ -67,6 +67,8 @@ export function calculateRiskMetrics(
   const calmarRatio = calculateCalmarRatio(returns, maxDrawdown);
   const winLossRatio = calculateWinLossRatio(trades, initialCapital);
   const expectancy = calculateExpectancy(trades, initialCapital);
+  const omegaRatio = calculateOmegaRatio(dailyReturns);
+  const ulcerIndex = calculateUlcerIndex(portfolioHistory);
 
   return {
     sharpeRatio,
@@ -77,6 +79,8 @@ export function calculateRiskMetrics(
     sortinoRatio,
     winLossRatio,
     expectancy,
+    omegaRatio,
+    ulcerIndex,
   };
 }
 
@@ -306,5 +310,75 @@ function calculateExpectancy(trades: Trade[], initialCapital: number): number {
   const avgLoss = losses.length > 0 ? losses.reduce((sum, l) => sum + l, 0) / losses.length : 0;
 
   return winRate * avgWin - lossRate * avgLoss;
+}
+
+/**
+ * Calculate Omega Ratio: Probability-weighted gains vs losses
+ * 
+ * Omega = Sum of gains above threshold / Sum of losses below threshold
+ * 
+ * Unlike Sharpe which uses variance (penalizing upside volatility),
+ * Omega only penalizes downside. A ratio > 1 indicates more probability-weighted
+ * gains than losses. Higher is better.
+ * 
+ * @param returns Array of returns (as percentages)
+ * @param threshold Threshold return (default 0 = break-even)
+ * @returns Omega ratio (>1 is good, <1 is bad)
+ */
+function calculateOmegaRatio(returns: number[], threshold: number = 0): number {
+  if (returns.length === 0) return 0;
+
+  let sumGains = 0;
+  let sumLosses = 0;
+
+  for (const ret of returns) {
+    const excessReturn = ret - threshold;
+    if (excessReturn > 0) {
+      sumGains += excessReturn;
+    } else {
+      sumLosses += Math.abs(excessReturn);
+    }
+  }
+
+  // If no losses, return Infinity (but cap for display purposes)
+  if (sumLosses === 0) {
+    return sumGains > 0 ? 999 : 1;
+  }
+
+  return sumGains / sumLosses;
+}
+
+/**
+ * Calculate Ulcer Index: Measures depth and duration of drawdowns
+ * 
+ * UI = sqrt(sum of squared percentage drawdowns / n)
+ * 
+ * Unlike max drawdown which only captures the worst moment,
+ * Ulcer Index considers the entire pain of all drawdowns.
+ * Lower is better. Near 0 = smooth equity curve.
+ * 
+ * Named after the ulcers it was designed to prevent in investors.
+ * 
+ * @param portfolioHistory Array of portfolio snapshots
+ * @returns Ulcer Index (lower is better, 0 = no drawdowns)
+ */
+function calculateUlcerIndex(portfolioHistory: PortfolioSnapshot[]): number {
+  if (portfolioHistory.length === 0) return 0;
+
+  let maxValue = portfolioHistory[0].totalValue;
+  let sumSquaredDrawdowns = 0;
+
+  for (const snapshot of portfolioHistory) {
+    if (snapshot.totalValue > maxValue) {
+      maxValue = snapshot.totalValue;
+    }
+
+    // Calculate percentage drawdown from peak
+    const drawdownPct = ((maxValue - snapshot.totalValue) / maxValue) * 100;
+    sumSquaredDrawdowns += drawdownPct * drawdownPct;
+  }
+
+  // Ulcer Index is the root mean square of drawdowns
+  return Math.sqrt(sumSquaredDrawdowns / portfolioHistory.length);
 }
 

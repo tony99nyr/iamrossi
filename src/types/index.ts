@@ -472,6 +472,8 @@ export interface RiskMetrics {
   sortinoRatio: number; // Downside risk-adjusted return
   winLossRatio: number; // Avg win / avg loss
   expectancy: number; // Expected value per trade
+  omegaRatio?: number; // Probability-weighted gains vs losses (>1 is good)
+  ulcerIndex?: number; // Drawdown severity measure (lower is better)
 }
 
 export interface StrategyRun {

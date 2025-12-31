@@ -149,6 +149,65 @@ export default function StrategySignalPanel({ session }: StrategySignalPanelProp
           </span>
         </div>
 
+        {/* Signal Thresholds - How strong signal needs to be */}
+        <div className={css({ 
+          padding: '8px',
+          bg: 'rgba(125, 133, 144, 0.05)',
+          borderRadius: '4px',
+          fontSize: 'xs',
+        })}>
+          <div className={css({ color: '#7d8590', marginBottom: '4px', fontWeight: 'semibold' })}>
+            Signal Thresholds (to trigger trade)
+          </div>
+          <div className={css({ display: 'flex', gap: '16px' })}>
+            <div className={css({ display: 'flex', alignItems: 'center', gap: '4px' })}>
+              <span className={css({ color: '#3fb950' })}>BUY:</span>
+              <span className={css({ color: '#e6edf3' })}>
+                {lastSignal.activeStrategy ? `≥${(lastSignal.activeStrategy.buyThreshold * 100).toFixed(0)}%` : 'N/A'}
+              </span>
+              <span className={css({ 
+                color: lastSignal.signal >= (lastSignal.activeStrategy?.buyThreshold || 0) ? '#3fb950' : '#7d8590',
+              })}>
+                ({lastSignal.activeStrategy ? `${((lastSignal.signal / lastSignal.activeStrategy.buyThreshold) * 100).toFixed(0)}% there` : ''})
+              </span>
+            </div>
+            <div className={css({ display: 'flex', alignItems: 'center', gap: '4px' })}>
+              <span className={css({ color: '#f85149' })}>SELL:</span>
+              <span className={css({ color: '#e6edf3' })}>
+                {lastSignal.activeStrategy ? `≤${(lastSignal.activeStrategy.sellThreshold * 100).toFixed(0)}%` : 'N/A'}
+              </span>
+              <span className={css({ 
+                color: lastSignal.signal <= (lastSignal.activeStrategy?.sellThreshold || 0) ? '#f85149' : '#7d8590',
+              })}>
+                ({lastSignal.activeStrategy ? `${((lastSignal.signal / Math.abs(lastSignal.activeStrategy.sellThreshold)) * 100).toFixed(0)}% there` : ''})
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Regime Persistence Explanation */}
+        <div className={css({ 
+          padding: '8px',
+          bg: 'rgba(125, 133, 144, 0.05)',
+          borderRadius: '4px',
+          fontSize: 'xs',
+        })}>
+          <div className={css({ color: '#7d8590', marginBottom: '4px', fontWeight: 'semibold' })}>
+            Regime Persistence (to flip regime)
+          </div>
+          <div className={css({ color: '#e6edf3' })}>
+            Need <span className={css({ color: '#58a6ff', fontWeight: 'bold' })}>{execution.requiredPeriods}</span> out of last <span className={css({ color: '#58a6ff', fontWeight: 'bold' })}>5</span> periods in same regime
+          </div>
+          <div className={css({ display: 'flex', gap: '16px', marginTop: '4px' })}>
+            <span className={css({ color: execution.bullishCount >= execution.requiredPeriods ? '#3fb950' : '#7d8590' })}>
+              Bullish: {execution.bullishCount}/5 {execution.bullishCount >= execution.requiredPeriods ? '✓' : `(need ${execution.requiredPeriods - execution.bullishCount} more)`}
+            </span>
+            <span className={css({ color: execution.bearishCount >= execution.requiredPeriods ? '#f85149' : '#7d8590' })}>
+              Bearish: {execution.bearishCount}/5 {execution.bearishCount >= execution.requiredPeriods ? '✓' : `(need ${Math.max(0, execution.requiredPeriods - execution.bearishCount)} more)`}
+            </span>
+          </div>
+        </div>
+
         {/* Confidence & Momentum */}
         <div className={css({ display: 'flex', justifyContent: 'space-between', alignItems: 'center' })}>
           <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Confidence</span>

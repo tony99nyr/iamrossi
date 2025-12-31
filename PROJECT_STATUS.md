@@ -1,7 +1,7 @@
 # Trading Strategy Project Status
 
 **Last Updated**: 2025-12-31  
-**Current Phase**: Phase 7 - Advanced Calculations (Completed: Kelly + ATR)
+**Current Phase**: Phase 9 - Testing & Notifications (Completed: Integration Tests, Discord Alerts, Divergence Detection, Correlation Analysis)
 
 ---
 
@@ -29,9 +29,9 @@
 - ✅ Created trade audit generator with MFE/MAE calculations
 - ✅ Updated trade execution to capture full audit data
 - ✅ Created trade audit report generator script
-- ⏳ **Pending**: API endpoints for trade audits
-- ⏳ **Pending**: UI component for displaying audits
-- ⏳ **Pending**: Enhanced performance tracking with MFE/MAE
+- ✅ Created API endpoint for trade audits (`/api/trading/audit`)
+- ✅ Created UI page for displaying audits (`/tools/eth-trading/audit`)
+- ✅ Enhanced performance tracking with MFE/MAE
 
 ### Phase 4: Test Coverage
 - ✅ Created unit tests for technical indicators
@@ -42,7 +42,7 @@
 - ✅ Created unit tests for trade audit generation
 - ✅ Created integration tests for backtesting
 - ✅ Created mock data for trading tests
-- ⏳ **Pending**: Integration tests for paper trading
+- ✅ Created integration tests for paper trading (20 tests)
 
 ### Phase 5: Historical Verification System
 - ✅ Created historical backtest verification script
@@ -76,35 +76,88 @@
 - ✅ **Current Config**: 2.0x ATR with trailing stops enabled
 - ✅ **Impact**: Improved risk management, better win rates in bullish markets
 
-#### ⏳ Volatility-Adjusted Position Sizing
-- ⏳ Reduce position size in high volatility conditions
-- ⏳ Implement volatility bands/thresholds
-- ⏳ Test and optimize volatility thresholds
+#### ✅ Volatility-Adjusted Position Sizing
+- ✅ Implemented volatility calculation module
+- ✅ Reduce position size in high volatility conditions
+- ✅ Integrated into trade executor
+- ✅ **Config**: Blocks trading if volatility > 5%
 
-#### ⏳ Transaction Cost Modeling
-- ⏳ Add realistic fee modeling (0.1% per trade)
-- ⏳ Add slippage modeling
-- ⏳ Update backtests to include transaction costs
+#### ✅ Transaction Cost Modeling
+- ✅ Add realistic fee modeling (0.1% per trade)
+- ✅ Add slippage modeling (configurable)
+- ✅ Update backtests to include transaction costs
+- ✅ Integrated into unified trade executor
 
-#### ⏳ Divergence Detection
-- ⏳ Implement price vs indicator divergence detection
-- ⏳ Add early reversal signal generation
-- ⏳ Test divergence signals in backtests
+#### ✅ Divergence Detection
+- ✅ Implemented price vs RSI divergence detection
+- ✅ Implemented price vs MACD divergence detection
+- ✅ Integrated divergence into regime detection (10% weight)
+- ✅ Created unit tests for divergence detection (15 tests)
+- ✅ Created realistic synthetic divergence test data (2028 scenarios)
+- ✅ Validated divergence detection with gradual reversal patterns
+- ✅ **Impact**: Divergence correctly detected at tops/bottoms, reduces confidence during warning periods
 
-#### ⏳ ETH-BTC Correlation Analysis
-- ⏳ Add BTC price data fetching
-- ⏳ Calculate correlation coefficients
-- ⏳ Use correlation for market context
+#### ✅ ETH-BTC Correlation Analysis
+- ✅ Created BTC price service (`src/lib/btc-price-service.ts`)
+- ✅ Implemented rolling correlation calculation
+- ✅ Created correlation analysis module (`src/lib/correlation-analysis.ts`)
+- ✅ Added correlation signal generation for trading context
 
-#### ⏳ Advanced Performance Metrics
-- ⏳ Omega Ratio
-- ⏳ Ulcer Index
-- ⏳ Calmar Ratio
-- ⏳ Sortino Ratio
+#### ✅ Advanced Performance Metrics
+- ✅ Omega Ratio - Probability-weighted gains vs losses
+- ✅ Ulcer Index - Drawdown severity measure
+- ✅ Calmar Ratio (already implemented)
+- ✅ Sortino Ratio (already implemented)
+
+### Phase 8: UI Dashboard & Chart Improvements
+- ✅ Unified trade execution logic (`src/lib/trade-executor.ts`)
+- ✅ Consolidated dashboard panels (reduced from 6+ to 6 focused panels)
+- ✅ Fixed price chart regime display (now matches strategy calculations)
+- ✅ Added 48H time range with 5m candle granularity
+- ✅ Removed 1D time range (replaced with 48H)
+- ✅ Default chart view changed to 1M for optimal regime visibility
+- ✅ Chart uses 8h candles for regime calculation (matches strategy)
+- ✅ Enhanced Strategy & Signal panel with threshold information
+- ✅ Fixed chart hover cursor offset issue
+- ✅ Chart regime regions now consistent across all time ranges
 
 ---
 
 ## ✅ Recently Completed
+
+### Phase 9: Testing & Notifications (December 31, 2025)
+**Status**: ✅ Completed
+
+**Changes**:
+- ✅ **Paper Trading Integration Tests** - 20 comprehensive tests covering session lifecycle, trade execution, Kelly Criterion, ATR stop losses, risk management filters, data quality validation, and portfolio tracking
+- ✅ **Discord Alerting** - Full notification service with trade alerts, regime change alerts, stop loss alerts, and session start/stop notifications
+- ✅ **Advanced Performance Metrics** - Added Omega Ratio and Ulcer Index to risk metrics
+- ✅ **Divergence Detection** - RSI and MACD divergence detection with integration into regime detection (10% weight)
+  - Created realistic synthetic test data with gradual reversal patterns (3 higher highs/lower lows)
+  - Validated divergence detection correctly identifies tops/bottoms before reversals
+  - Divergence reduces regime confidence during warning periods, providing early risk signals
+- ✅ **BTC Correlation Analysis** - Rolling correlation between ETH and BTC for market context
+
+**New Files**:
+- `tests/integration/paper-trading.test.ts` - Paper trading integration tests
+- `src/lib/notifications.ts` - Discord webhook notification service
+- `src/lib/divergence-detector.ts` - RSI/MACD divergence detection
+- `src/lib/btc-price-service.ts` - BTC price data fetching
+- `src/lib/correlation-analysis.ts` - ETH-BTC rolling correlation
+- `scripts/generate-divergence-test-data.ts` - Synthetic data generator for divergence testing
+
+### UI Dashboard Consolidation (December 31, 2025)
+**Status**: ✅ Completed
+
+**Changes**:
+- Unified trade execution logic into `src/lib/trade-executor.ts`
+- Created consolidated `PortfolioPerformancePanel` (merged Portfolio + Performance)
+- Created consolidated `StrategySignalPanel` (merged StrategyIndicators + StrategyExecutionPanel)
+- Enhanced `StrategySignalPanel` with clear threshold information:
+  - Signal thresholds (buy/sell trigger levels)
+  - Regime persistence requirements (N out of 5 periods needed)
+- Fixed chart regime calculation to match trading strategy
+- Chart now defaults to 1M view for good regime visibility
 
 ### Comprehensive Strategy Comparison (December 2025)
 **Script**: `scripts/compare-top-strategies.ts`  
@@ -167,16 +220,18 @@
 - `src/lib/atr-stop-loss.ts` - ATR-based stop losses
 
 ### Testing & Optimization Scripts
-- `scripts/backfill-test.ts` - Main backfill testing (supports 2025, 2026, 2027, skipAPIFetch)
+- `scripts/backfill-test.ts` - Main backfill testing (supports 2025, 2026, 2027, 2028, skipAPIFetch)
 - `scripts/compare-top-strategies.ts` - Strategy comparison script (uses backfill-test.ts)
 - `scripts/comprehensive-optimization-kelly-atr.ts` - Comprehensive optimization (192 combinations)
 - `scripts/verify-historical-backtest.ts` - Historical verification
 - `scripts/generate-synthetic-2027-data-enhanced.ts` - 2027 synthetic data generator
+- `scripts/generate-divergence-test-data.ts` - 2028 divergence test data generator (realistic reversal patterns)
 
 ### Data Files
 - `data/historical-prices/ethusdt/8h/` - Historical 8h candles
 - `data/historical-prices/synthetic/ethusdt_8h_2026-*.json.gz` - Synthetic 2026 data
 - `data/historical-prices/synthetic/ethusdt_8h_2027-*.json.gz` - Synthetic 2027 data
+- `data/historical-prices/synthetic/ethusdt_8h_2028-*.json.gz` - Synthetic 2028 divergence test data
 
 ### Documentation
 - `STRATEGY_DOCUMENTATION.md` - Complete strategy documentation
@@ -187,23 +242,20 @@
 
 ## 🎯 Next Steps
 
-### Immediate (After Optimization Completes)
-1. **Review optimization results** - Analyze top 10 configurations
-2. **Apply best configuration** - Update active strategy config
-3. **Update STRATEGY_DOCUMENTATION.md** - Document new optimal config
-4. **Run final backfill test** - Verify new config across all periods
+### Immediate
+1. **Configure Discord webhook** - Set `DISCORD_WEBHOOK_URL` environment variable
+2. **Enable notifications** - Notifications will auto-send on trade execution
+3. **Integrate BTC correlation into regime** - Add correlation context to trading decisions
 
-### Short Term (Phase 7 Completion)
-1. **Volatility-adjusted position sizing** - Implement and test
-2. **Transaction cost modeling** - Add fees and slippage to backtests
-3. **Divergence detection** - Implement and integrate
-4. **ETH-BTC correlation** - Add correlation analysis
+### Short Term
+1. **Strategy refinement** - Further optimization based on divergence signals
+2. **Correlation-based position sizing** - Adjust positions based on ETH-BTC correlation
+3. **Historical trade replay** - Visualize past trades on chart
 
 ### Medium Term
-1. **Complete trade audit system** - API endpoints and UI
-2. **Advanced performance metrics** - Omega Ratio, Ulcer Index, etc.
-3. **Paper trading integration tests** - Complete test coverage
-4. **Strategy refinement** - Further optimization based on new metrics
+1. **Mobile-friendly dashboard** - Responsive UI improvements
+2. **Multi-asset support** - Extend to BTC and other pairs
+3. **Machine learning integration** - Pattern recognition for regime detection
 
 ---
 
@@ -245,7 +297,7 @@
 ### Documentation
 - ✅ Complete strategy documentation
 - ✅ Test coverage documentation
-- ⏳ API documentation for trade audit endpoints (when implemented)
+- ✅ API documentation for trade audit endpoints
 
 ---
 
@@ -262,18 +314,41 @@
 
 ### Files to Commit
 - `scripts/generate-synthetic-2027-data-enhanced.ts` - New
+- `scripts/generate-divergence-test-data.ts` - New (realistic divergence test scenarios)
 - `scripts/comprehensive-optimization-kelly-atr.ts` - New
 - `scripts/compare-top-strategies.ts` - New (reliable strategy comparison)
+- `scripts/fill-missing-candles.ts` - New (gap filling)
+- `scripts/verify-regime-history.ts` - New (regime verification)
 - `src/lib/kelly-criterion.ts` - New
 - `src/lib/atr-stop-loss.ts` - New
-- `src/lib/backtest-trade-executor.ts` - New (shared trade execution logic)
+- `src/lib/trade-executor.ts` - New (unified trade execution logic)
+- `src/lib/volatility-position-sizing.ts` - New
+- `src/lib/notifications.ts` - New (Discord webhook alerting)
+- `src/lib/divergence-detector.ts` - New (RSI/MACD divergence detection)
+- `src/lib/btc-price-service.ts` - New (BTC price data fetching)
+- `src/lib/correlation-analysis.ts` - New (ETH-BTC rolling correlation)
+- `src/app/api/trading/audit/route.ts` - New
+- `src/app/api/trading/candles/route.ts` - New
+- `src/app/tools/eth-trading/audit/page.tsx` - New
+- `src/app/tools/eth-trading/components/PortfolioPerformancePanel.tsx` - New
+- `src/app/tools/eth-trading/components/StrategySignalPanel.tsx` - New
 - `tests/lib/kelly-criterion.test.ts` - New
 - `tests/lib/atr-stop-loss.test.ts` - New
+- `tests/lib/divergence-detector.test.ts` - New (15 tests)
+- `tests/integration/paper-trading.test.ts` - New (20 tests)
 - `scripts/backfill-test.ts` - Updated (2027 support, skipAPIFetch, configOverride)
-- `src/lib/eth-price-service.ts` - Updated (skipAPIFetch parameter)
+- `src/lib/eth-price-service.ts` - Updated (skipAPIFetch parameter, data quality)
+- `src/lib/data-quality-validator.ts` - Updated (improved gap detection)
+- `src/lib/market-regime-detector-cached.ts` - Updated (divergence integration)
+- `src/lib/risk-metrics.ts` - Updated (Omega Ratio, Ulcer Index)
+- `src/lib/paper-trading-enhanced.ts` - Updated (Discord notifications)
+- `src/types/index.ts` - Updated (RiskMetrics interface)
+- `src/app/tools/eth-trading/EthTradingBotClient.tsx` - Updated (consolidated panels, 48H view)
+- `src/app/tools/eth-trading/components/PriceChart.tsx` - Updated (regime consistency)
 - `STRATEGY_DOCUMENTATION.md` - Updated
 - `PROJECT_STATUS.md` - Updated
 - `data/historical-prices/synthetic/ethusdt_8h_2027-*.json.gz` - New data
+- `data/historical-prices/synthetic/ethusdt_8h_2028-*.json.gz` - New divergence test data
 
 ### Exclude from Commit
 - `data/backfill-reports/*.log` - Log files
@@ -288,8 +363,18 @@
 - **3 years of test data** - Comprehensive coverage (2025 historical + 2026/2027 synthetic)
 - **Kelly Criterion** - Currently using 25% fractional Kelly (conservative, optimal for current config)
 - **ATR Stop Losses** - Currently using 2.0x ATR with trailing stops (optimal for current config)
+- **Transaction Costs** - 0.1% fee + slippage modeling integrated into trade executor
+- **Volatility Filter** - Blocks trading when volatility > 5%
 - **Backfill test optimized** - No API calls for historical periods (faster, no rate limiting)
-- **Next phase** - Continue with remaining Phase 7 advanced calculations
+- **UI Dashboard** - Consolidated panels, consistent chart regimes, enhanced threshold visibility
+- **Chart default** - Now defaults to 1M view for good balance of detail and regime visibility
+- **Divergence Detection** - RSI and MACD divergence integrated into regime detection (10% signal weight)
+  - Realistic synthetic test data created with gradual reversal patterns (3 higher highs/lower lows over 80+ days)
+  - Divergence correctly detected at market tops/bottoms, reduces confidence during warning periods
+  - Test data includes 2028 scenarios with bearish divergence (top formation) and bullish divergence (bottom formation)
+- **Discord Alerts** - Ready to use - set `DISCORD_WEBHOOK_URL` environment variable to enable
+- **BTC Correlation** - Rolling correlation module ready for integration into trading decisions
+- **Test Coverage** - 374+ tests passing, including 20 paper trading integration tests and 15 divergence detection tests
 
 ---
 

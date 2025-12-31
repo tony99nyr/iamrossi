@@ -493,13 +493,21 @@ export function validateDataQuality(
     issues.push(freshness.issue);
   } else {
     // Warn if data is getting stale
-    // For daily candles, only warn if it's been more than 24 hours since the candle was created
-    // (daily candles from today are expected, even if 20+ hours into the day)
-    // For intraday candles, warn if it's been more than 50% of max age
+    // For daily candles: warn if > 24 hours old
+    // For 8h/12h candles: only warn if > full period (8h or 12h) - a 5h old 8h candle is normal
+    // For hourly/5m candles: warn if > 50% of max age
     const isDailyCandle = timeframe === '1d';
-    const shouldWarn = isDailyCandle 
-      ? freshness.lastCandleAge > 24 * 60 * 60 * 1000 // More than 24 hours old
-      : freshness.lastCandleAge > maxAgeMinutes * 60 * 1000 * 0.5; // 50% of max age for intraday
+    const isLongPeriodCandle = timeframe === '8h' || timeframe === '12h';
+    
+    let shouldWarn = false;
+    if (isDailyCandle) {
+      shouldWarn = freshness.lastCandleAge > 24 * 60 * 60 * 1000; // More than 24 hours old
+    } else if (isLongPeriodCandle) {
+      // For 8h/12h candles, only warn if we've missed a full period
+      shouldWarn = freshness.lastCandleAge > maxAgeMinutes * 60 * 1000; // Full period
+    } else {
+      shouldWarn = freshness.lastCandleAge > maxAgeMinutes * 60 * 1000 * 0.5; // 50% for short intervals
+    }
     
     if (shouldWarn) {
       warnings.push(`Data is getting stale: ${(freshness.lastCandleAge / (60 * 60 * 1000)).toFixed(1)}h old`);

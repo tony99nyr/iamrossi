@@ -28,14 +28,14 @@ export default function EthTradingBotClient() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   
-  // Initialize timeRange from URL params, default to '7d'
+  // Initialize timeRange from URL params, default to '1m'
   const getInitialTimeRange = (): TimeRange => {
     const urlRange = searchParams.get('range');
     const validRanges: TimeRange[] = ['all', 'ytd', '6m', '3m', '1m', '14d', '7d', '48h'];
     if (urlRange && validRanges.includes(urlRange as TimeRange)) {
       return urlRange as TimeRange;
     }
-    return '7d'; // Default to 7d instead of 'all'
+    return '1m'; // Default to 1m for good balance of detail and regime visibility
   };
   
   const [timeRange, setTimeRange] = useState<TimeRange>(getInitialTimeRange);
@@ -96,10 +96,10 @@ export default function EthTradingBotClient() {
     const validRanges: TimeRange[] = ['all', 'ytd', '6m', '3m', '1m', '14d', '7d', '48h'];
     if (urlRange && validRanges.includes(urlRange as TimeRange) && urlRange !== timeRange) {
       setTimeRange(urlRange as TimeRange);
-    } else if (!urlRange && timeRange !== '7d') {
+    } else if (!urlRange && timeRange !== '1m') {
       // If no URL param and not default, set default and update URL
       const params = new URLSearchParams(searchParams.toString());
-      params.set('range', '7d');
+      params.set('range', '1m');
       router.push(`?${params.toString()}`, { scroll: false });
       setTimeRange('7d');
     }

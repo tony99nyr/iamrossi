@@ -618,232 +618,172 @@ export async function fetchPriceCandles(
       const todayStart = today.getTime();
       const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1;
       
-      // Always check for today's candle if endDate includes today (unless skipAPIFetch is true)
+      // Always check for today's candles if endDate includes today (unless skipAPIFetch is true)
       if (endTime >= todayStart && !skipAPIFetch) {
         const cacheKey = getCacheKey(symbol, interval, todayStart, todayEnd);
         const cached = await redis.get(cacheKey);
-        let todayCandle: PriceCandle | null = null;
+        let todayCandles: PriceCandle[] = []; // For 8h/12h, we may have multiple periods per day
         
         if (cached) {
           const cachedCandles = JSON.parse(cached) as PriceCandle[];
-          // Find today's candle in cache
-          // For 8h/12h candles, "today's candle" is the first period of the day (00:00)
-          // For daily candles, it's the candle with timestamp at day start
+          // For 8h/12h candles, get ALL periods from today (00:00, 08:00, 16:00 for 8h or 00:00, 12:00 for 12h)
+          // For daily candles, get the single day candle
           if (interval === '8h' || interval === '12h') {
-            // For 8h/12h, find the candle that starts at 00:00 (first period of the day)
-            todayCandle = cachedCandles.find(c => {
-              const candleDate = new Date(c.timestamp);
-              return candleDate.getUTCHours() === 0 && candleDate.getUTCMinutes() === 0;
-            }) || null;
-          } else {
-            // For daily candles, match by day start
-            todayCandle = cachedCandles.find(c => {
+            // For 8h/12h, get all candles from today (multiple periods)
+            todayCandles = cachedCandles.filter(c => {
               const candleDate = new Date(c.timestamp);
               candleDate.setUTCHours(0, 0, 0, 0);
               return candleDate.getTime() === todayStart;
-            }) || null;
-          }
-          
-          // Check if the cached candle is synthetic
-          // A candle is synthetic if: all OHLC are the same AND volume is 0 AND it's stale
-          // Note: A real candle that just started (only one price point) will also have OHLC all the same,
-          // but that's OK - it's real data that will be updated as more prices come in
-          // We only treat it as synthetic if it's stale (older than 1 hour for hourly, or older than today for daily)
-          if (todayCandle && 
-              todayCandle.open === todayCandle.high && 
-              todayCandle.high === todayCandle.low && 
-              todayCandle.low === todayCandle.close && 
-              todayCandle.volume === 0) {
-            // Check if it's stale - if it's recent, it's just a new candle with one price point (real data)
-            const candleAge = now - todayCandle.timestamp;
-            const maxAgeForSynthetic = interval === '1h' ? 60 * 60 * 1000 : // 1 hour for hourly
-                                       interval === '5m' ? 5 * 60 * 1000 :   // 5 minutes for 5m
-                                       24 * 60 * 60 * 1000; // 1 day for daily
-            
-            if (candleAge > maxAgeForSynthetic) {
-              // Stale candle with identical OHLC - likely synthetic
-              console.log(`⚠️ Found potentially synthetic candle in cache (OHLC all $${todayCandle.close.toFixed(2)}, age: ${Math.floor(candleAge / (60 * 1000))}m), will try to fetch real candle from API`);
-              todayCandle = null; // Treat as missing so we fetch from API
-            } else {
-              // Recent candle with identical OHLC - this is real data (just started, only one price point)
-              console.log(`ℹ️ Found new candle in cache (OHLC all $${todayCandle.close.toFixed(2)} - real data, just started)`);
+            });
+            if (todayCandles.length > 0) {
+              console.log(`📦 Found ${todayCandles.length} ${interval} candle(s) in cache for today: ${todayCandles.map(c => new Date(c.timestamp).toISOString()).join(', ')}`);
+            }
+          } else {
+            // For daily candles, match by day start
+            const dailyCandle = cachedCandles.find(c => {
+              const candleDate = new Date(c.timestamp);
+              candleDate.setUTCHours(0, 0, 0, 0);
+              return candleDate.getTime() === todayStart;
+            });
+            if (dailyCandle) {
+              todayCandles = [dailyCandle];
             }
           }
+          
+          // Filter out synthetic candles (all OHLC same, volume 0, AND stale)
+          todayCandles = todayCandles.filter(candle => {
+            const isSameOHLC = candle.open === candle.high && 
+                               candle.high === candle.low && 
+                               candle.low === candle.close && 
+                               candle.volume === 0;
+            if (!isSameOHLC) return true; // Real candle with varying OHLC
+            
+            const candleAge = now - candle.timestamp;
+            // For 8h candles, max age is 8 hours before considering it synthetic
+            // For 12h candles, max age is 12 hours
+            const maxAgeForSynthetic = interval === '1h' ? 60 * 60 * 1000 :
+                                       interval === '5m' ? 5 * 60 * 1000 :
+                                       interval === '8h' ? 8 * 60 * 60 * 1000 :
+                                       interval === '12h' ? 12 * 60 * 60 * 1000 :
+                                       24 * 60 * 60 * 1000;
+            
+            if (candleAge > maxAgeForSynthetic) {
+              console.log(`⚠️ Filtering out synthetic candle (OHLC all $${candle.close.toFixed(2)}, age: ${Math.floor(candleAge / (60 * 60 * 1000))}h)`);
+              return false;
+            }
+            return true; // Recent candle with same OHLC is real data
+          });
         }
         
-        // If not in Redis (or synthetic), try to fetch today's candle from API first (has real OHLC data)
-        // Then fall back to creating from currentPrice if API doesn't have it yet
-        // Skip API fetch if skipAPIFetch is true or it's a historical period
-        if (!todayCandle && !skipAPIFetch && endTime >= todayStart) {
-          // Try to fetch today's candle from Binance API (has real OHLC, not just close price)
+        // If we don't have all today's candles from cache, try to fetch from API
+        // For 8h candles, we should have candles for completed periods
+        const needsAPIFetch = todayCandles.length === 0;
+        
+        if (needsAPIFetch && !skipAPIFetch && endTime >= todayStart) {
+          // Try to fetch today's candles from Binance API
           try {
-            console.log(`📡 Fetching today's candle from Binance API...`);
+            console.log(`📡 Fetching today's ${interval} candles from Binance API...`);
             const apiCandles = await fetchBinanceCandles(symbol, interval, todayStart, now);
-            const apiTodayCandle = apiCandles.find(c => {
+            // Get all candles from today
+            const apiTodayCandles = apiCandles.filter(c => {
               const candleDate = new Date(c.timestamp);
               candleDate.setUTCHours(0, 0, 0, 0);
               return candleDate.getTime() === todayStart;
             });
             
-            if (apiTodayCandle) {
-              todayCandle = apiTodayCandle;
-              console.log(`✅ Fetched today's candle from API (OHLC: O=$${apiTodayCandle.open.toFixed(2)}, H=$${apiTodayCandle.high.toFixed(2)}, L=$${apiTodayCandle.low.toFixed(2)}, C=$${apiTodayCandle.close.toFixed(2)})`);
+            if (apiTodayCandles.length > 0) {
+              todayCandles = apiTodayCandles;
+              console.log(`✅ Fetched ${apiTodayCandles.length} ${interval} candle(s) from API for today`);
               
-              // Save to Redis for future use
+              // Save to Redis for future use (preserve existing candles in cache)
               try {
-                await redis.setEx(cacheKey, 86400, JSON.stringify([todayCandle]));
+                const existingCached = await redis.get(cacheKey);
+                const allCachedCandles: PriceCandle[] = existingCached ? JSON.parse(existingCached) : [];
+                
+                // Merge API candles into cache
+                for (const apiCandle of apiTodayCandles) {
+                  const existingIdx = allCachedCandles.findIndex(c => c.timestamp === apiCandle.timestamp);
+                  if (existingIdx >= 0) {
+                    allCachedCandles[existingIdx] = apiCandle;
+                  } else {
+                    allCachedCandles.push(apiCandle);
+                  }
+                }
+                allCachedCandles.sort((a, b) => a.timestamp - b.timestamp);
+                await redis.setEx(cacheKey, 86400, JSON.stringify(allCachedCandles));
               } catch (redisError) {
-                console.warn('Failed to save today candle to Redis:', redisError);
+                console.warn('Failed to save today candles to Redis:', redisError);
               }
             }
           } catch (apiError) {
-            console.log(`⚠️ Could not fetch today's candle from API, will create from current price:`, apiError instanceof Error ? apiError.message : apiError);
+            console.log(`⚠️ Could not fetch today's candles from API:`, apiError instanceof Error ? apiError.message : apiError);
           }
           
-          // If API didn't have it, create from currentPrice (if provided) or fetch latest price
-          // Skip price fetch if skipAPIFetch is true
-          if (!todayCandle && !skipAPIFetch) {
-            let priceToUse: number | null = null;
-            
-            // Use provided currentPrice if available (avoids redundant API call)
-            if (currentPrice !== undefined && currentPrice > 0) {
-              priceToUse = currentPrice;
-              console.log(`📅 Using provided current price for today's candle: $${priceToUse.toFixed(2)}`);
-            } else {
-              // Fallback: fetch latest price (only if not skipping API)
-              try {
-                priceToUse = await fetchLatestPrice(symbol);
-                // Wait a bit for updateTodayCandle to complete
-                await new Promise(resolve => setTimeout(resolve, 300));
-                // Try Redis again after fetch
-                const retryCached = await redis.get(cacheKey);
-                if (retryCached) {
-                  const retryCandles = JSON.parse(retryCached) as PriceCandle[];
-                  // For 8h/12h candles, find the candle that starts at 00:00 (first period of the day)
-                  // For daily candles, match by day start
-                  if (interval === '8h' || interval === '12h') {
-                    todayCandle = retryCandles.find(c => {
-                      const candleDate = new Date(c.timestamp);
-                      return candleDate.getUTCHours() === 0 && candleDate.getUTCMinutes() === 0;
-                    }) || null;
-                  } else {
-                    todayCandle = retryCandles.find(c => {
-                      const candleDate = new Date(c.timestamp);
-                      candleDate.setUTCHours(0, 0, 0, 0);
-                      return candleDate.getTime() === todayStart;
-                    }) || null;
-                  }
-                }
-              } catch (priceError) {
-                console.warn('Failed to fetch latest price for today candle:', priceError);
-              }
-            }
-            
-            // If we still don't have a candle, check Redis again after updateTodayCandle has had time to run
-            // updateTodayCandle creates real candles from price points (aggregating actual prices over time)
-            if (!todayCandle && priceToUse !== null) {
-              // Wait a bit more for updateTodayCandle to complete (it's called asynchronously in fetchLatestPrice)
+          // If API didn't have candles, try fetching latest price to update current period
+          if (todayCandles.length === 0 && !skipAPIFetch) {
+            try {
+              await fetchLatestPrice(symbol);
+              // Wait for updateTodayCandle to complete
               await new Promise(resolve => setTimeout(resolve, 500));
               
-              // Check Redis again - updateTodayCandle should have created/updated the candle
-              try {
-                const retryCached = await redis.get(cacheKey);
-                if (retryCached) {
-                  const retryCandles = JSON.parse(retryCached) as PriceCandle[];
-                  // For 8h/12h candles, find the candle that starts at 00:00 (first period of the day)
-                  // For daily candles, match by day start
-                  let retryTodayCandle: PriceCandle | undefined;
-                  if (interval === '8h' || interval === '12h') {
-                    retryTodayCandle = retryCandles.find(c => {
-                      const candleDate = new Date(c.timestamp);
-                      return candleDate.getUTCHours() === 0 && candleDate.getUTCMinutes() === 0;
-                    });
-                  } else {
-                    retryTodayCandle = retryCandles.find(c => {
-                      const candleDate = new Date(c.timestamp);
-                      candleDate.setUTCHours(0, 0, 0, 0);
-                      return candleDate.getTime() === todayStart;
-                    });
-                  }
-                  
-                  if (retryTodayCandle) {
-                    todayCandle = retryTodayCandle;
-                    console.log(`✅ Found today's candle in Redis after updateTodayCandle (close: $${todayCandle.close.toFixed(2)})`);
-                  }
+              // Try Redis again
+              const retryCached = await redis.get(cacheKey);
+              if (retryCached) {
+                const retryCandles = JSON.parse(retryCached) as PriceCandle[];
+                if (interval === '8h' || interval === '12h') {
+                  todayCandles = retryCandles.filter(c => {
+                    const candleDate = new Date(c.timestamp);
+                    candleDate.setUTCHours(0, 0, 0, 0);
+                    return candleDate.getTime() === todayStart;
+                  });
+                } else {
+                  const dailyCandle = retryCandles.find(c => {
+                    const candleDate = new Date(c.timestamp);
+                    candleDate.setUTCHours(0, 0, 0, 0);
+                    return candleDate.getTime() === todayStart;
+                  });
+                  if (dailyCandle) todayCandles = [dailyCandle];
                 }
-              } catch (retryError) {
-                console.warn('Failed to retry Redis check for today candle:', retryError);
+                if (todayCandles.length > 0) {
+                  console.log(`✅ Found ${todayCandles.length} candle(s) in Redis after price fetch`);
+                }
               }
-              
-              // If we still don't have a candle, that's OK - we'll work with existing data
-              // We don't create synthetic candles, but updateTodayCandle should have created a real one
-              if (!todayCandle) {
-                console.warn(`⚠️ Could not get today's candle from Redis or API - will use existing data`);
-              }
+            } catch (priceError) {
+              console.warn('Failed to fetch latest price for today candle:', priceError);
             }
           }
         }
         
-        if (todayCandle) {
-          // Debug: check if 08:00 candle exists before merge
-          const has0800Before = uniqueCandles.some(c => new Date(c.timestamp).toISOString() === '2025-12-31T08:00:00.000Z');
-          console.log(`🔍 Before merge - Has 08:00 candle? ${has0800Before}, Total: ${uniqueCandles.length}, Today candle: ${new Date(todayCandle.timestamp).toISOString()}`);
+        // Merge ALL today's candles into uniqueCandles
+        if (todayCandles.length > 0) {
+          console.log(`🔍 Before merge - Total candles: ${uniqueCandles.length}`);
           
-          // Merge today's candle (overwrite if exists, add if not)
-          // For 8h/12h candles, match by exact timestamp (period start)
-          // For daily candles, match by day start
-          const existingIndex = uniqueCandles.findIndex(c => {
-            if (interval === '8h' || interval === '12h') {
-              // For 8h/12h candles, match exact timestamp (period start)
-              return c.timestamp === todayCandle.timestamp;
+          for (const todayCandle of todayCandles) {
+            // Find existing candle with same timestamp and merge
+            const existingIndex = uniqueCandles.findIndex(c => c.timestamp === todayCandle.timestamp);
+            
+            if (existingIndex >= 0) {
+              uniqueCandles[existingIndex] = todayCandle;
             } else {
-              // For daily candles, match by day start
-              const candleDate = new Date(c.timestamp);
-              candleDate.setUTCHours(0, 0, 0, 0);
-              return candleDate.getTime() === todayStart;
+              uniqueCandles.push(todayCandle);
             }
-          });
-          
-          if (existingIndex >= 0) {
-            // Always update with Redis/cached data (it's more recent)
-            uniqueCandles[existingIndex] = todayCandle;
-            console.log(`🔄 Merged today's candle from Redis/latest price (close: $${todayCandle.close.toFixed(2)})`);
-          } else {
-            // Add new candle
-            uniqueCandles.push(todayCandle);
-            console.log(`➕ Added today's candle from Redis/latest price (close: $${todayCandle.close.toFixed(2)})`);
+            
+            // Also update allCandles
+            const allCandlesIdx = allCandles.findIndex(c => c.timestamp === todayCandle.timestamp);
+            if (allCandlesIdx >= 0) {
+              allCandles[allCandlesIdx] = todayCandle;
+            } else {
+              allCandles.push(todayCandle);
+            }
           }
           
-          // Re-sort after adding/updating
+          // Re-sort after merging
           uniqueCandles.sort((a, b) => a.timestamp - b.timestamp);
-          
-          // Debug: check if 08:00 candle exists after merge
-          const has0800After = uniqueCandles.some(c => new Date(c.timestamp).toISOString() === '2025-12-31T08:00:00.000Z');
-          console.log(`🔍 After merge - Has 08:00 candle? ${has0800After}, Total: ${uniqueCandles.length}`);
-          
-          // Also update allCandles so it has today's candle if early return isn't taken
-          // For 8h/12h candles, match by exact timestamp (period start)
-          // For daily candles, match by day start
-          const allCandlesExistingIndex = allCandles.findIndex(c => {
-            if (interval === '8h' || interval === '12h') {
-              // For 8h/12h candles, match exact timestamp (period start)
-              return c.timestamp === todayCandle.timestamp;
-            } else {
-              // For daily candles, match by day start
-              const candleDate = new Date(c.timestamp);
-              candleDate.setUTCHours(0, 0, 0, 0);
-              return candleDate.getTime() === todayStart;
-            }
-          });
-          
-          if (allCandlesExistingIndex >= 0) {
-            allCandles[allCandlesExistingIndex] = todayCandle;
-          } else {
-            allCandles.push(todayCandle);
-          }
           allCandles.sort((a, b) => a.timestamp - b.timestamp);
+          
+          console.log(`🔄 Merged ${todayCandles.length} today's candle(s) - Total now: ${uniqueCandles.length}`);
         } else {
-          console.warn(`⚠️ Could not create today's candle (key: ${cacheKey})`);
+          console.warn(`⚠️ Could not get today's candles from Redis or API (key: ${cacheKey})`);
         }
       }
     } catch (error) {
@@ -951,74 +891,120 @@ export async function fetchPriceCandles(
       
       // Skip today's candle fetch if skipAPIFetch is true or it's a historical period
       if (!skipAPIFetch && !isHistoricalPeriod && endTime >= todayStart) {
-        // For 8h/12h candles, find the candle that starts at 00:00 (first period of the day)
-        // For daily candles, match by day start
-        const todayCandleIndex = uniqueCandles.findIndex(c => {
-          if (interval === '8h' || interval === '12h') {
-            const candleDate = new Date(c.timestamp);
-            return candleDate.getUTCHours() === 0 && candleDate.getUTCMinutes() === 0;
+        // For 8h/12h candles, check if we have ALL periods for today (00:00, 08:00, 16:00 for 8h)
+        // For daily candles, check for the single day candle
+        let needsAPIFetch = false;
+        let todayCandleIndices: number[] = [];
+        
+        if (interval === '8h' || interval === '12h') {
+          // Find ALL today's candles for 8h/12h
+          todayCandleIndices = uniqueCandles
+            .map((c, i) => {
+              const candleDate = new Date(c.timestamp);
+              candleDate.setUTCHours(0, 0, 0, 0);
+              return candleDate.getTime() === todayStart ? i : -1;
+            })
+            .filter(i => i >= 0);
+          
+          // Calculate expected periods that should exist by now
+          const currentHours = new Date(now).getUTCHours();
+          const periodSize = interval === '8h' ? 8 : 12;
+          const currentPeriod = Math.floor(currentHours / periodSize);
+          const expectedPeriods = currentPeriod + 1; // Periods 0 to currentPeriod should exist
+          
+          // Check if we're missing any periods
+          if (todayCandleIndices.length < expectedPeriods) {
+            console.log(`📊 Missing ${interval} candles: have ${todayCandleIndices.length}, expected ${expectedPeriods} periods for today`);
+            needsAPIFetch = true;
           } else {
+            // Check if any existing candles are synthetic
+            for (const idx of todayCandleIndices) {
+              const candle = uniqueCandles[idx]!;
+              const isSameOHLC = candle.open === candle.high && candle.high === candle.low && 
+                                 candle.low === candle.close && candle.volume === 0;
+              if (isSameOHLC) {
+                const candleAge = now - candle.timestamp;
+                const maxAge = interval === '8h' ? 8 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
+                if (candleAge > maxAge) {
+                  console.log(`📊 Found synthetic ${interval} candle at ${new Date(candle.timestamp).toISOString()}`);
+                  needsAPIFetch = true;
+                  break;
+                }
+              }
+            }
+          }
+        } else {
+          // For daily candles, just check for one
+          const todayCandleIndex = uniqueCandles.findIndex(c => {
             const candleDate = new Date(c.timestamp);
             candleDate.setUTCHours(0, 0, 0, 0);
             return candleDate.getTime() === todayStart;
-          }
-        });
-        
-        const hasTodayCandle = todayCandleIndex >= 0;
-        const todayCandle = hasTodayCandle ? uniqueCandles[todayCandleIndex]! : null;
-        
-        // Check if today's candle is synthetic (all OHLC values are the same, volume is 0, AND stale)
-        // Note: A real candle that just started will have OHLC all the same, but that's OK - it's real data
-        const candleAge = todayCandle ? now - todayCandle.timestamp : Infinity;
-        const maxAgeForSynthetic = interval === '1h' ? 60 * 60 * 1000 : // 1 hour for hourly
-                                   interval === '5m' ? 5 * 60 * 1000 :   // 5 minutes for 5m
-                                   24 * 60 * 60 * 1000; // 1 day for daily
-        const isSynthetic = todayCandle && 
-          todayCandle.open === todayCandle.high && 
-          todayCandle.high === todayCandle.low && 
-          todayCandle.low === todayCandle.close && 
-          todayCandle.volume === 0 &&
-          candleAge > maxAgeForSynthetic; // Only consider it synthetic if it's stale
-        
-        if (!hasTodayCandle || isSynthetic) {
-          // Don't have today's candle, or it's synthetic - try to fetch real one from API
-          try {
-            if (isSynthetic) {
-              console.log(`📡 Today's candle is synthetic (OHLC all $${todayCandle!.close.toFixed(2)}), fetching real candle from API...`);
-            } else {
-              console.log('📡 Fetching today\'s candle from API (not in file data)...');
+          });
+          
+          if (todayCandleIndex < 0) {
+            needsAPIFetch = true;
+          } else {
+            const candle = uniqueCandles[todayCandleIndex]!;
+            const isSameOHLC = candle.open === candle.high && candle.high === candle.low && 
+                               candle.low === candle.close && candle.volume === 0;
+            const candleAge = now - candle.timestamp;
+            if (isSameOHLC && candleAge > 24 * 60 * 60 * 1000) {
+              needsAPIFetch = true;
             }
-            const todayCandles = await fetchBinanceCandles(symbol, interval, todayStart, Date.now());
-            const apiTodayCandle = todayCandles.find(c => {
+          }
+        }
+        
+        if (needsAPIFetch) {
+          // Fetch all of today's candles from API
+          try {
+            console.log(`📡 Fetching today's ${interval} candles from API...`);
+            const apiTodayCandles = await fetchBinanceCandles(symbol, interval, todayStart, Date.now());
+            
+            // Filter to today's candles only
+            const todayApiCandles = apiTodayCandles.filter(c => {
               const candleDate = new Date(c.timestamp);
               candleDate.setUTCHours(0, 0, 0, 0);
               return candleDate.getTime() === todayStart;
             });
             
-            if (apiTodayCandle) {
-              if (hasTodayCandle && isSynthetic) {
-                // Replace synthetic candle with real one
-                uniqueCandles[todayCandleIndex] = apiTodayCandle;
-                console.log(`✅ Replaced synthetic candle with real API candle (OHLC: O=$${apiTodayCandle.open.toFixed(2)}, H=$${apiTodayCandle.high.toFixed(2)}, L=$${apiTodayCandle.low.toFixed(2)}, C=$${apiTodayCandle.close.toFixed(2)})`);
-              } else {
-                // Add new candle
-                uniqueCandles.push(apiTodayCandle);
-                console.log(`✅ Added today's candle from API (close: $${apiTodayCandle.close.toFixed(2)})`);
+            if (todayApiCandles.length > 0) {
+              console.log(`✅ Fetched ${todayApiCandles.length} ${interval} candle(s) from API for today`);
+              
+              // Merge each API candle into uniqueCandles
+              for (const apiCandle of todayApiCandles) {
+                const existingIdx = uniqueCandles.findIndex(c => c.timestamp === apiCandle.timestamp);
+                if (existingIdx >= 0) {
+                  uniqueCandles[existingIdx] = apiCandle;
+                } else {
+                  uniqueCandles.push(apiCandle);
+                }
               }
               uniqueCandles.sort((a, b) => a.timestamp - b.timestamp);
               
-              // Also save to Redis
+              // Save to Redis (merge with existing cached candles)
               try {
                 await ensureConnected();
                 const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1;
                 const cacheKey = getCacheKey(symbol, interval, todayStart, todayEnd);
-                await redis.setEx(cacheKey, 86400, JSON.stringify([apiTodayCandle]));
+                const existingCached = await redis.get(cacheKey);
+                const allCachedCandles: PriceCandle[] = existingCached ? JSON.parse(existingCached) : [];
+                
+                for (const apiCandle of todayApiCandles) {
+                  const existingIdx = allCachedCandles.findIndex(c => c.timestamp === apiCandle.timestamp);
+                  if (existingIdx >= 0) {
+                    allCachedCandles[existingIdx] = apiCandle;
+                  } else {
+                    allCachedCandles.push(apiCandle);
+                  }
+                }
+                allCachedCandles.sort((a, b) => a.timestamp - b.timestamp);
+                await redis.setEx(cacheKey, 86400, JSON.stringify(allCachedCandles));
               } catch (redisError) {
-                console.warn('Failed to save real candle to Redis:', redisError);
+                console.warn('Failed to save today candles to Redis:', redisError);
               }
             }
           } catch (apiError) {
-            console.warn('Could not fetch today candle from API:', apiError instanceof Error ? apiError.message : apiError);
+            console.warn('Could not fetch today candles from API:', apiError instanceof Error ? apiError.message : apiError);
           }
         }
       }
