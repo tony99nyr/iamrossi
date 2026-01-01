@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { css } from '@styled-system/css';
 import { stack, flex } from '@styled-system/patterns';
 import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
@@ -286,44 +287,69 @@ export default function EthTradingBotClient() {
   return (
     <div className={containerStyles}>
       <div className={stack({ gap: '16px' })}>
-        <div className={flex({ justifyContent: 'space-between', alignItems: 'center' })}>
-          <h1 className={css({ fontSize: '2xl', fontWeight: 'bold', color: '#e6edf3' })}>
-            ETH Trading Bot - Paper Trading
+        <div className={flex({ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' })}>
+          <h1 className={css({ fontSize: '2xl', fontWeight: 'bold', color: '#e6edf3', display: 'flex', alignItems: 'center', gap: '8px' })}>
+            <span>Ξ</span>
+            <span>ETH Trading Bot - Paper Trading</span>
           </h1>
-          {session && (
-            <button
-              onClick={() => router.push('/tools/eth-trading/audit')}
+          <div className={flex({ gap: '8px', alignItems: 'center' })}>
+            <Link
+              href="/tools/trading-overview"
               className={css({
                 padding: '8px 16px',
                 bg: '#21262d',
                 border: '1px solid #30363d',
                 borderRadius: '6px',
-                color: '#e6edf3',
+                color: '#c9d1d9',
                 cursor: 'pointer',
                 fontSize: 'sm',
-                _hover: { bg: '#30363d' },
+                textDecoration: 'none',
+                display: 'inline-block',
+                _hover: {
+                  bg: '#30363d',
+                },
               })}
             >
-              View Trade Audit
-            </button>
-          )}
+              ← Overview
+            </Link>
+            {session && (
+              <Link
+                href="/tools/eth-trading/audit"
+                className={css({
+                  padding: '8px 16px',
+                  bg: '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '6px',
+                  color: '#c9d1d9',
+                  cursor: 'pointer',
+                  fontSize: 'sm',
+                  textDecoration: 'none',
+                  display: 'inline-block',
+                  _hover: {
+                    bg: '#30363d',
+                  },
+                })}
+              >
+                View Audit
+              </Link>
+            )}
+          </div>
         </div>
 
         {error && (
           <div className={css({
             padding: '12px',
-            bg: 'rgba(248, 81, 73, 0.1)',
-            color: '#f85149',
-            borderRadius: '8px',
-            border: '1px solid rgba(248, 81, 73, 0.2)',
+            bg: '#da3633',
+            color: '#fff',
+            borderRadius: '6px',
+            fontSize: 'sm',
           })}>
             {error}
           </div>
         )}
 
-        {/* Controls */}
-        <div className={flex({ gap: '12px', alignItems: 'center', flexWrap: 'wrap' })}>
-          {!session?.isActive ? (
+        <div className={flex({ gap: '8px', flexWrap: 'wrap', alignItems: 'center' })}>
+          {!session ? (
             <button
               onClick={startSession}
               disabled={isStarting || isLoading}
@@ -336,6 +362,7 @@ export default function EthTradingBotClient() {
                 cursor: isLoading || isStarting ? 'not-allowed' : 'pointer',
                 opacity: isLoading || isStarting ? 0.6 : 1,
                 fontWeight: 'semibold',
+                fontSize: 'sm',
                 _hover: {
                   bg: '#2ea043',
                 },
@@ -347,63 +374,23 @@ export default function EthTradingBotClient() {
             <>
               <button
                 onClick={updateSession}
-                disabled={isUpdating}
+                disabled={isUpdating || !session.isActive}
                 className={css({
                   padding: '8px 16px',
                   bg: '#1f6feb',
                   color: '#fff',
                   border: 'none',
                   borderRadius: '6px',
-                  cursor: isUpdating ? 'not-allowed' : 'pointer',
-                  opacity: isUpdating ? 0.6 : 1,
-                  fontWeight: 'semibold',
-                  _hover: {
-                    bg: '#2c7ceb',
-                  },
-                })}
-              >
-                {isUpdating ? 'Updating...' : 'Refresh Now'}
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    setIsUpdating(true);
-                    const res = await fetch('/api/trading/paper/refresh-historical', {
-                      method: 'POST',
-                      headers: getAuthHeaders(),
-                      credentials: 'include',
-                    });
-                    if (res.ok) {
-                      const data = await res.json();
-                      console.log('Historical data refreshed:', data);
-                      // Refresh session to get updated data
-                      await fetchStatus();
-                    } else {
-                      throw new Error('Failed to refresh historical data');
-                    }
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Failed to refresh historical data');
-                  } finally {
-                    setIsUpdating(false);
-                  }
-                }}
-                disabled={isUpdating}
-                className={css({
-                  padding: '8px 16px',
-                  bg: '#7c3aed',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: isUpdating ? 'not-allowed' : 'pointer',
-                  opacity: isUpdating ? 0.6 : 1,
+                  cursor: isUpdating || !session.isActive ? 'not-allowed' : 'pointer',
+                  opacity: isUpdating || !session.isActive ? 0.6 : 1,
                   fontWeight: 'semibold',
                   fontSize: 'sm',
                   _hover: {
-                    bg: '#8b5cf6',
+                    bg: '#388bfd',
                   },
                 })}
               >
-                Refresh Historical Data
+                {isUpdating ? 'Updating...' : 'Update Now'}
               </button>
               <button
                 onClick={stopSession}
@@ -417,6 +404,7 @@ export default function EthTradingBotClient() {
                   cursor: isStopping ? 'not-allowed' : 'pointer',
                   opacity: isStopping ? 0.6 : 1,
                   fontWeight: 'semibold',
+                  fontSize: 'sm',
                   _hover: {
                     bg: '#f85149',
                   },

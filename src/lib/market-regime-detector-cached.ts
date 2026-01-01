@@ -79,10 +79,18 @@ function ensureIndicatorsCached(candles: PriceCandle[]): void {
 
 /**
  * Optimized market regime detection with cached indicators
+ * 
+ * @param candles Price candles
+ * @param currentIndex Current candle index
+ * @param correlationContext Optional correlation context from cross-asset analysis
  */
 export function detectMarketRegimeCached(
   candles: PriceCandle[],
-  currentIndex: number
+  currentIndex: number,
+  correlationContext?: {
+    signal: number; // -1 to 1, correlation-based signal
+    riskLevel: 'low' | 'medium' | 'high';
+  }
 ): MarketRegimeSignal {
   // Ensure indicators are cached
   ensureIndicatorsCached(candles);
@@ -526,6 +534,34 @@ export function detectMarketRegimeCached(
     const crossSignal = (sma50Value - sma200Value) / sma200Value;
     if (Math.abs(crossSignal) > 0.02) {
       confidence = Math.min(1, confidence * 1.3);
+    }
+  }
+
+  // Adjust confidence based on correlation context
+  // More aggressive adjustments to ensure impact on trading decisions
+  if (correlationContext) {
+    const { signal: correlationSignal, riskLevel } = correlationContext;
+    
+    // High correlation (low risk) = boost confidence
+    // Low correlation (high risk) = reduce confidence more aggressively
+    if (riskLevel === 'low') {
+      // High correlation - assets moving together, boost confidence
+      confidence = Math.min(1, confidence * 1.15); // Increased from 1.1
+    } else if (riskLevel === 'high') {
+      // Low/negative correlation - assets diverging, reduce confidence more aggressively
+      confidence = Math.max(0, confidence * 0.65); // More aggressive: was 0.8, now 0.65
+    } else if (riskLevel === 'medium') {
+      // Medium correlation - slight reduction
+      confidence = Math.max(0, confidence * 0.9);
+    }
+    
+    // If correlation signal contradicts regime, reduce confidence significantly
+    const regimeSignal = regime === 'bullish' ? 1 : regime === 'bearish' ? -1 : 0;
+    const alignment = correlationSignal * regimeSignal;
+    
+    if (regimeSignal !== 0 && alignment < -0.3) {
+      // Correlation contradicts regime - reduce confidence significantly
+      confidence = Math.max(0, confidence * 0.6); // More aggressive: was 0.7, now 0.6
     }
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminAuth } from '@/lib/auth';
 import { PaperTradingService } from '@/lib/paper-trading-enhanced';
+import { isValidAsset, type TradingAsset } from '@/lib/asset-config';
 
 /**
  * GET /api/trading/paper/status
@@ -13,7 +14,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const session = await PaperTradingService.getActiveSession();
+    // Get asset from query parameter (default to 'eth' for backward compatibility)
+    const { searchParams } = new URL(request.url);
+    const assetParam = searchParams.get('asset') || 'eth';
+    const asset: TradingAsset = isValidAsset(assetParam) ? assetParam : 'eth';
+
+    const session = await PaperTradingService.getActiveSession(asset);
 
     if (!session) {
       return NextResponse.json({ 

@@ -2,7 +2,9 @@ import { beforeAll, afterAll, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
-// Import redis mock to ensure it's applied globally
+
+// CRITICAL: Import redis mock FIRST before any other imports that might use Redis
+// This ensures the mock is in place before kv.ts tries to create a Redis client
 import './mocks/redis.mock';
 
 // Load only Google Drive env vars from .env.local (noop if file missing)

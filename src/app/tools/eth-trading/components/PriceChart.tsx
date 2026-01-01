@@ -84,9 +84,12 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
             break;
         }
         
+        // Get symbol from session asset
+        const symbol = session.asset === 'btc' ? 'BTCUSDT' : 'ETHUSDT';
+        
         // Fetch candles using the same parameters as the strategy
         // Use skipAPIFetch=false to match strategy behavior
-        const response = await fetch(`/api/trading/candles?symbol=ETHUSDT&timeframe=${timeframe}&startDate=${startDate}&endDate=${endDate}&skipAPIFetch=false`, {
+        const response = await fetch(`/api/trading/candles?symbol=${symbol}&timeframe=${timeframe}&startDate=${startDate}&endDate=${endDate}&skipAPIFetch=false`, {
           credentials: 'include',
         });
         
@@ -100,7 +103,8 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
             const regimeTimeframe = session.config.bullishStrategy.timeframe || '8h';
             // Need to fetch enough 8h candles for SMA200 calculation
             const regimeStartDate = new Date(now - regimeBufferMs).toISOString().split('T')[0];
-            const regimeResponse = await fetch(`/api/trading/candles?symbol=ETHUSDT&timeframe=${regimeTimeframe}&startDate=${regimeStartDate}&endDate=${endDate}&skipAPIFetch=false`, {
+            const regimeSymbol = session.asset === 'btc' ? 'BTCUSDT' : 'ETHUSDT';
+            const regimeResponse = await fetch(`/api/trading/candles?symbol=${regimeSymbol}&timeframe=${regimeTimeframe}&startDate=${regimeStartDate}&endDate=${endDate}&skipAPIFetch=false`, {
               credentials: 'include',
             });
             

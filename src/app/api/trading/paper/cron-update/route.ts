@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PaperTradingService } from '@/lib/paper-trading-enhanced';
+import { PaperTradingService, type EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 import { fetchLatestPrice } from '@/lib/eth-price-service';
+import { ASSET_CONFIGS, type TradingAsset } from '@/lib/asset-config';
 
 /**
  * GET /api/trading/paper/cron-update
- * Background cron job to update price candles and paper trading session (if active)
+ * Background cron job to update price candles and paper trading sessions (if active)
  * 
  * This endpoint:
- * 1. Always fetches the latest price and updates candles (1d, 1h, 5m) in Redis
- * 2. Updates the paper trading session if one is active
+ * 1. Always fetches the latest price for BOTH ETH and BTC and updates candles (1d, 1h, 8h, 12h, 5m) in Redis
+ * 2. Updates paper trading sessions for BOTH assets if they are active
  * 
  * NOTE: Vercel Hobby plan only allows daily cron jobs, so this endpoint
  * is available for manual triggering or external cron services.
@@ -17,6 +18,7 @@ import { fetchLatestPrice } from '@/lib/eth-price-service';
  * - UI auto-refresh (every 5 minutes when tab is open)
  * - Manual "Refresh Now" button
  * - External cron service (e.g., cron-job.org) calling this endpoint
+ * - GitHub Actions workflow (trading-bot-cron.yml) calling this endpoint every 5 minutes
  * - Upgrade to Vercel Pro for scheduled cron jobs
  */
 export async function GET(request: NextRequest) {
@@ -29,83 +31,91 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Always fetch latest price (this automatically updates candles in Redis)
-    // fetchLatestPrice calls updateTodayCandle for 1d, 1h, and 5m timeframes
-    let priceFetchSuccess = false;
-    let currentPrice: number | null = null;
-    let priceFetchError: string | null = null;
+    // Fetch latest prices for ALL assets (ETH and BTC)
+    // fetchLatestPrice calls updateTodayCandle for 1d, 1h, 8h, 12h, and 5m timeframes
+    const priceFetches: Record<TradingAsset, { success: boolean; price?: number; error?: string }> = {
+      eth: { success: false },
+      btc: { success: false },
+    };
 
-    try {
-      currentPrice = await fetchLatestPrice('ETHUSDT');
-      priceFetchSuccess = true;
-      console.log(`✅ Fetched latest price: $${currentPrice.toFixed(2)} (candles updated in Redis)`);
-    } catch (priceError) {
-      const errorMessage = priceError instanceof Error ? priceError.message : String(priceError);
-      priceFetchError = errorMessage;
-      console.warn('⚠️ Failed to fetch latest price (candles may not be updated):', errorMessage);
-      
-      // Check if it's a rate limit error (expected and handled gracefully)
-      const isRateLimit = errorMessage.includes('Rate limited') ||
-                          errorMessage.includes('451') ||
-                          errorMessage.includes('429');
-      
-      if (!isRateLimit) {
-        // For non-rate-limit errors, log but continue (still try to update session if active)
-        console.error('Price fetch error (non-rate-limit):', errorMessage);
-      }
-    }
-
-    // Get active session (optional - update if exists)
-    const session = await PaperTradingService.getActiveSession();
-    let sessionUpdateSuccess = false;
-    let updatedSession = session;
-    let sessionUpdateError: string | null = null;
-
-    if (session && session.isActive) {
-      // Update session (fetch price, calculate regime, execute trades)
+    // Fetch prices for all assets in parallel
+    const pricePromises = Object.entries(ASSET_CONFIGS).map(async ([assetId, config]) => {
+      const asset = assetId as TradingAsset;
       try {
-        updatedSession = await PaperTradingService.updateSession();
-        sessionUpdateSuccess = true;
-        console.log('✅ Paper trading session updated successfully');
+        const price = await fetchLatestPrice(config.symbol);
+        priceFetches[asset] = { success: true, price };
+        console.log(`✅ Fetched latest ${config.displayName} price: $${price.toFixed(2)} (candles updated in Redis)`);
+      } catch (priceError) {
+        const errorMessage = priceError instanceof Error ? priceError.message : String(priceError);
+        priceFetches[asset] = { success: false, error: errorMessage };
+        console.warn(`⚠️ Failed to fetch latest ${config.displayName} price (candles may not be updated):`, errorMessage);
+        
+        // Check if it's a rate limit error (expected and handled gracefully)
+        const isRateLimit = errorMessage.includes('Rate limited') ||
+                            errorMessage.includes('451') ||
+                            errorMessage.includes('429');
+        
+        if (!isRateLimit) {
+          // For non-rate-limit errors, log but continue
+          console.error(`${config.displayName} price fetch error (non-rate-limit):`, errorMessage);
+        }
+      }
+    });
+
+    await Promise.allSettled(pricePromises);
+
+    // Check for active sessions for ALL assets and update them
+    const sessionUpdates: Record<TradingAsset, { success: boolean; error?: string; session?: EnhancedPaperTradingSession }> = {
+      eth: { success: false },
+      btc: { success: false },
+    };
+
+    // Update sessions for all assets in parallel
+    const sessionPromises = Object.entries(ASSET_CONFIGS).map(async ([assetId]) => {
+      const asset = assetId as TradingAsset;
+      try {
+        const session = await PaperTradingService.getActiveSession(asset);
+        
+        if (session && session.isActive) {
+          // Update session (fetch price, calculate regime, execute trades)
+          const updatedSession = await PaperTradingService.updateSession(undefined, asset);
+          sessionUpdates[asset] = { success: true, session: updatedSession };
+          console.log(`✅ ${ASSET_CONFIGS[asset].displayName} paper trading session updated successfully`);
+        } else {
+          console.log(`ℹ️ No active ${ASSET_CONFIGS[asset].displayName} paper trading session`);
+        }
       } catch (updateError) {
         const errorMessage = updateError instanceof Error ? updateError.message : String(updateError);
-        sessionUpdateError = errorMessage;
-        console.warn('⚠️ Failed to update paper trading session:', errorMessage);
+        sessionUpdates[asset] = { success: false, error: errorMessage };
+        console.warn(`⚠️ Failed to update ${ASSET_CONFIGS[asset].displayName} paper trading session:`, errorMessage);
         
         // Session update failure is not critical - candles were already updated above
-        // Continue and return success with warning
       }
-    } else {
-      console.log('ℹ️ No active paper trading session (candles still updated)');
-    }
+    });
 
-    // Return success response (candles were updated even if session update failed)
+    await Promise.allSettled(sessionPromises);
+
+    // Build response
+    const allPriceFetchesSucceeded = Object.values(priceFetches).every(p => p.success);
+    const anySessionUpdated = Object.values(sessionUpdates).some(s => s.success);
+    const anySessionActive = Object.values(sessionUpdates).some(s => s.session);
+
     const response: {
       message: string;
-      priceFetch: { success: boolean; price?: number; error?: string };
-      session?: typeof updatedSession;
-      sessionUpdate?: { success: boolean; error?: string };
+      priceFetches: typeof priceFetches;
+      sessionUpdates: typeof sessionUpdates;
       timestamp: number;
     } = {
-      message: priceFetchSuccess 
-        ? 'Price candles updated successfully' + (sessionUpdateSuccess ? ' and session updated' : '')
+      message: allPriceFetchesSucceeded 
+        ? 'Price candles updated successfully for all assets' + (anySessionUpdated ? ' and sessions updated' : '')
         : 'Cron update completed with warnings',
-      priceFetch: {
-        success: priceFetchSuccess,
-        ...(currentPrice !== null && { price: currentPrice }),
-        ...(priceFetchError && { error: priceFetchError }),
-      },
+      priceFetches,
+      sessionUpdates,
       timestamp: Date.now(),
     };
 
-    if (updatedSession) {
-      response.session = updatedSession;
-      response.sessionUpdate = {
-        success: sessionUpdateSuccess,
-        ...(sessionUpdateError && { error: sessionUpdateError }),
-      };
-    } else {
-      response.message += ' (no active session)';
+    if (!anySessionActive) {
+      response.message += ' (no active sessions)';
     }
 
     return NextResponse.json(response);

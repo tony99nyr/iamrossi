@@ -429,6 +429,22 @@ export interface TradeAudit {
   };
 }
 
+// ============================================================================
+// Trading Asset Types
+// ============================================================================
+
+export type TradingAsset = 'eth' | 'btc';
+
+export interface AssetConfig {
+  id: TradingAsset;
+  name: string;
+  symbol: string;
+  displayName: string;
+  defaultTimeframe: '4h' | '8h' | '12h' | '1d';
+  priceMultiplier: number;
+  typicalCorrelation: number;
+}
+
 export interface Portfolio {
   usdcBalance: number;
   ethBalance: number;

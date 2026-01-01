@@ -12,17 +12,13 @@ const KEEP_RECENT_HOURS = 48; // Keep last 48 hours in Redis, migrate older data
 
 /**
  * Get file path for historical price data
+ * Simplified: Single file per symbol/interval (no dates in filename)
+ * Format: {symbol}_{interval}.json.gz (e.g., ethusdt_8h.json.gz)
  */
-function getHistoricalDataPath(symbol: string, interval: string, startDate: string, endDate: string): string {
+function getHistoricalDataPath(symbol: string, interval: string): string {
   const symbolLower = symbol.toLowerCase();
   const dir = path.join(HISTORICAL_DATA_DIR, symbolLower, interval);
-  
-  // For dates after 2025-12-27, use rolling file format
-  if (endDate > '2025-12-27') {
-    return path.join(dir, `${symbolLower}_${interval}_rolling.json.gz`);
-  } else {
-    return path.join(dir, `${symbolLower}_${interval}_${startDate}_${endDate}.json.gz`);
-  }
+  return path.join(dir, `${symbolLower}_${interval}.json.gz`);
 }
 
 /**
@@ -160,14 +156,8 @@ export async function POST(request: NextRequest) {
         }
         
         // Determine file path based on candle timestamps
-        const firstCandle = candles[0]!;
-        const lastCandle = candles[candles.length - 1]!;
-        const firstDate = new Date(firstCandle.timestamp);
-        const lastDate = new Date(lastCandle.timestamp);
-        const startDateStr = firstDate.toISOString().split('T')[0];
-        const endDateStr = lastDate.toISOString().split('T')[0];
-        
-        const filePath = getHistoricalDataPath(symbol, interval, startDateStr, endDateStr);
+        // Use simplified naming: single file per symbol/interval
+        const filePath = getHistoricalDataPath(symbol, interval);
         const fileKey = `${symbol}:${interval}:${filePath}`;
         
         // Accumulate candles for this file

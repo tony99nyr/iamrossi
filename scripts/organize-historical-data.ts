@@ -76,7 +76,7 @@ function organizeCandles(candles: PriceCandle[]): PriceCandle[] {
 }
 
 /**
- * Save organized data as compressed JSON
+ * Save organized data as compressed JSON (new simplified format)
  */
 async function saveCompressed(
   symbol: string,
@@ -90,35 +90,60 @@ async function saveCompressed(
   const startDate = new Date(candles[0].timestamp).toISOString().split('T')[0];
   const endDate = new Date(candles[candles.length - 1].timestamp).toISOString().split('T')[0];
   
-  // Create organized filename
-  const filename = `${symbol.toLowerCase()}_${timeframe}_${startDate}_${endDate}.json.gz`;
+  // Use new simplified filename format: {symbol}_{timeframe}.json.gz
+  const filename = `${symbol.toLowerCase()}_${timeframe}.json.gz`;
   const filePath = path.join(HISTORICAL_DATA_DIR, symbol.toLowerCase(), timeframe, filename);
+  
+  // Load existing data and merge (if file already exists)
+  let existingCandles: PriceCandle[] = [];
+  try {
+    const existing = await fs.readFile(filePath);
+    const decompressed = gunzipSync(existing);
+    existingCandles = JSON.parse(decompressed.toString('utf-8')) as PriceCandle[];
+  } catch {
+    // File doesn't exist yet
+  }
+  
+  // Merge and deduplicate with existing data
+  const allCandles = [...existingCandles, ...candles];
+  const uniqueMap = new Map<number, PriceCandle>();
+  for (const candle of allCandles) {
+    const existing = uniqueMap.get(candle.timestamp);
+    if (!existing || candle.volume > existing.volume) {
+      uniqueMap.set(candle.timestamp, candle);
+    }
+  }
+  const mergedCandles = Array.from(uniqueMap.values()).sort((a, b) => a.timestamp - b.timestamp);
   
   // Ensure directory exists
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   
   // Compress JSON
-  const jsonString = JSON.stringify(candles, null, 0); // No pretty printing for smaller size
+  const jsonString = JSON.stringify(mergedCandles, null, 0); // No pretty printing for smaller size
   const compressed = gzipSync(jsonString, { level: 9 }); // Maximum compression
-  
+
   // Save compressed file
   await fs.writeFile(filePath, compressed);
-  
+
   const originalSize = Buffer.byteLength(jsonString, 'utf8');
   const compressedSize = compressed.length;
   const compressionRatio = ((1 - compressedSize / originalSize) * 100).toFixed(1);
-  
-  console.log(`   💾 Saved ${candles.length} candles to ${filename}`);
+
+  const finalStartDate = new Date(mergedCandles[0]!.timestamp).toISOString().split('T')[0];
+  const finalEndDate = new Date(mergedCandles[mergedCandles.length - 1]!.timestamp).toISOString().split('T')[0];
+
+  console.log(`   💾 Saved ${mergedCandles.length} candles to ${filename}`);
+  console.log(`      Date range: ${finalStartDate} to ${finalEndDate}`);
   console.log(`      Original: ${(originalSize / 1024).toFixed(1)} KB`);
   console.log(`      Compressed: ${(compressedSize / 1024).toFixed(1)} KB`);
   console.log(`      Compression: ${compressionRatio}%`);
-  
+
   return {
     symbol: symbol.toLowerCase(),
     timeframe,
-    startDate,
-    endDate,
-    candleCount: candles.length,
+    startDate: finalStartDate,
+    endDate: finalEndDate,
+    candleCount: mergedCandles.length,
     filePath,
   };
 }

@@ -10,7 +10,7 @@ on:
 jobs:
   update-trading-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 4  # Reduced from 5 to ensure quick failure if API is slow
     
     steps:
       - name: Call Trading Bot Update API
@@ -53,10 +53,11 @@ jobs:
             HTTP_CODE_FILE=$(mktemp)
             
             # Run curl with better error handling
+            # Reduced timeouts for faster failure detection (API should respond quickly)
             CURL_EXIT_CODE=0
             curl -f -s -w "\nHTTP_STATUS:%{http_code}" \
-              --max-time 30 \
-              --connect-timeout 10 \
+              --max-time 25 \
+              --connect-timeout 8 \
               -X GET \
               -H "Authorization: Bearer ${CRON_SECRET}" \
               "${API_ENDPOINT}" \

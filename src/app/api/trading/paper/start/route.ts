@@ -3,6 +3,7 @@ import { verifyAdminAuth } from '@/lib/auth';
 import { PaperTradingService } from '@/lib/paper-trading-enhanced';
 import { getAdaptiveStrategyConfig } from '@/lib/kv';
 import { tradingStartSchema, safeValidateRequest } from '@/lib/validation';
+import { isValidAsset, type TradingAsset } from '@/lib/asset-config';
 
 /**
  * POST /api/trading/paper/start
@@ -26,9 +27,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name } = validation.data;
+    const { name, asset } = validation.data;
+
+    // Validate asset
+    const tradingAsset: TradingAsset = isValidAsset(asset) ? asset : 'eth';
 
     // Get config from Redis or use default
+    // TODO: Support asset-specific configs (for now, use ETH config for all assets)
     const config = await getAdaptiveStrategyConfig();
 
     if (!config) {
@@ -39,7 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Start session
-    const session = await PaperTradingService.startSession(config, name);
+    const session = await PaperTradingService.startSession(config, name, tradingAsset);
 
     return NextResponse.json({ 
       session,

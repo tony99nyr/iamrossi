@@ -7,52 +7,64 @@ This document explains how historical price data is organized, used, and updated
 ```
 data/historical-prices/
 ├── ethusdt/
-│   ├── 1d/          # Daily candles (used for strategy/regime detection)
-│   │   ├── ethusdt_1d_2025-01-01_2025-12-27.json.gz  # Historical (pre-cutoff)
-│   │   └── ethusdt_1d_rolling.json.gz               # Rolling (post-cutoff, updated)
-│   ├── 1h/          # Hourly candles (used for intraday data)
-│   │   ├── 2025-12-22_2025-12-27.json.gz            # Historical (pre-cutoff)
-│   │   └── ethusdt_1h_rolling.json.gz               # Rolling (post-cutoff, updated)
-│   └── 5m/          # 5-minute candles (used for intraday data, preferred)
-│       └── ethusdt_5m_rolling.json.gz               # Rolling (post-cutoff, updated)
+│   ├── 8h/          # 8-hour candles (PRIMARY - used for strategy calculations)
+│   │   └── ethusdt_8h.json.gz                      # Single file (all historical data)
+│   ├── 1h/          # Hourly candles (AUXILIARY - intraday merging only)
+│   │   └── ethusdt_1h.json.gz                      # Single file (all historical data)
+│   └── 5m/          # 5-minute candles (AUXILIARY - intraday merging only)
+│       └── ethusdt_5m.json.gz                     # Single file (all historical data)
+├── btcusdt/
+│   └── 8h/          # 8-hour candles (PRIMARY - used for strategy calculations)
+│       └── btcusdt_8h.json.gz
 └── synthetic/       # Synthetic/test data (NOT used for trading)
     └── ethusdt_1d_2026-01-01_2026-12-30.json.gz      # Fake 2026 data for testing
 ```
 
+**File Naming**: Files use simple naming `{symbol}_{interval}.json.gz` with no dates. This avoids dates becoming misleading when workflows add new data. Files are continuously updated by merging/updating candles.
+
 ## Intervals and Usage
 
-### 1d (Daily) - **PRIMARY**
-- **Purpose**: Strategy/regime detection, backtesting, chart display
+### 8h (8-hour) - **PRIMARY** ⭐
+- **Purpose**: **Strategy calculations, regime detection, backtesting, chart display**
 - **Usage**: 
-  - Paper trading session loads 200+ days for regime detection
-  - Chart displays all available daily candles
-  - Strategy calculations use daily candles
+  - **Paper trading session loads ALL available 8h candles** (from 2020-01-01 to now)
+  - **Strategy calculations use 8h candles** (default timeframe for both ETH and BTC)
+  - Chart displays all available 8h candles
+  - This is the **actual timeframe used for trading signals**
 - **When Updated**: 
-  - "Refresh Historical Data" fills gaps from last file date to now
-  - GitHub Actions workflow migrates Redis → files
-- **Rolling File**: `ethusdt_1d_rolling.json.gz` (dates after 2025-12-27)
+  - Automatically updated by cron workflow every 5 minutes (via `fetchLatestPrice` → `updateTodayCandle`)
+  - GitHub Actions workflow migrates Redis → files daily
+- **File**: `ethusdt_8h.json.gz` (single file, continuously updated)
+- **Why 8h?**: Comprehensive backfill analysis showed 8h significantly outperforms 4h for both ETH and BTC
 
-### 1h (Hourly) - **SECONDARY**
-- **Purpose**: Intraday granularity for recent periods (last 48 hours)
+### 1h (Hourly) - **FALLBACK ONLY** (Rarely Used)
+- **Purpose**: Fallback for intraday data if 5m candles are unavailable
 - **Usage**: 
-  - Paper trading session merges hourly candles for last 48 hours
-  - Provides more granular price movements than daily candles
-  - Fallback if 5m candles not available
+  - Paper trading session uses 1h as fallback if 5m candles not available
+  - **NOT used for strategy calculations** (only for intraday data merging fallback)
+  - Cron workflow updates 5m candles every 5 minutes, so 1h is rarely needed
 - **When Updated**: 
-  - "Refresh Historical Data" fills hourly gaps
+  - Automatically updated by cron workflow (via `fetchLatestPrice` → `updateTodayCandle`)
   - GitHub Actions workflow migrates Redis → files
-- **Rolling File**: `ethusdt_1h_rolling.json.gz` (dates after 2025-12-27)
+- **File**: `ethusdt_1h.json.gz` (single file, continuously updated)
+- **Note**: Only needed as fallback - cron workflow handles 5m candles every 5 minutes
 
-### 5m (5-minute) - **PREFERRED INTRADAY**
-- **Purpose**: Most granular intraday data for recent periods (last 48 hours)
+### 1d (Daily) - **REMOVED** ❌
+- **Status**: Removed - not used for strategy calculations
+- **Reason**: Strategy uses 8h directly, and 1d data was only maintained for "completeness" which is unnecessary
+
+### 5m (5-minute) - **AUXILIARY** (Intraday Merging Only)
+- **Purpose**: Most granular intraday data for recent periods (last 48 hours only)
 - **Usage**: 
   - Paper trading session prefers 5m over 1h for last 48 hours
   - Provides highest granularity for recent price movements
-  - NOT fetched by "Refresh Historical Data" (only used during session start/update)
+  - **NOT used for strategy calculations** (only for intraday data merging)
+  - Automatically updated by cron workflow every 5 minutes (only created during session start/update)
 - **When Updated**: 
   - Created during paper trading session start/update
   - GitHub Actions workflow migrates Redis → files
-- **Rolling File**: `ethusdt_5m_rolling.json.gz` (dates after 2025-12-27)
+- **File**: `ethusdt_5m.json.gz` (single file, continuously updated)
+- **Note**: Only needed for last 48 hours - older data not required
 
 ### 1m (1-minute) - **REMOVED**
 - **Status**: ❌ Removed - Not used anywhere in the codebase
@@ -60,19 +72,18 @@ data/historical-prices/
 
 ## File Organization
 
-### Historical Files (Pre-Cutoff: 2025-12-27)
-- **Format**: `{symbol}_{interval}_{startDate}_{endDate}.json.gz`
-- **Example**: `ethusdt_1d_2025-01-01_2025-12-27.json.gz`
-- **Purpose**: Static historical data up to cutoff date
-- **Updates**: Never updated (static historical data)
-
-### Rolling Files (Post-Cutoff: After 2025-12-27)
-- **Format**: `{symbol}_{interval}_rolling.json.gz`
-- **Example**: `ethusdt_1d_rolling.json.gz`
-- **Purpose**: Continuously updated data after cutoff date
+### Simplified File Naming
+- **Format**: `{symbol}_{interval}.json.gz` (no dates in filename)
+- **Example**: `ethusdt_8h.json.gz`
+- **Purpose**: Single file per symbol/interval containing all historical data
 - **Updates**: 
-  - Updated by GitHub Actions workflow (migrates from Redis)
-  - Contains all candles from 2025-12-28 to current date
+  - Continuously updated by GitHub Actions workflow (migrates from Redis)
+  - Files are updated by merging/updating candles (no cutoff dates)
+  - Dates in filenames were removed to avoid becoming misleading when workflows add new data
+
+### Backward Compatibility
+- Legacy files with date-based names (e.g., `ethusdt_8h_2025-01-01_2025-12-27.json.gz`) are still loaded for backward compatibility during migration
+- These legacy files can be merged into the new single-file format
 
 ## Data Flow
 
@@ -103,23 +114,12 @@ startSession() → Loads:
 4. Creates portfolioHistory with all available data
 ```
 
-## "Refresh Historical Data" Button
+## Automatic Updates
 
-### What It Does:
-1. **Finds last daily candle** in historical files (checks both historical and rolling)
-2. **Fetches missing daily candles** from that date to now (uses API fallback chain)
-3. **Finds last hourly candle** and fills hourly gaps
-4. **Fetches latest price** (updates today's candle)
-
-### What It Updates:
-- ✅ **1d (Daily)**: Fetches all missing daily candles
-- ✅ **1h (Hourly)**: Fetches missing hourly candles
-- ❌ **5m (5-minute)**: NOT fetched (only created during session start/update)
-- ❌ **1m (1-minute)**: Removed (unused)
-
-### Data Storage:
-- Saves to **Redis** (not files directly)
-- Files are written by **GitHub Actions workflow** (migrates Redis → files)
+All historical data is automatically updated:
+- **Cron workflow** (every 5 minutes): Updates latest prices and 8h/5m candles in Redis
+- **Migration workflow** (daily): Saves Redis candles to files
+- **No manual refresh needed** - the system keeps data current automatically
 
 ## Synthetic/Test Data
 
@@ -133,10 +133,10 @@ startSession() → Loads:
 ## Chart and Calculations
 
 ### Paper Trading Session:
-- **Loads ALL available data** from historical + rolling files (not limited to 200 days)
-- **Merges intraday data** (5m/1h) for last 48 hours
-- **Chart displays** all data in `portfolioHistory`
-- **Calculations use** all available candles for accurate regime detection
+- **Loads ALL available 8h candles** from historical + rolling files (from 2020-01-01 to now)
+- **Merges intraday data** (5m/1h) for last 48 hours only
+- **Chart displays** all 8h candles in `portfolioHistory`
+- **Strategy calculations use 8h candles** (default timeframe from config)
 
 ### Data Loading Priority:
 1. Historical files (pre-cutoff)
@@ -166,7 +166,22 @@ startSession() → Loads:
 
 ⚠️ **Files are read-only in Vercel** - File writes only work locally or in GitHub Actions.
 
-✅ **All available data is loaded** - Paper trading session loads ALL candles from files, not just a fixed range.
+✅ **8h is the primary timeframe** - Strategy calculations use 8h candles (default for both ETH and BTC).
+
+✅ **All available 8h data is loaded** - Paper trading session loads ALL 8h candles from files (from 2020-01-01 to now).
 
 ✅ **Rolling files are continuously updated** - GitHub Actions workflow keeps rolling files current.
+
+## Optimization Summary
+
+### Current Storage Priority:
+- **8h**: ✅ **REQUIRED** - Keep all historical data (strategy uses this)
+- **1h**: ⚠️ **FALLBACK ONLY** - Only needed as fallback if 5m unavailable (cron handles 5m every 5 minutes)
+- **5m**: ⚠️ **LIMITED** - Only need last 48 hours (older data can be removed)
+- **1d**: ❌ **REMOVED** - Not used for strategy, removed to reduce storage
+
+### Summary:
+- **Primary data**: 8h candles (used for strategy) - **keep all historical data**
+- **Auxiliary data**: 5m/1h candles (intraday only) - **keep last 48h only, older data can be removed**
+- **Removed**: 1d candles - not needed since strategy uses 8h directly
 

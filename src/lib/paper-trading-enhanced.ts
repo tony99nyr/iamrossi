@@ -17,10 +17,14 @@ import { type StopLossConfig, type OpenPosition } from './atr-stop-loss';
 import { executeTrade, type TradeExecutionOptions } from './trade-executor';
 import { calculateKellyCriterion, getKellyMultiplier } from './kelly-criterion';
 import { sendTradeAlert, sendRegimeChangeAlert, sendSessionAlert, createTradeNotification, isNotificationsEnabled } from './notifications';
+import { getAssetConfig, getPaperSessionKey, type TradingAsset } from './asset-config';
+import { analyzeCorrelation, getCorrelationContext } from './correlation-analysis';
+import { fetchAlignedCandles } from './btc-price-service';
 
 export interface EnhancedPaperTradingSession {
   id: string;
   name?: string;
+  asset: TradingAsset; // Asset being traded (eth, btc, etc.)
   config: EnhancedAdaptiveStrategyConfig;
   startedAt: number;
   stoppedAt?: number;
@@ -43,7 +47,10 @@ export interface EnhancedPaperTradingSession {
   kellyMultiplier?: number; // Current Kelly multiplier for display
 }
 
-const ACTIVE_SESSION_KEY = 'eth:paper:session:active';
+// Helper to get active session key for an asset
+function getActiveSessionKey(asset: TradingAsset = 'eth'): string {
+  return getPaperSessionKey(asset);
+}
 
 /**
  * Paper Trading Service
@@ -52,31 +59,56 @@ export class PaperTradingService {
   /**
    * Start a new paper trading session
    */
-  static async startSession(config: EnhancedAdaptiveStrategyConfig, name?: string): Promise<EnhancedPaperTradingSession> {
+  static async startSession(config: EnhancedAdaptiveStrategyConfig, name?: string, asset: TradingAsset = 'eth'): Promise<EnhancedPaperTradingSession> {
     await ensureConnected();
 
-    // Check if there's already an active session
-    const existingSession = await this.getActiveSession();
+    const assetConfig = getAssetConfig(asset);
+    const symbol = assetConfig.symbol;
+
+    // Check if there's already an active session for this asset
+    const existingSession = await this.getActiveSession(asset);
     if (existingSession && existingSession.isActive) {
-      throw new Error('A paper trading session is already active. Please stop it first.');
+      throw new Error(`A paper trading session for ${assetConfig.displayName} is already active. Please stop it first.`);
     }
 
     // Get initial price
-    const initialPrice = await fetchLatestPrice('ETHUSDT');
+    const initialPrice = await fetchLatestPrice(symbol);
 
     // Fetch ALL available candles for regime detection and chart display
     // Load from earliest available date to ensure we have complete historical context
     // fetchPriceCandles will automatically load from all available historical + rolling files
     const endDate = new Date().toISOString().split('T')[0];
-    // Use a very early start date - fetchPriceCandles will load all available data from files
-    // This ensures we get ALL historical data, not just the last 200 days
-    const startDate = '2020-01-01'; // Early enough to capture all available historical data
-    // Use timeframe from config (default to 8h if not specified)
-    const timeframe = config.bullishStrategy.timeframe || '8h';
-    // Use skipAPIFetch=false to allow API fetches for recent data, but ensure file data is preserved
-    const candles = await fetchPriceCandles('ETHUSDT', timeframe, startDate, endDate, initialPrice, false);
+    
+    // Use a start date based on asset availability:
+    // - ETH has historical data from 2025, so use 2020 to get all available data
+    // - BTC: APIs typically provide ~90 days of historical data, so use a recent date
+    //   For BTC, we'll fetch from APIs (no synthetic data) and build up history over time
+    let startDate: string;
+    if (asset === 'btc') {
+      // For BTC, use a date that APIs can provide (typically 90-365 days)
+      // Start from 90 days ago to ensure we get enough data from APIs
+      const daysAgo = new Date();
+      daysAgo.setDate(daysAgo.getDate() - 90);
+      startDate = daysAgo.toISOString().split('T')[0];
+      console.log(`📊 BTC paper trading: Using API data from ${startDate} (90 days lookback)`);
+    } else {
+      startDate = '2020-01-01';
+    }
+    
+    // Use timeframe from config (default to asset's default timeframe if not specified)
+    const timeframe = config.bullishStrategy.timeframe || assetConfig.defaultTimeframe;
+    
+    // CRITICAL: Paper trading MUST NEVER use synthetic data
+    // - skipAPIFetch=false allows API fetches for recent data
+    // - allowSyntheticData=false ensures synthetic data is NEVER loaded
+    // - Paper trading ONLY uses real historical data files and real API data
+    const candles = await fetchPriceCandles(symbol, timeframe, startDate, endDate, initialPrice, false, false);
 
     if (candles.length < 50) {
+      // For BTC, provide a more helpful error message
+      if (asset === 'btc') {
+        throw new Error(`Not enough historical data to start BTC paper trading. Got ${candles.length} candles, need at least 50. APIs may not have enough historical data. Try again later as more data accumulates.`);
+      }
       throw new Error('Not enough historical data to start paper trading');
     }
 
@@ -140,12 +172,12 @@ export class PaperTradingService {
       
       try {
         // Try 5-minute candles first
-        intradayCandles = await fetchPriceCandles('ETHUSDT', '5m', recentStartDate, recentEndDate, initialPrice);
+        intradayCandles = await fetchPriceCandles(symbol, '5m', recentStartDate, recentEndDate, initialPrice, false, false); // NEVER synthetic data in paper trading
         console.log(`✅ Loaded ${intradayCandles.length} 5-minute candles from Redis for recent period`);
       } catch {
         // Fall back to hourly candles if 5-minute not available
         try {
-          intradayCandles = await fetchPriceCandles('ETHUSDT', '1h', recentStartDate, recentEndDate, initialPrice);
+          intradayCandles = await fetchPriceCandles(symbol, '1h', recentStartDate, recentEndDate, initialPrice, false, false); // NEVER synthetic data in paper trading
           console.log(`✅ Loaded ${intradayCandles.length} hourly candles from Redis for recent period`);
         } catch (error1h) {
           console.warn('⚠️ Could not load intraday candles from Redis (non-critical):', error1h instanceof Error ? error1h.message : error1h);
@@ -242,6 +274,7 @@ export class PaperTradingService {
     const session: EnhancedPaperTradingSession = {
       id: sessionId,
       name,
+      asset,
       config,
       startedAt: Date.now(),
       isActive: true,
@@ -271,11 +304,11 @@ export class PaperTradingService {
     };
 
     // Save to Redis
-    await redis.set(ACTIVE_SESSION_KEY, JSON.stringify(session));
+    await redis.set(getActiveSessionKey(asset), JSON.stringify(session));
 
     // Send session start notification
     if (isNotificationsEnabled()) {
-      sendSessionAlert('start', session.name, session.portfolio.totalValue).catch(err => {
+      sendSessionAlert('start', session.name, session.portfolio.totalValue, asset).catch(err => {
         console.warn('[Paper Trading] Failed to send session start notification:', err);
       });
     }
@@ -286,13 +319,13 @@ export class PaperTradingService {
   /**
    * Update paper trading session (fetch price, calculate regime, execute trades)
    */
-  static async updateSession(sessionId?: string): Promise<EnhancedPaperTradingSession> {
+  static async updateSession(sessionId?: string, asset: TradingAsset = 'eth'): Promise<EnhancedPaperTradingSession> {
     await ensureConnected();
 
     // Get session
     const session = sessionId 
       ? await this.getSession(sessionId)
-      : await this.getActiveSession();
+      : await this.getActiveSession(asset);
 
     if (!session) {
       throw new Error('Paper trading session not found');
@@ -302,11 +335,16 @@ export class PaperTradingService {
       throw new Error('Paper trading session is not active');
     }
 
+    // Get asset from session (it should have it, but fallback to parameter for backward compatibility)
+    const sessionAsset = session.asset || asset;
+    const assetConfig = getAssetConfig(sessionAsset);
+    const symbol = assetConfig.symbol;
+
     // Fetch latest price (this updates today's candle in Redis asynchronously)
     // If price fetch fails (e.g., all APIs rate limited), use the last price from the session
     let currentPrice: number;
     try {
-      currentPrice = await fetchLatestPrice('ETHUSDT');
+      currentPrice = await fetchLatestPrice(symbol);
     } catch (priceError) {
       // If all APIs fail, try to use the last known price from the session
       const errorMessage = priceError instanceof Error ? priceError.message : String(priceError);
@@ -338,34 +376,15 @@ export class PaperTradingService {
     // We add a small delay to give updateTodayCandle time to complete its Redis update
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    // Also fetch and save hourly candles for historical data continuity
-    // This ensures we have hourly candle data going forward
-    try {
-      const now = new Date();
-      const today = new Date(now);
-      today.setUTCHours(0, 0, 0, 0);
-      const todayStr = today.toISOString().split('T')[0];
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
-      
-      // Fetch hourly candles for yesterday and today (saves to Redis and files)
-      await fetchPriceCandles('ETHUSDT', '1h', yesterdayStr, todayStr, currentPrice);
-      console.log(`✅ Fetched and saved hourly candles for historical data`);
-    } catch (hourlyError) {
-      // Non-critical - log but don't fail the session update
-      console.warn('Failed to fetch hourly candles (non-critical):', hourlyError instanceof Error ? hourlyError.message : hourlyError);
-    }
-
     // Fetch ALL available candles for regime detection
     // Load from earliest available date to ensure we have complete historical context
     // Pass currentPrice so fetchPriceCandles can create today's candle if Redis doesn't have it yet
     const endDate = new Date().toISOString().split('T')[0];
     // Use a very early start date - fetchPriceCandles will load all available data from files
     const startDate = '2020-01-01'; // Early enough to capture all available historical data
-    // Use timeframe from config (default to 8h if not specified)
-    const timeframe = session.config.bullishStrategy.timeframe || '8h';
-    const candles = await fetchPriceCandles('ETHUSDT', timeframe, startDate, endDate, currentPrice);
+    // Use timeframe from config (default to asset's default timeframe if not specified)
+    const timeframe = session.config.bullishStrategy.timeframe || assetConfig.defaultTimeframe;
+    const candles = await fetchPriceCandles(symbol, timeframe, startDate, endDate, currentPrice, false, false); // NEVER synthetic data in paper trading
 
     if (candles.length < 50) {
       throw new Error('Not enough historical data to update session');
@@ -403,7 +422,42 @@ export class PaperTradingService {
       }
     }
     
-    const signal = generateEnhancedAdaptiveSignal(candles, session.config, currentIndex, session.id);
+    // Calculate correlation context if trading BTC (use ETH correlation) or ETH (use BTC correlation)
+    let correlationContext: { signal: number; riskLevel: 'low' | 'medium' | 'high'; context: string } | undefined;
+    
+    if (session.asset === 'btc' || session.asset === 'eth') {
+      try {
+        // Fetch aligned candles for correlation analysis
+        const aligned = await fetchAlignedCandles(candles, timeframe);
+        const ethCandles = aligned.eth;
+        const btcCandles = aligned.btc;
+        
+        if (ethCandles.length >= 30 && btcCandles.length >= 30 && ethCandles.length === btcCandles.length) {
+          // Use recent candles for correlation (last 30 periods)
+          const recentEth = ethCandles.slice(-30);
+          const recentBtc = btcCandles.slice(-30);
+          
+          const correlationAnalysis = analyzeCorrelation(recentEth, recentBtc, 30);
+          const context = getCorrelationContext(correlationAnalysis);
+          
+          // For BTC, reverse the signal perspective
+          if (session.asset === 'btc') {
+            correlationContext = {
+              signal: -context.signal,
+              riskLevel: context.riskLevel,
+              context: context.context,
+            };
+          } else {
+            correlationContext = context;
+          }
+        }
+      } catch (error) {
+        // Correlation calculation is optional - don't fail if it can't be calculated
+        console.warn(`⚠️  Could not calculate correlation for ${session.asset}:`, error instanceof Error ? error.message : error);
+      }
+    }
+    
+    const signal = generateEnhancedAdaptiveSignal(candles, session.config, currentIndex, session.id, correlationContext);
     const confidence = calculateConfidence(signal, candles, currentIndex);
 
     // Execute trades based on signal
@@ -467,7 +521,7 @@ export class PaperTradingService {
         executedTrade,
         signal.regime?.regime || 'neutral',
         portfolio.totalValue,
-        'ETHUSDT'
+        symbol
       );
       sendTradeAlert(notification).catch(err => {
         console.warn('[Paper Trading] Failed to send trade notification:', err);
@@ -533,10 +587,10 @@ export class PaperTradingService {
       // Try to fetch 5-minute candles first (most granular), fall back to hourly if not available
       let intradayCandles: PriceCandle[] = [];
       try {
-        intradayCandles = await fetchPriceCandles('ETHUSDT', '5m', recentStartDate, recentEndDate, currentPrice);
+        intradayCandles = await fetchPriceCandles(symbol, '5m', recentStartDate, recentEndDate, currentPrice, false, false); // NEVER synthetic data in paper trading
       } catch {
         try {
-          intradayCandles = await fetchPriceCandles('ETHUSDT', '1h', recentStartDate, recentEndDate, currentPrice);
+          intradayCandles = await fetchPriceCandles(symbol, '1h', recentStartDate, recentEndDate, currentPrice, false, false); // NEVER synthetic data in paper trading
         } catch {
           // Non-critical - continue without intraday candles
         }
@@ -654,8 +708,9 @@ export class PaperTradingService {
     updatedSession.portfolio = portfolio;
     updatedSession.dataQuality = dataQuality;
 
-    // Save to Redis
-    await redis.set(ACTIVE_SESSION_KEY, JSON.stringify(updatedSession));
+    // Save to Redis (use asset from session)
+    const sessionAssetForSave = updatedSession.asset || asset;
+    await redis.set(getActiveSessionKey(sessionAssetForSave), JSON.stringify(updatedSession));
 
     return updatedSession;
   }
@@ -663,9 +718,9 @@ export class PaperTradingService {
   /**
    * Get active paper trading session
    */
-  static async getActiveSession(): Promise<EnhancedPaperTradingSession | null> {
+  static async getActiveSession(asset: TradingAsset = 'eth'): Promise<EnhancedPaperTradingSession | null> {
     await ensureConnected();
-    const data = await redis.get(ACTIVE_SESSION_KEY);
+    const data = await redis.get(getActiveSessionKey(asset));
     return data ? JSON.parse(data) as EnhancedPaperTradingSession : null;
   }
 
@@ -684,12 +739,12 @@ export class PaperTradingService {
   /**
    * Stop paper trading session
    */
-  static async stopSession(sessionId?: string): Promise<EnhancedPaperTradingSession> {
+  static async stopSession(sessionId?: string, asset: TradingAsset = 'eth'): Promise<EnhancedPaperTradingSession> {
     await ensureConnected();
 
     const session = sessionId
       ? await this.getSession(sessionId)
-      : await this.getActiveSession();
+      : await this.getActiveSession(asset);
 
     if (!session) {
       throw new Error('Paper trading session not found');
@@ -699,8 +754,13 @@ export class PaperTradingService {
       throw new Error('Paper trading session is not active');
     }
 
+    // Get asset from session (it should have it, but fallback to parameter for backward compatibility)
+    const sessionAsset = session.asset || asset;
+    const assetConfig = getAssetConfig(sessionAsset);
+    const symbol = assetConfig.symbol;
+
     // Get final price
-    const finalPrice = await fetchLatestPrice('ETHUSDT');
+    const finalPrice = await fetchLatestPrice(symbol);
     const finalValue = session.portfolio.usdcBalance + session.portfolio.ethBalance * finalPrice;
 
     // Add final snapshot
@@ -722,11 +782,11 @@ export class PaperTradingService {
     clearRegimeHistoryForSession(session.id);
 
     // Save to Redis
-    await redis.set(ACTIVE_SESSION_KEY, JSON.stringify(session));
+    await redis.set(getActiveSessionKey(sessionAsset), JSON.stringify(session));
 
     // Send session stop notification
     if (isNotificationsEnabled()) {
-      sendSessionAlert('stop', session.name, session.portfolio.totalValue).catch(err => {
+      sendSessionAlert('stop', session.name, session.portfolio.totalValue, sessionAsset).catch(err => {
         console.warn('[Paper Trading] Failed to send session stop notification:', err);
       });
     }

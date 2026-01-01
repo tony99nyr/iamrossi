@@ -23,13 +23,15 @@ export async function GET(request: NextRequest) {
     const skipAPIFetch = searchParams.get('skipAPIFetch') === 'true';
 
     // Fetch candles using the same method as the strategy
+    // NEVER use synthetic data in API routes (paper trading context)
     const candles = await fetchPriceCandles(
       symbol,
       timeframe,
       startDate,
       endDate,
       currentPrice,
-      skipAPIFetch
+      skipAPIFetch,
+      false // NEVER synthetic data in paper trading
     );
 
     return NextResponse.json({

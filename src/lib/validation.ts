@@ -22,6 +22,12 @@ export const pinVerifySchema = z.object({
 
 export const tradingStartSchema = z.object({
   name: z.string().optional(),
+  asset: z.enum(['eth', 'btc']).optional().default('eth'), // Asset to trade, defaults to 'eth' for backward compatibility
+});
+
+// Asset query parameter schema (for API routes)
+export const assetQuerySchema = z.object({
+  asset: z.enum(['eth', 'btc']).optional().default('eth'),
 });
 
 // ============================================================================

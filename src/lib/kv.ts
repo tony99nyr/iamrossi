@@ -158,6 +158,8 @@ const KV_KEYS = {
   POKEMON_INDEX_SERIES: 'pokemon:index:series',
   ETH_ADAPTIVE_STRATEGY_CONFIG: 'eth:adaptive:strategy:config',
   ETH_PAPER_SESSION_ACTIVE: 'eth:paper:session:active',
+  BTC_ADAPTIVE_STRATEGY_CONFIG: 'btc:adaptive:strategy:config',
+  BTC_PAPER_SESSION_ACTIVE: 'btc:paper:session:active',
   STICK_AND_PUCK_SESSIONS: 'stick-and-puck:sessions',
 } as const;
 

@@ -23,26 +23,29 @@ if (!process.env.REDIS_URL) {
   process.exit(1);
 }
 
-const PRICE_CACHE_PREFIX = 'eth:price:cache:';
+// Support both ETH and BTC - migrate data for all assets
+import { getPriceCachePrefix, ASSET_CONFIGS } from '../src/lib/asset-config';
+import type { TradingAsset } from '../src/lib/asset-config';
+
 const HISTORICAL_DATA_DIR = path.join(process.cwd(), 'data', 'historical-prices');
 const KEEP_RECENT_HOURS = 48; // Keep last 48 hours in Redis, migrate older data
 
+// Assets to migrate (ETH and BTC)
+const ASSETS_TO_MIGRATE: TradingAsset[] = ['eth', 'btc'];
+
 /**
  * Get file path for historical price data
+ * Simplified: Single file per symbol/interval (no dates in filename)
+ * Format: {symbol}_{interval}.json.gz (e.g., ethusdt_8h.json.gz)
  */
-function getHistoricalDataPath(symbol: string, interval: string, startDate: string, endDate: string): string {
+function getHistoricalDataPath(symbol: string, interval: string): string {
   const symbolLower = symbol.toLowerCase();
   const dir = path.join(HISTORICAL_DATA_DIR, symbolLower, interval);
   
   // Ensure directory exists
   fs.mkdir(dir, { recursive: true }).catch(() => {});
   
-  // For dates after 2025-12-27, use rolling file format
-  if (endDate > '2025-12-27') {
-    return path.join(dir, `${symbolLower}_${interval}_rolling.json.gz`);
-  } else {
-    return path.join(dir, `${symbolLower}_${interval}_${startDate}_${endDate}.json.gz`);
-  }
+  return path.join(dir, `${symbolLower}_${interval}.json.gz`);
 }
 
 /**
@@ -96,10 +99,27 @@ async function saveToFile(filePath: string, candles: PriceCandle[]): Promise<voi
 
 /**
  * Parse cache key to extract symbol, interval, and time range
+ * Supports both eth:price:cache: and btc:price:cache: prefixes
  */
-function parseCacheKey(key: string): { symbol: string; interval: string; startTime: number; endTime: number } | null {
+function parseCacheKey(key: string): { symbol: string; interval: string; startTime: number; endTime: number; asset: TradingAsset } | null {
   // Format: eth:price:cache:ETHUSDT:1d:1766966400000:1767052799999
-  const parts = key.replace(PRICE_CACHE_PREFIX, '').split(':');
+  // Format: btc:price:cache:BTCUSDT:1d:1766966400000:1767052799999
+  
+  // Try to match any asset prefix
+  let asset: TradingAsset | null = null;
+  let prefix = '';
+  for (const a of ASSETS_TO_MIGRATE) {
+    const testPrefix = getPriceCachePrefix(a);
+    if (key.startsWith(testPrefix)) {
+      asset = a;
+      prefix = testPrefix;
+      break;
+    }
+  }
+  
+  if (!asset || !prefix) return null;
+  
+  const parts = key.replace(prefix, '').split(':');
   if (parts.length !== 4) return null;
   
   const [symbol, interval, startTimeStr, endTimeStr] = parts;
@@ -108,23 +128,24 @@ function parseCacheKey(key: string): { symbol: string; interval: string; startTi
   
   if (isNaN(startTime) || isNaN(endTime)) return null;
   
-  return { symbol, interval, startTime, endTime };
+  return { symbol, interval, startTime, endTime, asset };
 }
 
 /**
- * Migrate candles from Redis to files
+ * Migrate candles from Redis to files for a specific asset
  */
-async function migrateCandlesToFiles(): Promise<void> {
-  await ensureConnected();
+async function migrateCandlesToFilesForAsset(asset: TradingAsset): Promise<void> {
+  const assetConfig = ASSET_CONFIGS[asset];
+  const prefix = getPriceCachePrefix(asset);
   
-  console.log('🔄 Starting Redis to files migration...');
+  console.log(`\n🔄 Migrating ${assetConfig.displayName} (${assetConfig.symbol}) data...`);
   
-  // Get all price cache keys
-  const keys = await redis.keys(`${PRICE_CACHE_PREFIX}*`);
-  console.log(`📊 Found ${keys.length} price cache keys in Redis`);
+  // Get all price cache keys for this asset
+  const keys = await redis.keys(`${prefix}*`);
+  console.log(`📊 Found ${keys.length} ${assetConfig.displayName} price cache keys in Redis`);
   
   if (keys.length === 0) {
-    console.log('✅ No keys to migrate');
+    console.log(`✅ No ${assetConfig.displayName} keys to migrate`);
     return;
   }
   
@@ -145,7 +166,7 @@ async function migrateCandlesToFiles(): Promise<void> {
         continue;
       }
       
-      const { symbol, interval, startTime, endTime } = parsed;
+      const { symbol, interval, startTime, endTime, asset } = parsed;
       
       // Check if this data is old enough to migrate (older than cutoff)
       // Keep recent data in Redis for quick access
@@ -168,14 +189,8 @@ async function migrateCandlesToFiles(): Promise<void> {
       }
       
       // Determine file path based on candle timestamps
-      const firstCandle = candles[0]!;
-      const lastCandle = candles[candles.length - 1]!;
-      const firstDate = new Date(firstCandle.timestamp);
-      const lastDate = new Date(lastCandle.timestamp);
-      const startDateStr = firstDate.toISOString().split('T')[0];
-      const endDateStr = lastDate.toISOString().split('T')[0];
-      
-      const filePath = getHistoricalDataPath(symbol, interval, startDateStr, endDateStr);
+      // Use simplified naming: single file per symbol/interval
+      const filePath = getHistoricalDataPath(symbol, interval);
       const fileKey = `${symbol}:${interval}:${filePath}`;
       
       // Accumulate candles for this file
@@ -265,8 +280,15 @@ async function migrateCandlesToFiles(): Promise<void> {
  */
 async function main() {
   try {
-    await migrateCandlesToFiles();
-    console.log('\n✅ Migration completed successfully');
+    await ensureConnected();
+    console.log('🔄 Starting Redis to files migration for all assets...');
+    console.log(`   Assets: ${ASSETS_TO_MIGRATE.join(', ').toUpperCase()}\n`);
+    
+    for (const asset of ASSETS_TO_MIGRATE) {
+      await migrateCandlesToFilesForAsset(asset);
+    }
+    
+    console.log('\n✅ Migration completed successfully for all assets');
     process.exit(0);
   } catch (error) {
     console.error('❌ Migration failed:', error);

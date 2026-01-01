@@ -75,17 +75,14 @@ async function fileExists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Get file path for historical data
+ * Get file path for historical data (new simplified format)
  */
-function getFilePath(symbol: string, timeframe: string, startDate: string, endDate: string): string {
-  const sanitizedStart = startDate.replace(/[^0-9-]/g, '');
-  const sanitizedEnd = endDate.replace(/[^0-9-]/g, '');
-  const filename = `${sanitizedStart}_${sanitizedEnd}.json`;
-  return path.join(HISTORICAL_DATA_DIR, symbol.toLowerCase(), timeframe, filename);
+function getFilePath(symbol: string, timeframe: string): string {
+  return path.join(HISTORICAL_DATA_DIR, symbol.toLowerCase(), timeframe, `${symbol.toLowerCase()}_${timeframe}.json.gz`);
 }
 
 /**
- * Check if a date range is already covered by existing files
+ * Check if a date range is already covered by existing file
  */
 async function isDateRangeCovered(
   symbol: string,
@@ -93,17 +90,37 @@ async function isDateRangeCovered(
   startDate: string,
   endDate: string
 ): Promise<{ covered: boolean; candleCount?: number }> {
-  const filePath = getFilePath(symbol, timeframe, startDate, endDate);
+  const filePath = getFilePath(symbol, timeframe);
   
   if (await fileExists(filePath)) {
     try {
-      const data = await fs.readFile(filePath, 'utf-8');
-      const candles = JSON.parse(data);
+      // Load compressed file
+      const { gunzipSync } = await import('zlib');
+      const compressed = await fs.readFile(filePath);
+      const decompressed = gunzipSync(compressed);
+      const candles = JSON.parse(decompressed.toString('utf-8')) as Array<{ timestamp: number }>;
+      
       if (candles.length > 0) {
-        return { covered: true, candleCount: candles.length };
+        // Check if the date range is covered
+        const startTime = new Date(startDate).getTime();
+        const endTime = new Date(endDate).getTime() + (24 * 60 * 60 * 1000) - 1; // End of day
+        
+        const candlesInRange = candles.filter(c => 
+          c.timestamp >= startTime && c.timestamp <= endTime
+        );
+        
+        // Consider covered if we have at least 80% of expected candles (allows for some gaps)
+        // For daily candles, expect ~1 per day; for 8h, expect ~3 per day
+        const daysDiff = Math.ceil((endTime - startTime) / (24 * 60 * 60 * 1000));
+        const expectedCandles = timeframe === '1d' ? daysDiff : timeframe === '8h' ? daysDiff * 3 : daysDiff * 24;
+        const coverageRatio = candlesInRange.length / expectedCandles;
+        
+        if (coverageRatio >= 0.8) {
+          return { covered: true, candleCount: candles.length };
+        }
       }
     } catch (error) {
-      // File exists but is corrupted - need to re-fetch
+      // File exists but is corrupted or can't be read - need to re-fetch
       return { covered: false };
     }
   }
@@ -121,9 +138,7 @@ async function fetchChunk(
   endDate: string,
   skipIfExists: boolean = true
 ): Promise<ChunkResult> {
-  const filePath = getFilePath(symbol, timeframe, startDate, endDate);
-
-  // Check if file already exists
+  // Check if date range is already covered in the consolidated file
   if (skipIfExists) {
     const coverage = await isDateRangeCovered(symbol, timeframe, startDate, endDate);
     if (coverage.covered && coverage.candleCount) {
@@ -138,6 +153,7 @@ async function fetchChunk(
 
   try {
     console.log(`📥 Fetching ${symbol} ${timeframe} from ${startDate} to ${endDate}...`);
+    // fetchPriceCandles will automatically save to the new format file
     const candles = await fetchPriceCandles(symbol, timeframe, startDate, endDate);
 
     return {

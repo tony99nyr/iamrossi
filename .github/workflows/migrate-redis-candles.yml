@@ -51,12 +51,13 @@ jobs:
             echo "   Please add REDIS_URL to Settings → Secrets and variables → Actions"
             exit 1
           fi
-          echo "🔄 Running Redis to files migration..."
+          echo "🔄 Running Redis to files migration for all assets (ETH and BTC)..."
           echo "🔗 Connecting to Redis (URL: ${REDIS_URL:0:30}...)"
           pnpm eth:migrate-redis || {
             echo "⚠️  Migration script completed with warnings or errors"
             # Continue even if there are warnings (e.g., file write errors in serverless)
             # The script will still delete old keys from Redis
+            # Note: Script now migrates both ETH and BTC data automatically
           }
       
       - name: Check for changes

@@ -10,6 +10,9 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     fileParallelism: false, // Run test files sequentially to avoid Redis race conditions
+    testTimeout: 10000, // 10 second timeout per test to prevent hanging
+    hookTimeout: 10000, // 10 second timeout for hooks
+    teardownTimeout: 5000, // 5 second timeout for teardown
     env: {
       NODE_ENV: 'test',
     },

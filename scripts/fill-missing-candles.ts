@@ -35,16 +35,13 @@ const HISTORICAL_DATA_DIR = path.join(process.cwd(), 'data', 'historical-prices'
 
 /**
  * Get file path for historical data
+ * Simplified: Single file per symbol/interval (no dates in filename)
+ * Format: {symbol}_{interval}.json.gz (e.g., ethusdt_8h.json.gz)
  */
-function getHistoricalDataPath(symbol: string, timeframe: string, startDate: string, endDate: string): string {
+function getHistoricalDataPath(symbol: string, timeframe: string): string {
   const symbolLower = symbol.toLowerCase();
   const dir = path.join(HISTORICAL_DATA_DIR, symbolLower, timeframe);
-  // Try both naming patterns
-  const filename1 = `${symbolLower}_${timeframe}_${startDate}_${endDate}.json.gz`;
-  const filename2 = `${startDate}_${endDate}.json.gz`;
-  const filePath1 = path.join(dir, filename1);
-  const filePath2 = path.join(dir, filename2);
-  return filePath1; // Prefer symbol-based naming
+  return path.join(dir, `${symbolLower}_${timeframe}.json.gz`);
 }
 
 /**
@@ -219,6 +216,7 @@ async function fetchMissingCandles(
 
 /**
  * Determine which file a candle belongs to
+ * Simplified: All candles go into the single file for this symbol/interval
  */
 function getFileForCandle(
   symbol: string,
@@ -226,26 +224,8 @@ function getFileForCandle(
   candle: PriceCandle,
   existingFiles: string[]
 ): string {
-  const candleDate = new Date(candle.timestamp).toISOString().split('T')[0];
-  
-  // Find file that should contain this candle
-  // Files are named: {symbol}_{timeframe}_{startDate}_{endDate}.json.gz
-  for (const file of existingFiles) {
-    const basename = path.basename(file, '.json.gz');
-    const match = basename.match(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})/);
-    if (match) {
-      const fileStart = match[1]!;
-      const fileEnd = match[2]!;
-      if (candleDate >= fileStart && candleDate <= fileEnd) {
-        return file;
-      }
-    }
-  }
-  
-  // If no file found, create new file name based on candle date
-  const symbolLower = symbol.toLowerCase();
-  const dir = path.join(HISTORICAL_DATA_DIR, symbolLower, timeframe);
-  return path.join(dir, `${symbolLower}_${timeframe}_${candleDate}_${candleDate}.json.gz`);
+  // With simplified naming, all candles go into the same file
+  return getHistoricalDataPath(symbol, timeframe);
 }
 
 /**

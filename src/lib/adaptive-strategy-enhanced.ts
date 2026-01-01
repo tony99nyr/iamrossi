@@ -234,7 +234,11 @@ function checkRegimePersistence(
 function calculateDynamicPositionSize(
   basePositionSize: number,
   regime: MarketRegimeSignal,
-  config: EnhancedAdaptiveStrategyConfig
+  config: EnhancedAdaptiveStrategyConfig,
+  correlationContext?: {
+    signal: number;
+    riskLevel: 'low' | 'medium' | 'high';
+  }
 ): number {
   if (!config.dynamicPositionSizing) {
     return basePositionSize;
@@ -246,7 +250,31 @@ function calculateDynamicPositionSize(
   if (regime.regime === 'bullish') {
     // Scale from minPosition to maxPosition based on confidence
     const confidenceBoost = regime.confidence * (maxPosition - minPosition);
-    return Math.min(maxPosition, minPosition + confidenceBoost);
+    let position = Math.min(maxPosition, minPosition + confidenceBoost);
+    
+    // Apply correlation-based adjustments
+    if (correlationContext) {
+      const { signal: correlationSignal, riskLevel } = correlationContext;
+      
+      // High correlation (low risk) = can take larger positions
+      // Low correlation (high risk) = reduce position size
+      if (riskLevel === 'low') {
+        position = Math.min(maxPosition, position * 1.1);
+      } else if (riskLevel === 'high') {
+        position = Math.max(minPosition, position * 0.8);
+      }
+      
+      // If correlation signal contradicts regime, reduce position size further
+      const regimeSignal = 1; // bullish
+      const alignment = correlationSignal * regimeSignal;
+      
+      if (alignment < -0.3) {
+        // Correlation contradicts regime - reduce position size
+        position = Math.max(minPosition, position * 0.85);
+      }
+    }
+    
+    return position;
   }
   
   return basePositionSize;
@@ -260,14 +288,18 @@ export function generateEnhancedAdaptiveSignal(
   candles: PriceCandle[],
   config: EnhancedAdaptiveStrategyConfig,
   currentIndex: number,
-  sessionId?: string
+  sessionId?: string,
+  correlationContext?: {
+    signal: number;
+    riskLevel: 'low' | 'medium' | 'high';
+  }
 ): TradingSignal & { 
   regime: MarketRegimeSignal; 
   activeStrategy: TradingConfig; 
   momentumConfirmed: boolean;
   positionSizeMultiplier: number;
 } {
-  const regime = detectMarketRegime(candles, currentIndex);
+  const regime = detectMarketRegime(candles, currentIndex, correlationContext);
   
   const confidenceThreshold = config.regimeConfidenceThreshold || 0.2;
   const momentumThreshold = config.momentumConfirmationThreshold || 0.25;
@@ -333,7 +365,20 @@ export function generateEnhancedAdaptiveSignal(
   let momentumConfirmed = false;
   let positionSizeMultiplier = 1.0;
   
-  if (regime.regime === 'bullish' && regime.confidence >= confidenceThreshold) {
+  // Adjust confidence threshold based on correlation risk level
+  // Lower threshold when correlation is high (more confident), higher when low (less confident)
+  let effectiveConfidenceThreshold = confidenceThreshold;
+  if (correlationContext) {
+    if (correlationContext.riskLevel === 'low') {
+      // High correlation - can be more confident, lower threshold slightly
+      effectiveConfidenceThreshold = confidenceThreshold * 0.9;
+    } else if (correlationContext.riskLevel === 'high') {
+      // Low correlation - need higher confidence, raise threshold
+      effectiveConfidenceThreshold = confidenceThreshold * 1.3;
+    }
+  }
+  
+  if (regime.regime === 'bullish' && regime.confidence >= effectiveConfidenceThreshold) {
     // Check momentum confirmation
     momentumConfirmed = hasStrongMomentum(candles, currentIndex, momentumThreshold);
     
@@ -344,13 +389,13 @@ export function generateEnhancedAdaptiveSignal(
       activeStrategy = config.bullishStrategy;
       // Calculate dynamic position size multiplier
       const basePosition = config.bullishStrategy.maxPositionPct || 0.75;
-      const dynamicPosition = calculateDynamicPositionSize(basePosition, regime, config);
+      const dynamicPosition = calculateDynamicPositionSize(basePosition, regime, config, correlationContext);
       positionSizeMultiplier = dynamicPosition / basePosition;
     } else {
       // Bullish regime but weak momentum or not persisted - use neutral/bearish
       activeStrategy = config.neutralStrategy || config.bearishStrategy;
     }
-  } else if (regime.regime === 'bearish' && regime.confidence >= confidenceThreshold) {
+  } else if (regime.regime === 'bearish' && regime.confidence >= effectiveConfidenceThreshold) {
     // Check regime persistence for bearish
     const regimePersisted = checkRegimePersistence(candles, currentIndex, persistencePeriods, 'bearish', sessionId);
     

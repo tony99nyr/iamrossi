@@ -73,11 +73,11 @@ export default async function HomePage() {
                         </li>
 
                         <li>
-                            <Link href="/tools/eth-trading" className={toolLinkStyle}>
+                            <Link href="/tools/trading-overview" className={toolLinkStyle}>
                                 <span className={toolIconStyle}>📈</span>
                                 <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 })}>
-                                    <strong className={toolNameStyle}>ETH Trading</strong>
-                                    <span className={toolDescStyle}>Trading with strategy comparison and backtesting</span>
+                                    <strong className={toolNameStyle}>Trading Overview</strong>
+                                    <span className={toolDescStyle}>Multi-asset trading dashboard with ETH and BTC strategies</span>
                                 </div>
                             </Link>
                         </li>

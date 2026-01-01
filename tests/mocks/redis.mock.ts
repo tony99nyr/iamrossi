@@ -61,6 +61,12 @@ export function getMockStore(key: string) {
 }
 
 // Mock the redis module
-vi.mock('redis', () => ({
-  createClient: vi.fn(() => mockRedisClient),
-}));
+// This must be hoisted before any module imports redis
+vi.mock('redis', () => {
+  return {
+    createClient: vi.fn(() => mockRedisClient),
+    default: {
+      createClient: vi.fn(() => mockRedisClient),
+    },
+  };
+});

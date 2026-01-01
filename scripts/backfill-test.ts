@@ -14,6 +14,9 @@ import { executeTrade } from '../src/lib/trade-executor';
 import { updateStopLoss } from '../src/lib/atr-stop-loss';
 import { getATRValue } from '../src/lib/indicators';
 import { disconnectRedis } from '../src/lib/kv';
+import { getAssetConfig, type TradingAsset } from '../src/lib/asset-config';
+import { analyzeCorrelation, getCorrelationContext } from '../src/lib/correlation-analysis';
+import { fetchAlignedCandles } from '../src/lib/btc-price-service';
 import type { PriceCandle, Portfolio, Trade, PortfolioSnapshot } from '@/types';
 import type { EnhancedAdaptiveStrategyConfig } from '@/lib/adaptive-strategy-enhanced';
 import type { StopLossConfig, OpenPosition } from '../src/lib/atr-stop-loss';
@@ -104,20 +107,43 @@ const DEFAULT_CONFIG: EnhancedAdaptiveStrategyConfig = {
   whipsawMaxChanges: 3,
 };
 
+/**
+ * Generate a short config name from strategy parameters
+ * Format: B{buyThresh}-S{sellThresh}|Be{buyThresh}-S{sellThresh}|R{regimeConf}|K{kelly}|A{atr}
+ * Example: B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0
+ */
+function getConfigShortName(config: EnhancedAdaptiveStrategyConfig): string {
+  const bullBuy = config.bullishStrategy.buyThreshold.toFixed(2);
+  const bullSell = Math.abs(config.bullishStrategy.sellThreshold).toFixed(2);
+  const bearBuy = config.bearishStrategy.buyThreshold.toFixed(2);
+  const bearSell = Math.abs(config.bearishStrategy.sellThreshold).toFixed(2);
+  const regime = (config.regimeConfidenceThreshold ?? 0.22).toFixed(2);
+  const kelly = config.kellyCriterion?.fractionalMultiplier?.toFixed(2) ?? '0.25';
+  const atr = config.stopLoss?.atrMultiplier?.toFixed(1) ?? '2.0';
+  
+  return `B${bullBuy}-S${bullSell}|Be${bearBuy}-S${bearSell}|R${regime}|K${kelly}|A${atr}`;
+}
+
 // Trade execution is now handled by unified executor in src/lib/trade-executor.ts
 
 /**
- * Load synthetic data for a given year
+ * Load synthetic data for a given year, asset, and timeframe
  */
-function loadSyntheticData(year: number): PriceCandle[] {
+export function loadSyntheticData(year: number, asset: TradingAsset = 'eth', timeframe: string = '8h'): PriceCandle[] {
+  const assetConfig = getAssetConfig(asset);
+  const symbol = assetConfig.symbol.toLowerCase();
   const syntheticDir = path.join(process.cwd(), 'data', 'historical-prices', 'synthetic');
-  const ethDir = path.join(process.cwd(), 'data', 'historical-prices', 'ethusdt', '8h');
+  const assetDir = path.join(process.cwd(), 'data', 'historical-prices', symbol, timeframe);
   
   // Try multiple file paths in order of preference
+  // First check for divergence files (for correlation testing), then regular files
   const possiblePaths = [
-    // Full year synthetic data
-    path.join(syntheticDir, `ethusdt_8h_${year}-01-01_${year}-12-31.json.gz`),
-    path.join(syntheticDir, `ethusdt_8h_${year}-01-01_${year}-12-30.json.gz`),
+    // Divergence files (preferred for correlation testing)
+    path.join(syntheticDir, `${symbol}_${timeframe}_${year}-01-01_${year}-12-31_divergence.json.gz`),
+    path.join(syntheticDir, `${symbol}_${timeframe}_${year}-01-01_${year}-12-30_divergence.json.gz`),
+    // Regular full year synthetic data
+    path.join(syntheticDir, `${symbol}_${timeframe}_${year}-01-01_${year}-12-31.json.gz`),
+    path.join(syntheticDir, `${symbol}_${timeframe}_${year}-01-01_${year}-12-30.json.gz`),
   ];
   
   // Check for files in synthetic dir
@@ -125,52 +151,51 @@ function loadSyntheticData(year: number): PriceCandle[] {
   for (const testPath of possiblePaths) {
     if (fs.existsSync(testPath)) {
       filepath = testPath;
+      if (testPath.includes('divergence')) {
+        console.log(`📊 Using divergence data: ${path.basename(testPath)}`);
+      }
       break;
     }
   }
   
-  // If not found, try to find any file matching the year in synthetic dir
+  // If not found, try to find any file matching the year and symbol in synthetic dir
   if (!filepath && fs.existsSync(syntheticDir)) {
     const files = fs.readdirSync(syntheticDir);
-    const matchingFile = files.find(f => f.includes(`${year}`) && f.endsWith('.json.gz'));
-    if (matchingFile) {
-      filepath = path.join(syntheticDir, matchingFile);
+    // Prefer divergence files for correlation testing, but fall back to regular files
+    const divergenceFile = files.find(f => 
+      f.includes(`${symbol}_${timeframe}`) && 
+      (f.includes(`_${year}-`) || f.includes(`-${year}-`) || (year === 2028 && f.includes('2027-10'))) &&
+      f.includes('divergence') &&
+      f.endsWith('.json.gz')
+    );
+    const regularFile = files.find(f => 
+      f.includes(`${symbol}_${timeframe}`) && 
+      (f.includes(`_${year}-`) || f.includes(`-${year}-`) || (year === 2028 && f.includes('2027-10'))) &&
+      !f.includes('divergence') &&
+      f.endsWith('.json.gz')
+    );
+    if (divergenceFile) {
+      filepath = path.join(syntheticDir, divergenceFile);
+      console.log(`📊 Using divergence data: ${divergenceFile}`);
+    } else if (regularFile) {
+      filepath = path.join(syntheticDir, regularFile);
     }
   }
   
-  // If still not found, check ethusdt/8h directory for partial year files (divergence test data)
-  if (!filepath) {
-    const allCandles: PriceCandle[] = [];
-    if (fs.existsSync(ethDir)) {
-      const files = fs.readdirSync(ethDir);
-      const yearFiles = files.filter(f => f.includes(`${year}`) && f.endsWith('.json.gz'));
-      
-      for (const file of yearFiles) {
-        const filePath = path.join(ethDir, file);
-        const compressed = fs.readFileSync(filePath);
-        const decompressed = gunzipSync(compressed);
-        const candles = JSON.parse(decompressed.toString()) as PriceCandle[];
-        console.log(`📊 Loaded ${candles.length} synthetic 8h candles from ${file}`);
-        allCandles.push(...candles);
-      }
-      
-      if (allCandles.length > 0) {
-        // Sort by timestamp and return
-        allCandles.sort((a, b) => a.timestamp - b.timestamp);
-        return allCandles;
-      }
-    }
-  }
+  // CRITICAL: Do NOT fall back to asset-specific directory (ethusdt/8h/, btcusdt/8h/)
+  // Those directories contain REAL historical data, not synthetic data
+  // Synthetic data MUST ONLY come from the synthetic/ directory
+  // This ensures backfill tests use synthetic data and paper trading uses real data
   
   if (!filepath || !fs.existsSync(filepath)) {
-    throw new Error(`Synthetic 8h data not found for ${year}. Run 'npx tsx scripts/generate-synthetic-${year}-data-enhanced.ts' first.`);
+    throw new Error(`Synthetic ${timeframe} data not found for ${assetConfig.displayName} (${symbol}) ${year} in synthetic/ directory. Run 'npx tsx scripts/generate-btc-synthetic-data.ts ${year} ${timeframe}' first.`);
   }
   
   const compressed = fs.readFileSync(filepath);
   const decompressed = gunzipSync(compressed);
   const candles = JSON.parse(decompressed.toString()) as PriceCandle[];
   
-  console.log(`📊 Loaded ${candles.length} synthetic 8h candles from ${path.basename(filepath)}`);
+  console.log(`📊 Loaded ${candles.length} synthetic ${timeframe} candles from ${path.basename(filepath)}`);
   return candles;
 }
 
@@ -180,10 +205,28 @@ export async function runBacktest(
   isSynthetic: boolean = false,
   configOverride?: EnhancedAdaptiveStrategyConfig,
   kellyMultiplier?: number,
-  atrMultiplier?: number
+  atrMultiplier?: number,
+  asset: TradingAsset = 'eth',
+  timeframe?: string,
+  useCorrelation: boolean = false
 ): Promise<BacktestResult> {
-  const year = new Date(startDate).getFullYear();
-  console.log(`\n📊 Running backtest: ${startDate} to ${endDate}${isSynthetic ? ` (Synthetic ${year})` : ''}`);
+  const assetConfig = getAssetConfig(asset);
+  const symbol = assetConfig.symbol;
+  const effectiveTimeframe = timeframe || process.env.TIMEFRAME || assetConfig.defaultTimeframe;
+  // Parse year directly from date string to avoid timezone issues
+  // Date strings like '2026-01-01' are parsed as UTC, which can cause getFullYear() to return wrong year in some timezones
+  const startYear = parseInt(startDate.split('-')[0]!, 10);
+  const endYear = parseInt(endDate.split('-')[0]!, 10);
+  const config = configOverride || DEFAULT_CONFIG;
+  const configName = configOverride ? getConfigShortName(config) : 'Default';
+  
+  // Format year label for multi-year periods
+  const yearLabel = startYear === endYear 
+    ? (isSynthetic ? ` (Synthetic ${startYear})` : ` (${startYear})`)
+    : (isSynthetic ? ` (Synthetic ${startYear}-${endYear})` : ` (${startYear}-${endYear})`);
+  
+  console.log(`\n📊 Running backtest: ${startDate} to ${endDate}${yearLabel} - ${assetConfig.displayName} (${effectiveTimeframe})`);
+  console.log(`   Config: ${configName}`);
   
   // Clear caches
   clearRegimeHistory();
@@ -193,18 +236,17 @@ export async function runBacktest(
   
   if (isSynthetic) {
     // For multi-year periods, load and combine multiple years
-    const startYear = new Date(startDate).getFullYear();
-    const endYear = new Date(endDate).getFullYear();
+    // Use already-calculated startYear/endYear from above (parsed from date string to avoid timezone issues)
     
     if (startYear === endYear) {
       // Single year
-      candles = loadSyntheticData(startYear);
+      candles = loadSyntheticData(startYear, asset, effectiveTimeframe);
     } else {
       // Multi-year: load and combine
       candles = [];
       for (let year = startYear; year <= endYear; year++) {
         try {
-          const yearCandles = loadSyntheticData(year);
+          const yearCandles = loadSyntheticData(year, asset, effectiveTimeframe);
           candles.push(...yearCandles);
         } catch (error) {
           console.warn(`⚠️  Could not load synthetic data for ${year}: ${error}`);
@@ -232,8 +274,7 @@ export async function runBacktest(
     console.log(`📈 Loaded ${candles.length} candles (${candlesInPeriod} in test period ${startDate} to ${endDate})`);
   } else {
     // For multi-year historical periods, we need to handle them specially
-    const startYear = new Date(startDate).getFullYear();
-    const endYear = new Date(endDate).getFullYear();
+    // Use already-calculated startYear/endYear from above (parsed from date string to avoid timezone issues)
     
     if (startYear === endYear && startYear === 2025) {
       // Single year 2025 - use existing logic
@@ -245,22 +286,22 @@ export async function runBacktest(
       const minHistoryDate = '2025-01-01';
       const actualHistoryStart = historyStart < minHistoryDate ? minHistoryDate : historyStart;
       
-      candles = await fetchPriceCandles('ETHUSDT', TIMEFRAME, actualHistoryStart, endDate, undefined, true); // skipAPIFetch=true for backfill tests
+      candles = await fetchPriceCandles(symbol, effectiveTimeframe, actualHistoryStart, endDate, undefined, true, true); // skipAPIFetch=true, allowSyntheticData=true for backfill tests
       console.log(`📈 Loaded ${candles.length} candles from ${actualHistoryStart} to ${endDate}`);
     } else {
       // Multi-year: combine historical 2025 with synthetic 2026/2027
       candles = [];
       
-      // Load 2025 historical
-      if (startYear <= 2025 && endYear >= 2025) {
-        const history2025 = await fetchPriceCandles('ETHUSDT', TIMEFRAME, '2025-01-01', '2025-12-31', undefined, true); // skipAPIFetch=true for backfill tests
+      // Load 2025 historical (only for ETH - BTC doesn't have 2025 historical data)
+      if (startYear <= 2025 && endYear >= 2025 && asset === 'eth') {
+        const history2025 = await fetchPriceCandles(symbol, effectiveTimeframe, '2025-01-01', '2025-12-31', undefined, true, true); // skipAPIFetch=true, allowSyntheticData=true for backfill tests
         candles.push(...history2025);
       }
       
       // Load synthetic years
       for (let year = Math.max(2026, startYear); year <= endYear; year++) {
         try {
-          const yearCandles = loadSyntheticData(year);
+          const yearCandles = loadSyntheticData(year, asset, effectiveTimeframe);
           candles.push(...yearCandles);
         } catch (error) {
           console.warn(`⚠️  Could not load synthetic data for ${year}: ${error}`);
@@ -283,9 +324,95 @@ export async function runBacktest(
     throw new Error(`Not enough candles loaded: ${candles.length}. Need at least 50 for indicators.`);
   }
   
-  // Use provided config override or default
-  const config = configOverride || DEFAULT_CONFIG;
-
+  // Calculate correlation context if enabled
+  let correlationContextMap: Map<number, { signal: number; riskLevel: 'low' | 'medium' | 'high'; context: string }> = new Map();
+  
+  if (useCorrelation) {
+    try {
+      const otherAsset = asset === 'eth' ? 'btc' : 'eth';
+      const otherAssetConfig = getAssetConfig(otherAsset);
+      const otherSymbol = otherAssetConfig.symbol;
+      
+      // Load other asset's candles
+      let otherCandles: PriceCandle[];
+      if (isSynthetic) {
+        // Use the same year range as the main asset (already calculated above)
+        otherCandles = [];
+        for (let year = startYear; year <= endYear; year++) {
+          try {
+            const yearCandles = loadSyntheticData(year, otherAsset, effectiveTimeframe);
+            otherCandles.push(...yearCandles);
+          } catch (error) {
+            // Only warn if the year is actually in the requested range
+            // This prevents warnings for years that aren't needed
+            if (year >= startYear && year <= endYear) {
+              console.warn(`⚠️  Could not load ${otherAsset} synthetic data for ${year}: ${error}`);
+            }
+          }
+        }
+        otherCandles.sort((a, b) => a.timestamp - b.timestamp);
+      } else {
+        // For real data, try to fetch aligned candles
+        const aligned = await fetchAlignedCandles(candles, effectiveTimeframe);
+        otherCandles = asset === 'eth' ? aligned.btc : aligned.eth;
+      }
+      
+      // Align candles by timestamp
+      const alignedCandles: { eth: PriceCandle[]; btc: PriceCandle[] } = { eth: [], btc: [] };
+      const candleMap = new Map<number, PriceCandle>();
+      candles.forEach(c => candleMap.set(c.timestamp, c));
+      
+      for (const otherCandle of otherCandles) {
+        const matchingCandle = candleMap.get(otherCandle.timestamp);
+        if (matchingCandle) {
+          if (asset === 'eth') {
+            alignedCandles.eth.push(matchingCandle);
+            alignedCandles.btc.push(otherCandle);
+          } else {
+            alignedCandles.eth.push(otherCandle);
+            alignedCandles.btc.push(matchingCandle);
+          }
+        }
+      }
+      
+      if (alignedCandles.eth.length >= 30 && alignedCandles.btc.length >= 30) {
+        // Calculate rolling correlation for each candle index
+        for (let i = 30; i < alignedCandles.eth.length; i++) {
+          const ethWindow = alignedCandles.eth.slice(Math.max(0, i - 30), i + 1);
+          const btcWindow = alignedCandles.btc.slice(Math.max(0, i - 30), i + 1);
+          
+          if (ethWindow.length === btcWindow.length && ethWindow.length >= 30) {
+            const correlationAnalysis = analyzeCorrelation(ethWindow, btcWindow, 30);
+            const context = getCorrelationContext(correlationAnalysis);
+            
+            // Map to original candle index
+            const timestamp = alignedCandles.eth[i]!.timestamp;
+            const originalIndex = candles.findIndex(c => c.timestamp === timestamp);
+            
+            if (originalIndex >= 0) {
+              // For BTC, reverse the signal perspective
+              if (asset === 'btc') {
+                correlationContextMap.set(originalIndex, {
+                  signal: -context.signal,
+                  riskLevel: context.riskLevel,
+                  context: context.context,
+                });
+              } else {
+                correlationContextMap.set(originalIndex, context);
+              }
+            }
+          }
+        }
+        console.log(`📊 Calculated correlation context for ${correlationContextMap.size} candles`);
+      } else {
+        console.warn(`⚠️  Not enough aligned candles for correlation (${alignedCandles.eth.length})`);
+      }
+    } catch (error) {
+      console.warn(`⚠️  Could not calculate correlation: ${error}`);
+    }
+  }
+  
+  // Config already set above for logging (line 217)
   // Find start index (need at least 50 candles for indicators)
   const startTime = new Date(startDate).getTime();
   let startIndex = candles.findIndex(c => c.timestamp >= startTime);
@@ -369,12 +496,16 @@ export async function runBacktest(
       }
     }
     
+    // Get correlation context for this candle index
+    const correlationContext = useCorrelation ? correlationContextMap.get(i) : undefined;
+    
     // Generate signal
     const signal = generateEnhancedAdaptiveSignal(
       candles,
       config, // Use provided config, not DEFAULT_CONFIG
       i,
-      sessionId
+      sessionId,
+      correlationContext
     );
     
     const confidence = calculateConfidence(signal, candles, i);
@@ -666,7 +797,8 @@ async function main() {
   
   for (const period of testPeriods) {
     console.log(`\n${'='.repeat(60)}`);
-    const periodYear = new Date(period.start).getFullYear();
+    // Parse year directly from date string to avoid timezone issues
+    const periodYear = parseInt(period.start.split('-')[0]!, 10);
     const periodType = period.synthetic 
       ? `[Synthetic ${periodYear}]` 
       : period.start.startsWith('2025') && period.end.startsWith('2025')

@@ -116,10 +116,12 @@ function formatUsd(value: number): string {
 }
 
 /**
- * Format ETH amount
+ * Format asset amount (ETH or BTC)
  */
-function formatEth(value: number): string {
-  return `${value.toFixed(6)} ETH`;
+function formatAsset(value: number, symbol: string): string {
+  const decimals = symbol === 'BTCUSDT' ? 8 : 6; // BTC uses 8 decimals, ETH uses 6
+  const assetName = symbol === 'BTCUSDT' ? 'BTC' : 'ETH';
+  return `${value.toFixed(decimals)} ${assetName}`;
 }
 
 /**
@@ -140,7 +142,7 @@ export async function sendTradeAlert(notification: TradeNotification): Promise<b
   
   const fields: DiscordEmbed['fields'] = [
     { name: '💰 Price', value: formatUsd(notification.price), inline: true },
-    { name: '📊 Amount', value: formatEth(notification.amount), inline: true },
+    { name: '📊 Amount', value: formatAsset(notification.amount, notification.symbol), inline: true },
     { name: '💵 Value', value: formatUsd(notification.usdcAmount), inline: true },
     { name: '📈 Signal', value: formatPercent(notification.signal), inline: true },
     { name: '🎯 Confidence', value: formatPercent(notification.confidence), inline: true },
@@ -163,7 +165,7 @@ export async function sendTradeAlert(notification: TradeNotification): Promise<b
     color: isBuy ? COLORS.green : COLORS.red,
     fields,
     footer: {
-      text: 'ETH Trading Bot • Paper Trading',
+      text: `${notification.symbol === 'BTCUSDT' ? 'BTC' : 'ETH'} Trading Bot • Paper Trading`,
     },
     timestamp: new Date(notification.timestamp).toISOString(),
   };
@@ -202,7 +204,7 @@ export async function sendRegimeChangeAlert(notification: RegimeChangeNotificati
       { name: '🎯 Confidence', value: formatPercent(notification.confidence), inline: true },
     ],
     footer: {
-      text: 'ETH Trading Bot • Regime Detection',
+      text: 'Trading Bot • Regime Detection',
     },
     timestamp: new Date(notification.timestamp).toISOString(),
   };
@@ -238,18 +240,19 @@ export async function sendStopLossAlert(notification: StopLossNotification): Pro
     }
   }
 
+  const assetName = notification.symbol === 'BTCUSDT' ? 'BTC' : 'ETH';
   const embed: DiscordEmbed = {
     title,
     color: isTriggered ? COLORS.red : COLORS.purple,
     fields,
     footer: {
-      text: 'ETH Trading Bot • Risk Management',
+      text: `${assetName} Trading Bot • Risk Management`,
     },
     timestamp: new Date(notification.timestamp).toISOString(),
   };
 
   return sendDiscordWebhook({
-    username: 'ETH Trading Bot',
+    username: `${assetName} Trading Bot`,
     embeds: [embed],
   });
 }
@@ -260,11 +263,13 @@ export async function sendStopLossAlert(notification: StopLossNotification): Pro
 export async function sendSessionAlert(
   type: 'start' | 'stop',
   sessionName?: string,
-  portfolioValue?: number
+  portfolioValue?: number,
+  asset?: 'eth' | 'btc'
 ): Promise<boolean> {
   const isStart = type === 'start';
   const emoji = isStart ? '🚀' : '🛬';
   const title = isStart ? 'Paper Trading Started' : 'Paper Trading Stopped';
+  const assetName = asset === 'btc' ? 'BTC' : 'ETH';
   
   const fields: DiscordEmbed['fields'] = [];
   
@@ -281,13 +286,13 @@ export async function sendSessionAlert(
     color: isStart ? COLORS.blue : COLORS.yellow,
     fields: fields.length > 0 ? fields : [],
     footer: {
-      text: 'ETH Trading Bot',
+      text: `${assetName} Trading Bot`,
     },
     timestamp: new Date().toISOString(),
   };
 
   return sendDiscordWebhook({
-    username: 'ETH Trading Bot',
+    username: `${assetName} Trading Bot`,
     embeds: [embed],
   });
 }

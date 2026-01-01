@@ -6,14 +6,44 @@ This directory stores historical cryptocurrency price data in compressed JSON fo
 
 ```
 data/historical-prices/
-├── {symbol}/          # e.g., ethusdt
-│   └── {timeframe}/   # e.g., 1d, 1h, 4h
-│       ├── {symbol}_{timeframe}_{startDate}_{endDate}.json.gz  # Organized compressed file
-│       └── archive/   # Original individual files (archived after organization)
-│           └── {startDate}_{endDate}.json
+├── {symbol}/          # e.g., ethusdt, btcusdt
+│   ├── 8h/            # 8-hour candles (PRIMARY - used for strategy calculations)
+│   │   └── {symbol}_8h.json.gz                      # Single file (all historical data)
+│   ├── 1h/            # Hourly candles (AUXILIARY - intraday merging only, last 48h)
+│   │   └── {symbol}_1h.json.gz                      # Single file (all historical data)
+│   └── 5m/            # 5-minute candles (AUXILIARY - intraday merging only, last 48h)
+│       └── {symbol}_5m.json.gz                     # Single file (all historical data)
+└── synthetic/         # Synthetic/test data (NOT used for trading)
+    └── {symbol}_{timeframe}_{startDate}_{endDate}.json.gz
 ```
 
-Example: `data/historical-prices/ethusdt/1d/ethusdt_1d_2025-01-01_2025-12-27.json.gz`
+Example: `data/historical-prices/ethusdt/8h/ethusdt_8h.json.gz`
+
+**Note**: Files are named simply `{symbol}_{interval}.json.gz` with no dates. This avoids dates becoming misleading when workflows add new data. Files are updated by merging/updating candles.
+
+## Timeframe Usage
+
+### Primary: 8h (8-hour candles) ⭐
+- **Used for**: Strategy calculations, regime detection, backtesting, chart display
+- **Default timeframe** for both ETH and BTC trading strategies
+- **Keep all historical data** - this is what the strategy actually uses
+- Updated by cron workflow every 5 minutes (via `fetchLatestPrice`)
+
+### Auxiliary: 5m (5-minute candles)
+- **Used for**: Intraday data merging in the last 48 hours only
+- **NOT used for strategy calculations** (only for recent data granularity)
+- **Automatically updated** by cron workflow every 5 minutes
+- **Only need last 48 hours** - older data can be removed to reduce size
+
+### Fallback: 1h (Hourly candles)
+- **Used for**: Fallback if 5m candles unavailable (rarely needed)
+- **NOT used for strategy calculations** (only for intraday data merging fallback)
+- Cron workflow handles 5m every 5 minutes, so 1h is rarely needed
+- **Only need last 48 hours** - older data can be removed
+
+### Removed: 1d (Daily candles) ❌
+- **Status**: Removed - not used for strategy calculations
+- Strategy uses 8h directly, so 1d data was unnecessary
 
 ## File Format
 
@@ -42,12 +72,15 @@ The `fetchPriceCandles()` function in `src/lib/eth-price-service.ts` automatical
 4. Fetches from API if needed
 5. Saves fetched data to both local files and Redis
 
+**Note**: The trading strategy uses **8h candles** by default (configured in `src/lib/asset-config.ts`). Paper trading sessions load all available 8h candles from historical files for strategy calculations.
+
 ## Organization & Compression
 
 Run the organization script to merge, deduplicate, sort, and compress all data:
 
 ```bash
-pnpm eth:organize-data ETHUSDT 1d
+pnpm eth:organize-data ETHUSDT 8h  # For 8h candles (primary)
+pnpm eth:organize-data ETHUSDT 1d  # For 1d candles (secondary)
 ```
 
 This will:
@@ -56,6 +89,8 @@ This will:
 - Sort chronologically
 - Compress to `.json.gz` (typically 80%+ compression)
 - Archive original files to `archive/` directory
+
+**Recommended**: Focus on organizing 8h candles first (this is what the strategy uses).
 
 ## Benefits
 
@@ -74,7 +109,7 @@ The price service automatically handles compressed files. To manually load:
 
 ```typescript
 import { loadCompressed } from '@/scripts/organize-historical-data';
-const candles = await loadCompressed('data/historical-prices/ethusdt/1d/ethusdt_1d_2025-01-01_2025-12-27.json.gz');
+const candles = await loadCompressed('data/historical-prices/ethusdt/8h/ethusdt_8h.json.gz');
 ```
 
 Or use Node.js directly:
