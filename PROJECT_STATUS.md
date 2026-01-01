@@ -343,18 +343,6 @@
   - Validation happens after all gap-filling steps complete
   - **Result**: Clean validation output with no false warnings
 
-**New Files**:
-- `src/lib/historical-file-utils.ts` - Centralized file operations and gap filling
-  - `fixOHLCRelationships()` - Fixes invalid OHLC relationships
-  - `fillGapsInCandles()` - Fills gaps with API fetching and interpolation
-  - `loadCandlesFromFile()` - Loads candles with automatic OHLC fixing
-  - `saveCandlesToFile()` - Saves candles with compression
-
-**Updated Files**:
-- `src/lib/eth-price-service.ts` - Applies OHLC fixing when loading candles, auto-saves fixed data
-- `scripts/backfill-test.ts` - Multiple gap-filling stages, OHLC fixing before validation
-- `src/lib/backfill-validation.ts` - Improved gap warning messages for synthetic data
-
 **Impact**:
 - ✅ **0 OHLC warnings** - All invalid OHLC relationships automatically fixed
 - ✅ **0 gap warnings** - All gaps automatically filled (via API or interpolation)
@@ -387,14 +375,6 @@
   - Default config saved to history for easy restoration
   - Expected improvement: 57.59% vs 22.80% average return (+34.79%, 2.5x better)
 
-**New Files**:
-- `scripts/switch-strategy-config.ts` - Strategy config switching and history management
-
-**Updated Files**:
-- `src/lib/kv.ts` - Added strategy history functions (asset-agnostic)
-- `src/app/api/trading/paper/start/route.ts` - Updated to use asset-specific configs
-- `package.json` - Added `eth:switch-config` script
-
 ### ML Strategy Optimizer & Backfill Test Improvements (January 2026)
 **Status**: ✅ Completed
 
@@ -425,14 +405,6 @@
   - Prevents timezone-related year calculation errors (e.g., 2026 showing as 2025)
   - Fixed in `backfill-test.ts` and `ml-strategy-optimizer.ts`
 
-**New Files**:
-- `scripts/ml-strategy-optimizer.ts` - ML-based strategy optimizer (fully implemented)
-- `scripts/compare-optimized-config.ts` - Compare optimized vs default config
-
-**Updated Files**:
-- `scripts/backfill-test.ts` - Improved logging, config name display, fixed timezone issues
-- `scripts/ml-strategy-optimizer.ts` - Added config name logging, multi-core support, baseline testing
-- `ML_INTEGRATION_GUIDE.md` - Updated with implementation details and results
 
 ### Phase 9: Testing & Notifications (December 31, 2025)
 **Status**: ✅ Completed
@@ -447,13 +419,6 @@
   - Divergence reduces regime confidence during warning periods, providing early risk signals
 - ✅ **BTC Correlation Analysis** - Rolling correlation between ETH and BTC for market context
 
-**New Files**:
-- `tests/integration/paper-trading.test.ts` - Paper trading integration tests
-- `src/lib/notifications.ts` - Discord webhook notification service
-- `src/lib/divergence-detector.ts` - RSI/MACD divergence detection
-- `src/lib/btc-price-service.ts` - BTC price data fetching
-- `src/lib/correlation-analysis.ts` - ETH-BTC rolling correlation
-- `scripts/generate-divergence-test-data.ts` - Synthetic data generator for divergence testing
 
 ### UI Dashboard Consolidation (December 31, 2025)
 **Status**: ✅ Completed

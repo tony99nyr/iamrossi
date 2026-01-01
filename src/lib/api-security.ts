@@ -79,11 +79,17 @@ export function withTimeout<T>(
 
 /**
  * Rate limiting middleware for API routes
+ * Disabled in development mode for easier local testing
  */
 export async function applyRateLimit(
   request: NextRequest,
   prefix: string = 'trading_api'
 ): Promise<{ allowed: boolean; response?: NextResponse }> {
+  // Disable rate limiting in development mode
+  if (process.env.NODE_ENV === 'development' || process.env.DISABLE_RATE_LIMIT === 'true') {
+    return { allowed: true };
+  }
+  
   const identifier = getClientIdentifier(request);
   const rateLimit = await checkRateLimit(identifier, prefix);
   

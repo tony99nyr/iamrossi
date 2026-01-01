@@ -89,10 +89,10 @@ function findLatestOptimizedConfig(asset: TradingAsset): string | null {
 /**
  * Get default config (from backfill-test.ts)
  */
-function getDefaultConfig(): EnhancedAdaptiveStrategyConfig {
+function getDefaultConfig(asset: TradingAsset = 'eth'): EnhancedAdaptiveStrategyConfig {
   // Import the default config from backfill-test
   // We'll need to duplicate it here or import it
-  const assetConfig = getAssetConfig('eth');
+  const assetConfig = getAssetConfig(asset);
   return {
     bullishStrategy: {
       name: 'Bullish-Hybrid',
@@ -300,9 +300,34 @@ function generateReport(results: ComparisonResult[]): string {
 
 async function main() {
   const args = process.argv.slice(2);
-  const configPath = args[0];
-  const asset = (args[1] as TradingAsset) || 'eth';
-  const periodArg = args[2];
+  
+  // Smart argument parsing: if first arg is 'eth' or 'btc', treat it as asset
+  // Otherwise, treat it as config path
+  let configPath: string | undefined;
+  let asset: TradingAsset = 'eth';
+  let periodArg: string | undefined;
+  
+  if (args[0] === 'eth' || args[0] === 'btc') {
+    // First arg is asset
+    asset = args[0] as TradingAsset;
+    periodArg = args[1];
+  } else if (args[0] && (args[0].endsWith('.json') || args[0].includes('/'))) {
+    // First arg looks like a file path
+    configPath = args[0];
+    asset = (args[1] as TradingAsset) || 'eth';
+    periodArg = args[2];
+  } else if (args[0]) {
+    // First arg might be asset or config path - check if it's a valid asset
+    if (args[0] === 'eth' || args[0] === 'btc') {
+      asset = args[0] as TradingAsset;
+      periodArg = args[1];
+    } else {
+      // Assume it's a config path
+      configPath = args[0];
+      asset = (args[1] as TradingAsset) || 'eth';
+      periodArg = args[2];
+    }
+  }
   
   // Find optimized config
   let optimizedConfigPath: string;
@@ -320,17 +345,22 @@ async function main() {
   
   console.log(`📁 Loading optimized config: ${optimizedConfigPath}`);
   const optimizedConfig = loadOptimizedConfig(optimizedConfigPath);
-  const defaultConfig = getDefaultConfig();
+  const defaultConfig = getDefaultConfig(asset);
   
-  // Get test periods
+  // Get test periods (filtered by asset availability)
   let periods: Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }>;
   if (periodArg) {
     const years = periodArg.split(',').map(y => parseInt(y.trim(), 10));
-    periods = getTestPeriodsForYears(years);
+    periods = getTestPeriodsForYears(years, asset);
     console.log(`📅 Filtering to periods in years: ${years.join(', ')}`);
   } else {
-    periods = getAllTestPeriods();
-    console.log(`📅 Using ALL test periods for comprehensive comparison`);
+    periods = getTestPeriodsForYears(undefined, asset);
+    const skippedCount = getAllTestPeriods().length - periods.length;
+    if (skippedCount > 0) {
+      console.log(`📅 Using ${periods.length} test periods (skipped ${skippedCount} periods without data for ${asset.toUpperCase()})`);
+    } else {
+      console.log(`📅 Using ALL test periods for comprehensive comparison`);
+    }
   }
   
   if (periods.length === 0) {

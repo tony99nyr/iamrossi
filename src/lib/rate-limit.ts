@@ -16,20 +16,27 @@ export function getClientIdentifier(request: NextRequest): string {
 /**
  * Checks rate limit for a given identifier using Redis
  * Returns whether the request is allowed and remaining attempts
+ * 
+ * NOTE: This only tracks failed attempts. Successful requests don't increment the counter.
+ * Use recordFailedAttempt() to increment on failures.
  */
 export async function checkRateLimit(
     identifier: string,
     prefix: string = 'rate_limit'
 ): Promise<{ allowed: boolean; remainingAttempts: number; lockedUntil?: number }> {
+    // Disable rate limiting in development mode
+    if (process.env.NODE_ENV === 'development' || process.env.DISABLE_RATE_LIMIT === 'true') {
+        return { allowed: true, remainingAttempts: MAX_ATTEMPTS };
+    }
+    
     await ensureConnected();
     
     const key = `${prefix}:${identifier}`;
     const attemptsStr = await redis.get(key);
     
     if (!attemptsStr) {
-        // First attempt - initialize counter with TTL
-        await redis.setEx(key, COOLDOWN_SECONDS, '1');
-        return { allowed: true, remainingAttempts: MAX_ATTEMPTS - 1 };
+        // No previous attempts - allow request
+        return { allowed: true, remainingAttempts: MAX_ATTEMPTS };
     }
     
     const attempts = parseInt(attemptsStr, 10);
@@ -45,9 +52,8 @@ export async function checkRateLimit(
         };
     }
     
-    // Increment attempts
-    await redis.incr(key);
-    const remainingAttempts = Math.max(0, MAX_ATTEMPTS - attempts - 1);
+    // Still have attempts remaining
+    const remainingAttempts = Math.max(0, MAX_ATTEMPTS - attempts);
     
     return {
         allowed: true,

@@ -153,7 +153,7 @@ export function loadSyntheticData(year: number, asset: TradingAsset = 'eth', tim
     if (fs.existsSync(testPath)) {
       filepath = testPath;
       if (testPath.includes('divergence')) {
-        console.log(`📊 Using divergence data: ${path.basename(testPath)}`);
+        // Removed verbose divergence data log
       }
       break;
     }
@@ -177,7 +177,7 @@ export function loadSyntheticData(year: number, asset: TradingAsset = 'eth', tim
     );
     if (divergenceFile) {
       filepath = path.join(syntheticDir, divergenceFile);
-      console.log(`📊 Using divergence data: ${divergenceFile}`);
+      // Removed verbose divergence data log
     } else if (regularFile) {
       filepath = path.join(syntheticDir, regularFile);
     }
@@ -334,15 +334,37 @@ async function runBacktestInternal(
     
     if (startYear === endYear && startYear === 2025) {
       // Single year 2025 - use existing logic
-      const historyStartDate = new Date(startDate);
-      historyStartDate.setDate(historyStartDate.getDate() - 200); // Get 200 days before for indicators
-      const historyStart = historyStartDate.toISOString().split('T')[0];
+      // BTC doesn't have 2025 historical data (only ETH does)
+      if (asset === 'btc') {
+        console.warn(`⚠️ No candles in requested range (${startDate} to ${endDate})`);
+        // Return empty array - will be caught by availability check
+        candles = [];
+      } else {
+        const historyStartDate = new Date(startDate + 'T00:00:00.000Z');
+        historyStartDate.setUTCDate(historyStartDate.getUTCDate() - 200); // Get 200 days before for indicators
+        const historyStart = historyStartDate.toISOString().split('T')[0];
+        
+        // Use available historical data (starts at 2025-01-01)
+        const minHistoryDate = '2025-01-01';
+        const actualHistoryStart = historyStart < minHistoryDate ? minHistoryDate : historyStart;
+        
+        candles = await fetchPriceCandles(symbol, effectiveTimeframe, actualHistoryStart, endDate, undefined, true, true); // skipAPIFetch=true, allowSyntheticData=true for backfill tests
+        
+        // Filter to requested date range (use UTC to match checkDataAvailability)
+        const startTime = new Date(startDate + 'T00:00:00.000Z').getTime();
+        const endTime = new Date(endDate + 'T23:59:59.999Z').getTime();
+        candles = candles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
+        
+        // Fill gaps after filtering (in case filtering created gaps)
+        const { fillGapsInCandles: fillGapsAfterFilter } = await import('../src/lib/historical-file-utils');
+        const beforeFill = candles.length;
+        candles = await fillGapsAfterFilter(candles, effectiveTimeframe, symbol, true); // isHistoricalData=true for 2025
+        const afterFill = candles.length;
+        if (afterFill > beforeFill) {
+          console.log(`🔧 Filled ${afterFill - beforeFill} missing candles after filtering`);
+        }
+      }
       
-      // Use available historical data (starts at 2025-01-01)
-      const minHistoryDate = '2025-01-01';
-      const actualHistoryStart = historyStart < minHistoryDate ? minHistoryDate : historyStart;
-      
-      candles = await fetchPriceCandles(symbol, effectiveTimeframe, actualHistoryStart, endDate, undefined, true, true); // skipAPIFetch=true, allowSyntheticData=true for backfill tests
       // Removed verbose candle loading log - not useful for debugging
     } else {
       // Multi-year: combine historical 2025 with synthetic 2026/2027
@@ -387,9 +409,9 @@ async function runBacktestInternal(
         console.log(`🔧 Filled ${afterFill - beforeFill} missing candles to eliminate gaps`);
       }
       
-      // Filter to requested date range
-      const startTime = new Date(startDate).getTime();
-      const endTime = new Date(endDate).getTime();
+      // Filter to requested date range (use UTC to match checkDataAvailability)
+      const startTime = new Date(startDate + 'T00:00:00.000Z').getTime();
+      const endTime = new Date(endDate + 'T23:59:59.999Z').getTime();
       candles = candles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
       
       // Fill gaps again after filtering (in case filtering removed some candles and created new gaps)
@@ -476,16 +498,50 @@ async function runBacktestInternal(
       }
       
       // OPTIMIZATION: Align candles by timestamp using Map for O(1) lookups
+      // Use tolerance window for alignment (within timeframe interval) to handle slight timestamp differences
       const alignedCandles: { eth: PriceCandle[]; btc: PriceCandle[] } = { eth: [], btc: [] };
       const candleMap = new Map<number, PriceCandle>();
       candles.forEach(c => candleMap.set(c.timestamp, c));
+      
+      // Calculate tolerance window (half the timeframe interval)
+      const intervalMs = effectiveTimeframe === '5m' ? 5 * 60 * 1000 :
+                         effectiveTimeframe === '1h' ? 60 * 60 * 1000 :
+                         effectiveTimeframe === '4h' ? 4 * 60 * 60 * 1000 :
+                         effectiveTimeframe === '8h' ? 8 * 60 * 60 * 1000 :
+                         effectiveTimeframe === '12h' ? 12 * 60 * 60 * 1000 :
+                         effectiveTimeframe === '1d' ? 24 * 60 * 60 * 1000 :
+                         8 * 60 * 60 * 1000; // Default to 8h
+      const tolerance = intervalMs / 2; // Allow alignment within half the interval
       
       // OPTIMIZATION: Create reverse map for faster timestamp-to-index lookup
       const timestampToIndexMap = new Map<number, number>();
       candles.forEach((c, idx) => timestampToIndexMap.set(c.timestamp, idx));
       
-      for (const otherCandle of otherCandles) {
-        const matchingCandle = candleMap.get(otherCandle.timestamp);
+      // Sort other candles by timestamp for efficient matching
+      const sortedOtherCandles = [...otherCandles].sort((a, b) => a.timestamp - b.timestamp);
+      
+      for (const otherCandle of sortedOtherCandles) {
+        // Try exact match first
+        let matchingCandle = candleMap.get(otherCandle.timestamp);
+        
+        // If no exact match, try to find closest candle within tolerance
+        if (!matchingCandle) {
+          let closestCandle: PriceCandle | null = null;
+          let closestDiff = Infinity;
+          
+          for (const [timestamp, candle] of candleMap.entries()) {
+            const diff = Math.abs(timestamp - otherCandle.timestamp);
+            if (diff <= tolerance && diff < closestDiff) {
+              closestDiff = diff;
+              closestCandle = candle;
+            }
+          }
+          
+          if (closestCandle) {
+            matchingCandle = closestCandle;
+          }
+        }
+        
         if (matchingCandle) {
           if (asset === 'eth') {
             alignedCandles.eth.push(matchingCandle);
@@ -525,9 +581,14 @@ async function runBacktestInternal(
             }
           }
         }
-        console.log(`📊 Calculated correlation context for ${correlationContextMap.size} candles`);
+        // Removed verbose correlation context log (calculated once per backtest, not per candle)
       } else {
-        console.warn(`⚠️  Not enough aligned candles for correlation (${alignedCandles.eth.length})`);
+        // Provide more helpful warning message
+        const mainAssetCount = asset === 'eth' ? alignedCandles.eth.length : alignedCandles.btc.length;
+        const otherAssetCount = asset === 'eth' ? alignedCandles.btc.length : alignedCandles.eth.length;
+        console.warn(`⚠️  Not enough aligned candles for correlation (${mainAssetCount} ${asset.toUpperCase()} + ${otherAssetCount} ${otherAsset.toUpperCase()} aligned, need 30+ each)`);
+        console.warn(`   This may occur when using divergence data for one asset but not the other, or when timestamps don't align.`);
+        console.warn(`   Correlation will be skipped for this backtest.`);
       }
     } catch (error) {
       console.warn(`⚠️  Could not calculate correlation: ${error}`);

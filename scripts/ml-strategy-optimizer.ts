@@ -127,17 +127,30 @@ export function getAllTestPeriods(): Array<{ startDate: string; endDate: string;
 }
 
 /**
- * Get test periods filtered by year(s)
+ * Get test periods filtered by year(s) and asset availability
  */
-export function getTestPeriodsForYears(years?: number[]): Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }> {
+export function getTestPeriodsForYears(years?: number[], asset: TradingAsset = 'eth'): Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }> {
   const allPeriods = getAllTestPeriods();
   
+  // Filter out periods that don't have data for the asset
+  // BTC doesn't have 2025 historical data (only ETH does)
+  let filteredPeriods = allPeriods.filter(period => {
+    if (asset === 'btc') {
+      // BTC doesn't have 2025 historical data - skip non-synthetic 2025 periods
+      const periodStartYear = parseInt(period.startDate.split('-')[0]!, 10);
+      if (periodStartYear === 2025 && !period.isSynthetic) {
+        return false; // Skip 2025 historical periods for BTC
+      }
+    }
+    return true;
+  });
+  
   if (!years || years.length === 0) {
-    return allPeriods;
+    return filteredPeriods;
   }
   
   // Filter periods that overlap with requested years
-  return allPeriods.filter(period => {
+  return filteredPeriods.filter(period => {
     // Parse year directly from date string to avoid timezone issues
     // Date strings like '2026-01-01' are parsed as UTC, which can cause getFullYear() to return wrong year in some timezones
     const periodStartYear = parseInt(period.startDate.split('-')[0]!, 10);
@@ -803,12 +816,17 @@ async function main() {
   
   if (periodArg) {
     const years = periodArg.split(',').map(y => parseInt(y.trim(), 10));
-    periods = getTestPeriodsForYears(years);
+    periods = getTestPeriodsForYears(years, asset);
     console.log(`📅 Filtering to periods in years: ${years.join(', ')}`);
   } else {
-    // Use ALL periods by default for maximum robustness
-    periods = getAllTestPeriods();
-    console.log(`📅 Using ALL test periods for maximum robustness across market conditions`);
+    // Use ALL periods by default for maximum robustness (filtered by asset availability)
+    periods = getTestPeriodsForYears(undefined, asset);
+    const skippedCount = getAllTestPeriods().length - periods.length;
+    if (skippedCount > 0) {
+      console.log(`📅 Using ${periods.length} test periods (skipped ${skippedCount} periods without data for ${asset.toUpperCase()})`);
+    } else {
+      console.log(`📅 Using ALL test periods for maximum robustness across market conditions`);
+    }
   }
   
   if (periods.length === 0) {
