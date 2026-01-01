@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStatSessions, setSelectedLiveSession, getSelectedLiveSession } from '@/lib/kv';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 export async function GET() {
   try {
@@ -13,7 +13,7 @@ export async function GET() {
       liveSessions 
     });
   } catch (error) {
-    logger.apiError('GET', '/api/stats/selected-live', error);
+    logError('API Error', error, { method: 'GET', path: '/api/stats/selected-live' });
     return NextResponse.json({ error: 'Failed to fetch selected session' }, { status: 500 });
   }
 }
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 });
     }
   } catch (error) {
-    logger.apiError('POST', '/api/stats/selected-live', error);
+    logError('API Error', error, { method: 'POST', path: '/api/stats/selected-live' });
     return NextResponse.json({ error: 'Failed to set selected session' }, { status: 500 });
   }
 }

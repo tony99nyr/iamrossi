@@ -19,10 +19,12 @@ import { fetchPriceCandles } from '../src/lib/eth-price-service';
 import { generateEnhancedAdaptiveSignal, clearRegimeHistory } from '../src/lib/adaptive-strategy-enhanced';
 import { calculateConfidence } from '../src/lib/confidence-calculator';
 import { calculateMACD, calculateRSI, getLatestIndicatorValue } from '../src/lib/indicators';
-import { executeTrade as executeTradeUnified } from '../src/lib/trade-executor';
+import { executeTrade } from '../src/lib/trade-executor';
+import type { TradeExecutionOptions } from '../src/lib/trade-executor';
 import type { PriceCandle, Trade, PortfolioSnapshot, Portfolio } from '../src/types';
 import type { EnhancedAdaptiveStrategyConfig } from '../src/lib/adaptive-strategy-enhanced';
 import type { OpenPosition } from '../src/lib/atr-stop-loss';
+import type { StopLossConfig } from '../src/lib/atr-stop-loss';
 
 // Load environment variables
 const envPath = path.resolve(process.cwd(), '.env.local');
@@ -158,128 +160,7 @@ function getRegimePersistenceDetails(
   };
 }
 
-/**
- * Execute trade (same logic as PaperTradingService.updateSession)
- */
-function executeTrade(
-  signal: ReturnType<typeof generateEnhancedAdaptiveSignal>,
-  confidence: number,
-  currentPrice: number,
-  portfolio: Portfolio,
-  trades: Trade[]
-): Trade | null {
-  // Execute buy signal
-  if (signal.action === 'buy' && portfolio.usdcBalance > 0 && signal.signal > 0) {
-    const activeStrategy = signal.activeStrategy;
-    const maxPositionPct = activeStrategy.maxPositionPct || 0.75;
-    const positionSizeMultiplier = signal.positionSizeMultiplier || 1.0;
-    const adjustedPositionPct = Math.min(maxPositionPct * positionSizeMultiplier, 0.95);
-    
-    const positionSize = portfolio.usdcBalance * confidence * adjustedPositionPct;
-    const ethAmount = positionSize / currentPrice;
-
-    if (ethAmount > 0 && positionSize <= portfolio.usdcBalance) {
-      const costBasis = positionSize;
-      
-      portfolio.usdcBalance -= positionSize;
-      portfolio.ethBalance += ethAmount;
-
-      const trade: Trade = {
-        id: uuidv4(),
-        timestamp: Date.now(),
-        type: 'buy',
-        ethPrice: currentPrice,
-        ethAmount,
-        usdcAmount: positionSize,
-        signal: signal.signal,
-        confidence,
-        portfolioValue: portfolio.usdcBalance + portfolio.ethBalance * currentPrice,
-        costBasis,
-      };
-
-      trades.push(trade);
-      portfolio.tradeCount++;
-      return trade;
-    }
-  }
-
-  // Execute sell signal
-  if (signal.action === 'sell' && portfolio.ethBalance > 0 && signal.signal < 0) {
-    const activeStrategy = signal.activeStrategy;
-    const maxPositionPct = activeStrategy.maxPositionPct || 0.5;
-    const positionSize = portfolio.ethBalance * confidence * maxPositionPct;
-    const usdcAmount = positionSize * currentPrice;
-
-    if (positionSize > 0 && positionSize <= portfolio.ethBalance) {
-      // Calculate P&L: find matching buy trades using FIFO
-      let remainingToSell = positionSize;
-      let totalCostBasis = 0;
-      
-      // Find buy trades that haven't been fully sold yet (FIFO)
-      for (const buyTrade of trades.filter(t => t.type === 'buy' && !t.fullySold)) {
-        if (remainingToSell <= 0) break;
-        
-        const buyAmount = buyTrade.ethAmount;
-        const sellAmount = Math.min(remainingToSell, buyAmount);
-        const costBasisRatio = sellAmount / buyAmount;
-        const costBasis = (buyTrade.costBasis || buyTrade.usdcAmount) * costBasisRatio;
-        
-        totalCostBasis += costBasis;
-        remainingToSell -= sellAmount;
-        
-        // Mark buy trade as fully or partially sold
-        if (sellAmount >= buyAmount) {
-          buyTrade.fullySold = true;
-        } else {
-          buyTrade.ethAmount -= sellAmount;
-          buyTrade.costBasis = (buyTrade.costBasis || buyTrade.usdcAmount) - costBasis;
-          buyTrade.usdcAmount = buyTrade.costBasis;
-        }
-      }
-      
-      // If we couldn't match to a buy (shouldn't happen in normal operation), use average cost
-      if (totalCostBasis === 0 && trades.filter(t => t.type === 'buy').length > 0) {
-        const buyTrades = trades.filter(t => t.type === 'buy' && !t.fullySold);
-        const totalCost = buyTrades.reduce((sum, t) => sum + (t.costBasis || t.usdcAmount), 0);
-        const totalAmount = buyTrades.reduce((sum, t) => sum + t.ethAmount, 0);
-        const avgCost = totalAmount > 0 ? totalCost / totalAmount : 0;
-        totalCostBasis = positionSize * avgCost;
-      }
-      
-      const pnl = usdcAmount - totalCostBasis;
-      const isWin = pnl > 0;
-      
-      portfolio.ethBalance -= positionSize;
-      portfolio.usdcBalance += usdcAmount;
-
-      const trade: Trade = {
-        id: uuidv4(),
-        timestamp: Date.now(),
-        type: 'sell',
-        ethPrice: currentPrice,
-        ethAmount: positionSize,
-        usdcAmount,
-        signal: signal.signal,
-        confidence,
-        portfolioValue: portfolio.usdcBalance + portfolio.ethBalance * currentPrice,
-        costBasis: totalCostBasis,
-        pnl,
-      };
-
-      trades.push(trade);
-      portfolio.tradeCount++;
-
-      // Update win count based on actual trade P&L
-      if (isWin) {
-        portfolio.winCount++;
-      }
-      
-      return trade;
-    }
-  }
-
-  return null;
-}
+// Use unified executeTrade from trade-executor.ts (no duplicate logic)
 
 /**
  * Generate markdown report
@@ -524,10 +405,21 @@ async function main() {
     };
     
     const trades: Trade[] = [];
+    const openPositions: OpenPosition[] = [];
+    const portfolioHistory: PortfolioSnapshot[] = [];
     const periods: PeriodAnalysis[] = [];
     
     // Track regime history manually (same as paper trading uses sessionId)
     const regimeHistory: Array<'bullish' | 'bearish' | 'neutral'> = [];
+    
+    // Get stop loss config from session config
+    const stopLossConfig: StopLossConfig = config.stopLoss || {
+      enabled: true,
+      atrMultiplier: 2.0,
+      trailing: true,
+      useEMA: true,
+      atrPeriod: 14,
+    };
     
     // STEP 1: Process historical periods BEFORE session start to build regime history
     // This simulates what happens when the session starts - it has historical context
@@ -587,10 +479,34 @@ async function main() {
         regimeHistory
       );
       
-      // Execute trade
-      const trade = executeTrade(signal, confidence, currentPrice, portfolio, trades);
+      // Build portfolio history snapshot for trade execution
+      const portfolioSnapshot: PortfolioSnapshot = {
+        timestamp: candle.timestamp,
+        usdcBalance: portfolio.usdcBalance,
+        ethBalance: portfolio.ethBalance,
+        totalValue: portfolio.usdcBalance + portfolio.ethBalance * currentPrice,
+        ethPrice: currentPrice,
+      };
+      portfolioHistory.push(portfolioSnapshot);
       
-      // Update portfolio value
+      // Execute trade using unified executor
+      const executionOptions: TradeExecutionOptions = {
+        candles,
+        candleIndex: i,
+        portfolioHistory,
+        config,
+        trades,
+        openPositions,
+        useKellyCriterion: config.kellyCriterion?.enabled ?? true,
+        useStopLoss: stopLossConfig.enabled,
+        kellyFractionalMultiplier: config.kellyCriterion?.fractionalMultiplier ?? 0.25,
+        stopLossConfig,
+        generateAudit: false, // Backfill verification doesn't need audit data
+      };
+      
+      const trade = executeTrade(signal, confidence, currentPrice, portfolio, executionOptions);
+      
+      // Update portfolio value (executeTrade already updates it, but ensure consistency)
       portfolio.totalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
       portfolio.totalReturn = ((portfolio.totalValue - portfolio.initialCapital) / portfolio.initialCapital) * 100;
       

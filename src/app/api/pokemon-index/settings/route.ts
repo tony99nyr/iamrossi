@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/auth';
 import { getPokemonIndexSettings, setPokemonIndexSettings } from '@/lib/kv';
 import { pokemonIndexSettingsSchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 export async function GET() {
   try {
@@ -16,7 +16,7 @@ export async function GET() {
     }
     return NextResponse.json(settings);
   } catch (error) {
-    logger.apiError('GET', '/api/pokemon-index/settings', error);
+    logError('API Error', error, { method: 'GET', path: '/api/pokemon-index/settings' });
     return NextResponse.json({ error: 'Failed to read Pokemon index settings' }, { status: 500 });
   }
 }
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     await setPokemonIndexSettings(validation.data);
     return NextResponse.json(validation.data);
   } catch (error) {
-    logger.apiError('POST', '/api/pokemon-index/settings', error);
+    logError('API Error', error, { method: 'POST', path: '/api/pokemon-index/settings' });
     return NextResponse.json({ error: 'Failed to save Pokemon index settings' }, { status: 500 });
   }
 }

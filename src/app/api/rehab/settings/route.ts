@@ -3,7 +3,7 @@ import { verifyAuthToken } from '@/lib/auth';
 import { createClient } from 'redis';
 import type { RehabSettings } from '@/types';
 import { rehabSettingsSchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 import { revalidatePath } from 'next/cache';
 
@@ -22,7 +22,7 @@ async function ensureConnected(): Promise<void> {
     }
     isConnected = true;
   } catch (error) {
-    logger.redisError('connect', SETTINGS_KEY, error);
+    logError('Redis connection error', error, { operation: 'connect', key: SETTINGS_KEY });
     throw error;
   }
 }
@@ -48,7 +48,7 @@ export async function GET() {
     
     return NextResponse.json(JSON.parse(data));
   } catch (error) {
-    logger.apiError('GET', '/api/rehab/settings', error);
+    logError('API Error', error, { method: 'GET', path: '/api/rehab/settings' });
     return NextResponse.json({ error: 'Failed to read settings' }, { status: 500 });
   }
 }
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(validation.data);
   } catch (error) {
-    logger.apiError('POST', '/api/rehab/settings', error);
+    logError('API Error', error, { method: 'POST', path: '/api/rehab/settings' });
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
   }
 }

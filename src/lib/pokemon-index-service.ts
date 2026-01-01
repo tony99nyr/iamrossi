@@ -1,6 +1,6 @@
 import { chromium } from 'playwright-core';
 import chromiumPkg from '@sparticuz/chromium-min';
-import { debugLog } from '@/lib/logger';
+import { logDebug } from '@/lib/logger';
 import type {
   PokemonCardConfig,
   PokemonCardPriceSnapshot,
@@ -62,7 +62,7 @@ export async function scrapePriceChartingForCard(
   // e.g. "pokemon-base-set-charizard-4" and we hit /game/{id}.
   const url = `https://www.pricecharting.com/game/${encodeURIComponent(card.id)}`;
 
-  debugLog(`[Pokemon] Scraping PriceCharting for card ${card.name} (${card.id}) -> ${url}`);
+  logDebug(`[Pokemon] Scraping PriceCharting for card ${card.name} (${card.id}) -> ${url}`);
 
   const MAX_RETRIES = 3;
   let lastError: Error | null = null;
@@ -85,13 +85,13 @@ export async function scrapePriceChartingForCard(
           if (isResourceError) {
             // Longer backoff for resource errors to allow system to recover
             backoffMs = Math.pow(2, attempt - 2) * 5000; // 5s, 10s, 20s
-            debugLog(`[Pokemon] Resource error detected - using longer backoff: ${backoffMs}ms`);
+            logDebug(`[Pokemon] Resource error detected - using longer backoff: ${backoffMs}ms`);
           } else {
             // Normal backoff for other errors
             backoffMs = Math.pow(2, attempt - 2) * 2000; // 2s, 4s, 8s
           }
           
-          debugLog(`[Pokemon] Retry attempt ${attempt}/${MAX_RETRIES} for card ${card.id} after ${backoffMs}ms backoff`);
+          logDebug(`[Pokemon] Retry attempt ${attempt}/${MAX_RETRIES} for card ${card.id} after ${backoffMs}ms backoff`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
         }
 
@@ -101,7 +101,7 @@ export async function scrapePriceChartingForCard(
           lastError.message.includes('ERR_INSUFFICIENT_RESOURCES') ||
           lastError.message.includes('insufficient resources')
         )) {
-          debugLog(`[Pokemon] Waiting additional 2s before browser launch to allow resource recovery`);
+          logDebug(`[Pokemon] Waiting additional 2s before browser launch to allow resource recovery`);
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
@@ -174,7 +174,7 @@ export async function scrapePriceChartingForCard(
           if (errorMsg.includes('Target page, context or browser has been closed') || 
               errorMsg.includes('browser has been closed') ||
               errorMsg.includes('Target closed')) {
-            debugLog(`[Pokemon] Browser closed during navigation for card ${card.id}, will retry`);
+            logDebug(`[Pokemon] Browser closed during navigation for card ${card.id}, will retry`);
             throw new Error(`Browser closed during navigation: ${errorMsg}`);
           }
           throw gotoError;
@@ -191,7 +191,7 @@ export async function scrapePriceChartingForCard(
           const retryAfter = response.headers()['retry-after'];
           if (retryAfter) {
             const waitTime = parseInt(retryAfter, 10) * 1000;
-            debugLog(`[Pokemon] Rate limited (429) for card ${card.id}, Retry-After: ${retryAfter}s`);
+            logDebug(`[Pokemon] Rate limited (429) for card ${card.id}, Retry-After: ${retryAfter}s`);
             if (attempt < MAX_RETRIES) {
               try {
                 await page.waitForTimeout(waitTime);
@@ -211,7 +211,7 @@ export async function scrapePriceChartingForCard(
         
         if (rateLimited && attempt < MAX_RETRIES) {
           const waitTime = Math.pow(2, attempt) * 5000; // 10s, 20s, 40s for rate limits
-          debugLog(`[Pokemon] Rate limited for card ${card.id}, waiting ${waitTime}ms before retry`);
+          logDebug(`[Pokemon] Rate limited for card ${card.id}, waiting ${waitTime}ms before retry`);
           try {
             await page.waitForTimeout(waitTime);
           } catch {
@@ -247,7 +247,7 @@ export async function scrapePriceChartingForCard(
             throw new Error(`Browser closed during selector wait: ${errorMsg}`);
           }
           // Continue even if selector doesn't appear - might be a different page structure
-          debugLog(`[Pokemon] Price table selector not found for card ${card.id}, continuing with extraction`);
+          logDebug(`[Pokemon] Price table selector not found for card ${card.id}, continuing with extraction`);
         }
         
         // Wait for VGPC object to be available (it's set by inline script)
@@ -271,7 +271,7 @@ export async function scrapePriceChartingForCard(
             throw new Error(`Browser closed during VGPC wait: ${errorMsg}`);
           }
           // VGPC might not be available, continue with DOM-based extraction
-          debugLog(`[Pokemon] VGPC object not found for card ${card.id}, using DOM-based extraction`);
+          logDebug(`[Pokemon] VGPC object not found for card ${card.id}, using DOM-based extraction`);
         }
         
         // Check again before evaluate
@@ -435,12 +435,12 @@ export async function scrapePriceChartingForCard(
             }
           } catch (closeError) {
             // Browser might already be closed, ignore
-            debugLog(`[Pokemon] Browser already closed during success cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+            logDebug(`[Pokemon] Browser already closed during success cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
           }
           browser = null;
         }
 
-        debugLog(`[Pokemon] Successfully scraped prices for card ${card.id} (attempt ${attempt}/${MAX_RETRIES})`, { 
+        logDebug(`[Pokemon] Successfully scraped prices for card ${card.id} (attempt ${attempt}/${MAX_RETRIES})`, { 
           card: card.id, 
           ungraded, 
           psa10, 
@@ -469,7 +469,7 @@ export async function scrapePriceChartingForCard(
             }
           } catch (closeError) {
             // Browser might already be closed, ignore
-            debugLog(`[Pokemon] Browser already closed during cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+            logDebug(`[Pokemon] Browser already closed during cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
           }
           browser = null;
         }
@@ -478,7 +478,7 @@ export async function scrapePriceChartingForCard(
         const errorMsg = lastError.message;
         const isRetryable = isRetryableError(lastError);
         
-        debugLog(`[Pokemon] Scraping attempt ${attempt}/${MAX_RETRIES} failed for card ${card.id}: ${errorMsg}`, {
+        logDebug(`[Pokemon] Scraping attempt ${attempt}/${MAX_RETRIES} failed for card ${card.id}: ${errorMsg}`, {
           isRetryable,
           rateLimited,
         });
@@ -500,7 +500,7 @@ export async function scrapePriceChartingForCard(
           }
         } catch (closeError) {
           // Browser might already be closed, ignore
-          debugLog(`[Pokemon] Browser already closed during outer cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+          logDebug(`[Pokemon] Browser already closed during outer cleanup: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
         }
       }
       
@@ -515,7 +515,7 @@ export async function scrapePriceChartingForCard(
       
       // Final attempt failed or non-retryable error
       console.error(`[Pokemon] Error scraping PriceCharting card ${card.id} (${card.name}) after ${attempt} attempts:`, errorMsg);
-      debugLog(`[Pokemon] Scraping error details (final attempt): ${errorMsg}`, {
+      logDebug(`[Pokemon] Scraping error details (final attempt): ${errorMsg}`, {
         isRetryable,
         attempt,
         maxRetries: MAX_RETRIES,
@@ -542,7 +542,7 @@ export async function scrapeHistoricalPricesForCard(
 ): Promise<PokemonCardPriceSnapshot[]> {
   const url = `https://www.pricecharting.com/game/${encodeURIComponent(card.id)}`;
 
-  debugLog(`[Pokemon] Scraping historical prices for card ${card.name} (${card.id}) -> ${url}`);
+  logDebug(`[Pokemon] Scraping historical prices for card ${card.name} (${card.id}) -> ${url}`);
 
   const browser = await chromium.launch({
     args: chromiumPkg.args,
@@ -565,7 +565,7 @@ export async function scrapeHistoricalPricesForCard(
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
-        debugLog(`[Pokemon] Page load timeout for card ${card.id}`);
+        logDebug(`[Pokemon] Page load timeout for card ${card.id}`);
         throw new Error(`Page load timeout: ${errorMsg}`);
       }
       throw error;
@@ -582,10 +582,10 @@ export async function scrapeHistoricalPricesForCard(
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
-        debugLog(`[Pokemon] VGPC object timeout for card ${card.id}`);
+        logDebug(`[Pokemon] VGPC object timeout for card ${card.id}`);
         throw new Error(`VGPC object timeout: ${errorMsg}`);
       }
-      debugLog('[Pokemon] VGPC object not found, cannot extract historical data');
+      logDebug('[Pokemon] VGPC object not found, cannot extract historical data');
       // If it's not a timeout, it might just not be available (some cards have no data)
       // Return empty array in this case
       return [];
@@ -804,14 +804,14 @@ export async function scrapeHistoricalPricesForCard(
     });
 
     // Debug: Log what data we're getting
-    debugLog(`[Pokemon] Raw data points - used: ${historicalData.used?.length || 0}, manual-only: ${historicalData['manual-only']?.length || 0}`);
+    logDebug(`[Pokemon] Raw data points - used: ${historicalData.used?.length || 0}, manual-only: ${historicalData['manual-only']?.length || 0}`);
     if (historicalData.dailySales) {
-      debugLog(`[Pokemon] Found ${historicalData.dailySales.length} daily sales from price history tables!`);
+      logDebug(`[Pokemon] Found ${historicalData.dailySales.length} daily sales from price history tables!`);
     }
     
     // Log debug info about available data structures
     if (historicalData.debug) {
-      debugLog(`[Pokemon] VGPC debug info:`, historicalData.debug);
+      logDebug(`[Pokemon] VGPC debug info:`, historicalData.debug);
     }
     
     if (historicalData.used && historicalData.used.length > 0) {
@@ -820,16 +820,16 @@ export async function scrapeHistoricalPricesForCard(
       if (Array.isArray(firstEntry) && Array.isArray(lastEntry)) {
         const firstDate = new Date(firstEntry[0]);
         const lastDate = new Date(lastEntry[0]);
-        debugLog(`[Pokemon] Date range in raw data: ${firstDate.toISOString().slice(0, 10)} to ${lastDate.toISOString().slice(0, 10)}`);
-        debugLog(`[Pokemon] Sample entries: first=${JSON.stringify(firstEntry)}, last=${JSON.stringify(lastEntry)}`);
+        logDebug(`[Pokemon] Date range in raw data: ${firstDate.toISOString().slice(0, 10)} to ${lastDate.toISOString().slice(0, 10)}`);
+        logDebug(`[Pokemon] Sample entries: first=${JSON.stringify(firstEntry)}, last=${JSON.stringify(lastEntry)}`);
         
         // Check date granularity - are these daily or monthly?
         const dates = historicalData.used.slice(0, 10).map((e: [number, number]) => new Date(e[0]).toISOString().slice(0, 10));
         const uniqueDays = new Set(dates);
         const firstOfMonthCount = dates.filter((d: string) => d.endsWith('-01')).length;
-        debugLog(`[Pokemon] Sample date granularity: ${dates.length} entries, ${uniqueDays.size} unique days, ${firstOfMonthCount} first-of-month dates`);
+        logDebug(`[Pokemon] Sample date granularity: ${dates.length} entries, ${uniqueDays.size} unique days, ${firstOfMonthCount} first-of-month dates`);
         if (firstOfMonthCount === dates.length) {
-          debugLog(`[Pokemon] ⚠️  All sample dates are first-of-month - PriceCharting only provides monthly snapshots, not daily data`);
+          logDebug(`[Pokemon] ⚠️  All sample dates are first-of-month - PriceCharting only provides monthly snapshots, not daily data`);
         }
         
         // Check if prices appear to be in dollars or cents
@@ -837,14 +837,14 @@ export async function scrapeHistoricalPricesForCard(
         const lastPrice = lastEntry[1];
         const hasDecimals = (firstPrice % 1 !== 0) || (lastPrice % 1 !== 0);
         const isLargeNumber = firstPrice > 100 || lastPrice > 100;
-        debugLog(`[Pokemon] Price analysis: hasDecimals=${hasDecimals}, isLargeNumber=${isLargeNumber}, firstPrice=${firstPrice}, lastPrice=${lastPrice}`);
+        logDebug(`[Pokemon] Price analysis: hasDecimals=${hasDecimals}, isLargeNumber=${isLargeNumber}, firstPrice=${firstPrice}, lastPrice=${lastPrice}`);
         
         // If prices have decimals and are > 100, they're likely already in dollars
         // If prices are large integers (e.g., 55001), they're likely in cents
         if (hasDecimals && isLargeNumber) {
-          debugLog(`[Pokemon] WARNING: Prices appear to be in DOLLARS (not cents) - will not divide by 100`);
+          logDebug(`[Pokemon] WARNING: Prices appear to be in DOLLARS (not cents) - will not divide by 100`);
         } else if (!hasDecimals && isLargeNumber) {
-          debugLog(`[Pokemon] Prices appear to be in CENTS (large integers) - will divide by 100`);
+          logDebug(`[Pokemon] Prices appear to be in CENTS (large integers) - will divide by 100`);
         }
       }
     }
@@ -898,7 +898,7 @@ export async function scrapeHistoricalPricesForCard(
         
         // Debug: Log first few prices to verify conversion
         if (historicalData.used.indexOf(entry) < 3) {
-          debugLog(`[Pokemon] Raw price (cents): ${rawPrice}, Converted (dollars): ${price}, Date: ${dateStr}`);
+          logDebug(`[Pokemon] Raw price (cents): ${rawPrice}, Converted (dollars): ${price}, Date: ${dateStr}`);
         }
 
         // Get or create snapshot for this date
@@ -967,7 +967,7 @@ export async function scrapeHistoricalPricesForCard(
         
         // Debug: Log first few prices to verify conversion
         if (historicalData['manual-only'].indexOf(entry) < 3) {
-          debugLog(`[Pokemon] PSA10 Raw price (cents): ${rawPrice}, Converted (dollars): ${price}, Date: ${dateStr}, Month: ${monthStr}`);
+          logDebug(`[Pokemon] PSA10 Raw price (cents): ${rawPrice}, Converted (dollars): ${price}, Date: ${dateStr}, Month: ${monthStr}`);
         }
 
         // Also set for the first of the month (for backward compatibility)
@@ -989,13 +989,13 @@ export async function scrapeHistoricalPricesForCard(
     // After processing daily sales, fill in PSA 10 prices for all days in months where we have monthly data
     // This helps when PSA 10 daily sales are sparse
     if (monthlyPsa10Prices.size > 0) {
-      debugLog(`[Pokemon] Found ${monthlyPsa10Prices.size} months with PSA 10 monthly data - will use to fill gaps`);
+      logDebug(`[Pokemon] Found ${monthlyPsa10Prices.size} months with PSA 10 monthly data - will use to fill gaps`);
     }
 
     // Process daily sales data from price history tables (if available)
     // This gives us REAL daily data instead of just monthly snapshots
     if (historicalData.dailySales && historicalData.dailySales.length > 0) {
-      debugLog(`[Pokemon] Processing ${historicalData.dailySales.length} daily sales records...`);
+      logDebug(`[Pokemon] Processing ${historicalData.dailySales.length} daily sales records...`);
       
       // Debug: Count conditions to see what we're detecting
       const conditionCounts = { psa10: 0, graded: 0, ungraded: 0, unknown: 0 };
@@ -1003,7 +1003,7 @@ export async function scrapeHistoricalPricesForCard(
         conditionCounts[sale.condition as keyof typeof conditionCounts] = 
           (conditionCounts[sale.condition as keyof typeof conditionCounts] || 0) + 1;
       }
-      debugLog(`[Pokemon] Condition breakdown: PSA 10: ${conditionCounts.psa10}, Graded: ${conditionCounts.graded}, Ungraded: ${conditionCounts.ungraded}, Unknown: ${conditionCounts.unknown}`);
+      logDebug(`[Pokemon] Condition breakdown: PSA 10: ${conditionCounts.psa10}, Graded: ${conditionCounts.graded}, Ungraded: ${conditionCounts.ungraded}, Unknown: ${conditionCounts.unknown}`);
       
       // Group sales by date and condition, then calculate average prices per day
       const salesByDate = new Map<string, { ungraded: number[]; psa10: number[] }>();
@@ -1066,19 +1066,19 @@ export async function scrapeHistoricalPricesForCard(
         }
       }
       
-      debugLog(`[Pokemon] ✅ Daily sales processing complete:`);
-      debugLog(`[Pokemon]    - ${salesByDate.size} unique days with sales data`);
-      debugLog(`[Pokemon]    - ${dailySnapshotsCreated} new daily snapshots created`);
-      debugLog(`[Pokemon]    - ${dailySnapshotsUpdated} existing snapshots updated with daily data`);
-      debugLog(`[Pokemon]    - ${ungradedDays} days with ungraded prices`);
-      debugLog(`[Pokemon]    - ${psa10Days} days with PSA 10 prices`);
+      logDebug(`[Pokemon] ✅ Daily sales processing complete:`);
+      logDebug(`[Pokemon]    - ${salesByDate.size} unique days with sales data`);
+      logDebug(`[Pokemon]    - ${dailySnapshotsCreated} new daily snapshots created`);
+      logDebug(`[Pokemon]    - ${dailySnapshotsUpdated} existing snapshots updated with daily data`);
+      logDebug(`[Pokemon]    - ${ungradedDays} days with ungraded prices`);
+      logDebug(`[Pokemon]    - ${psa10Days} days with PSA 10 prices`);
       
       // Show date range of daily data
       if (salesByDate.size > 0) {
         const sortedDates = Array.from(salesByDate.keys()).sort();
         const firstDate = sortedDates[0]!;
         const lastDate = sortedDates[sortedDates.length - 1]!;
-        debugLog(`[Pokemon]    - Date range: ${firstDate} to ${lastDate}`);
+        logDebug(`[Pokemon]    - Date range: ${firstDate} to ${lastDate}`);
       }
     }
     
@@ -1105,8 +1105,8 @@ export async function scrapeHistoricalPricesForCard(
       }
       
       if (filledDays > 0) {
-        debugLog(`[Pokemon] Filled ${filledDays} days with PSA 10 monthly prices (to reduce skew from sparse daily data)`);
-        debugLog(`[Pokemon]    - This helps balance the index when PSA 10 sales are rare`);
+        logDebug(`[Pokemon] Filled ${filledDays} days with PSA 10 monthly prices (to reduce skew from sparse daily data)`);
+        logDebug(`[Pokemon]    - This helps balance the index when PSA 10 sales are rare`);
       }
     }
 
@@ -1122,18 +1122,18 @@ export async function scrapeHistoricalPricesForCard(
       const uniqueMonths = new Set(dates.map(d => d.slice(0, 7))); // YYYY-MM
       const uniqueDays = new Set(dates);
       
-      debugLog(`[Pokemon] Extracted ${snapshots.length} historical snapshots for card ${card.id}`);
-      debugLog(`[Pokemon] Date range: ${firstDate} to ${lastDate}`);
-      debugLog(`[Pokemon] Unique months: ${uniqueMonths.size}, Unique days: ${uniqueDays.size}`);
-      debugLog(`[Pokemon] Sample dates: ${dates.slice(0, 5).join(', ')}...${dates.slice(-5).join(', ')}`);
+      logDebug(`[Pokemon] Extracted ${snapshots.length} historical snapshots for card ${card.id}`);
+      logDebug(`[Pokemon] Date range: ${firstDate} to ${lastDate}`);
+      logDebug(`[Pokemon] Unique months: ${uniqueMonths.size}, Unique days: ${uniqueDays.size}`);
+      logDebug(`[Pokemon] Sample dates: ${dates.slice(0, 5).join(', ')}...${dates.slice(-5).join(', ')}`);
       
       // Check if we're only getting first-of-month data
       const firstOfMonthCount = dates.filter(d => d.endsWith('-01')).length;
       if (firstOfMonthCount === dates.length) {
-        debugLog(`[Pokemon] WARNING: All dates are first-of-month - PriceCharting's chart_data only provides monthly snapshots`);
-        debugLog(`[Pokemon] To get daily data, you may need to use alternative data sources or scrape price history tables if available`);
+        logDebug(`[Pokemon] WARNING: All dates are first-of-month - PriceCharting's chart_data only provides monthly snapshots`);
+        logDebug(`[Pokemon] To get daily data, you may need to use alternative data sources or scrape price history tables if available`);
       } else if (firstOfMonthCount > dates.length * 0.5) {
-        debugLog(`[Pokemon] NOTE: ${firstOfMonthCount}/${dates.length} dates are first-of-month - PriceCharting may primarily provide monthly snapshots`);
+        logDebug(`[Pokemon] NOTE: ${firstOfMonthCount}/${dates.length} dates are first-of-month - PriceCharting may primarily provide monthly snapshots`);
       }
     }
 
@@ -1163,16 +1163,16 @@ export async function refreshTodaySnapshots(
   const startTime = options?.startTime ?? Date.now();
   const maxDuration = options?.maxDuration ?? Infinity; // Default: no timeout
   
-  debugLog(`[Pokemon] refreshTodaySnapshots: Starting for ${settings.cards.length} cards, today=${today}`);
-  debugLog(`[Pokemon] refreshTodaySnapshots: Existing snapshots: ${existing.length}`);
+  logDebug(`[Pokemon] refreshTodaySnapshots: Starting for ${settings.cards.length} cards, today=${today}`);
+  logDebug(`[Pokemon] refreshTodaySnapshots: Existing snapshots: ${existing.length}`);
   if (maxDuration !== Infinity) {
-    debugLog(`[Pokemon] refreshTodaySnapshots: Max duration: ${maxDuration}ms (${Math.round(maxDuration / 1000)}s)`);
+    logDebug(`[Pokemon] refreshTodaySnapshots: Max duration: ${maxDuration}ms (${Math.round(maxDuration / 1000)}s)`);
   }
   
   // Safety check: Warn if we have very few snapshots, but don't block daily updates
   // This is just a warning - we still want to add today's data even if the dataset is small
   if (existing.length > 0 && existing.length < 20) {
-    debugLog(`[Pokemon] Warning: Only ${existing.length} snapshots found. This might indicate data loss, but proceeding with today's update.`);
+    logDebug(`[Pokemon] Warning: Only ${existing.length} snapshots found. This might indicate data loss, but proceeding with today's update.`);
   }
   
   // Filter out test/placeholder snapshots that don't match configured cards BEFORE building the map
@@ -1182,7 +1182,7 @@ export async function refreshTodaySnapshots(
     configuredCardIds.has(snap.cardId) || snap.date !== today
   );
   
-  debugLog(`[Pokemon] refreshTodaySnapshots: Filtered ${existing.length} snapshots to ${validSnapshots.length} valid snapshots`);
+  logDebug(`[Pokemon] refreshTodaySnapshots: Filtered ${existing.length} snapshots to ${validSnapshots.length} valid snapshots`);
   
   const byCardAndDate = new Map<string, PokemonCardPriceSnapshot>();
   for (const snap of validSnapshots) {
@@ -1220,7 +1220,7 @@ export async function refreshTodaySnapshots(
   const saveIncremental = async (): Promise<void> => {
     try {
       await setPokemonCardPriceSnapshots(updated);
-      debugLog(`[Pokemon] Incrementally saved ${updated.length} snapshots`);
+      logDebug(`[Pokemon] Incrementally saved ${updated.length} snapshots`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`[Pokemon] Failed to incrementally save snapshots:`, errorMsg);
@@ -1235,8 +1235,8 @@ export async function refreshTodaySnapshots(
       const remaining = getRemainingTime();
       if (!shouldContinue()) {
         const elapsed = Date.now() - startTime;
-        debugLog(`[Pokemon] ⏰ Timeout approaching: ${Math.round(elapsed / 1000)}s elapsed, ${Math.round(remaining / 1000)}s remaining`);
-        debugLog(`[Pokemon] Stopping early to save partial results. Processed ${i}/${settings.cards.length} cards`);
+        logDebug(`[Pokemon] ⏰ Timeout approaching: ${Math.round(elapsed / 1000)}s elapsed, ${Math.round(remaining / 1000)}s remaining`);
+        logDebug(`[Pokemon] Stopping early to save partial results. Processed ${i}/${settings.cards.length} cards`);
         skippedDueToTimeout = settings.cards.length - i;
         
         // Save what we have so far
@@ -1257,24 +1257,24 @@ export async function refreshTodaySnapshots(
         if (remaining < 60000) {
           // Less than 1 minute remaining - use minimal delay (0.5-1s)
           delayMs = 500 + Math.random() * 500;
-          debugLog(`[Pokemon] ⚡ Time running out - using reduced delay: ${Math.round(delayMs)}ms`);
+          logDebug(`[Pokemon] ⚡ Time running out - using reduced delay: ${Math.round(delayMs)}ms`);
         } else if (remaining < 120000) {
           // Less than 2 minutes remaining - use shorter delay (1-2s)
           delayMs = 1000 + Math.random() * 1000;
-          debugLog(`[Pokemon] ⚡ Time limited - using shorter delay: ${Math.round(delayMs)}ms`);
+          logDebug(`[Pokemon] ⚡ Time limited - using shorter delay: ${Math.round(delayMs)}ms`);
         } else {
           // Normal delay between 2-5 seconds
           delayMs = 2000 + Math.random() * 3000;
         }
         
-        debugLog(`[Pokemon] Waiting ${Math.round(delayMs)}ms before scraping next card (${i + 1}/${settings.cards.length}), ${Math.round(remaining / 1000)}s remaining`);
+        logDebug(`[Pokemon] Waiting ${Math.round(delayMs)}ms before scraping next card (${i + 1}/${settings.cards.length}), ${Math.round(remaining / 1000)}s remaining`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
         
         // Check again after delay
         if (!shouldContinue()) {
           const elapsed = Date.now() - startTime;
-          debugLog(`[Pokemon] ⏰ Timeout after delay: ${Math.round(elapsed / 1000)}s elapsed`);
-          debugLog(`[Pokemon] Stopping early to save partial results. Processed ${i}/${settings.cards.length} cards`);
+          logDebug(`[Pokemon] ⏰ Timeout after delay: ${Math.round(elapsed / 1000)}s elapsed`);
+          logDebug(`[Pokemon] Stopping early to save partial results. Processed ${i}/${settings.cards.length} cards`);
           skippedDueToTimeout = settings.cards.length - i;
           
           // Save what we have so far
@@ -1305,11 +1305,11 @@ export async function refreshTodaySnapshots(
         }
         
         if (hasRequiredPrice && !shouldRetryForBetterData) {
-          debugLog(`[Pokemon] Card ${card.id} (${card.name}) already has today's (${today}) data with required price, skipping`);
+          logDebug(`[Pokemon] Card ${card.id} (${card.name}) already has today's (${today}) data with required price, skipping`);
           continue; // Already have today's data with the required price for this card
         } else if (hasRequiredPrice && shouldRetryForBetterData) {
           // We have partial data but want both prices - retry to get the missing one
-          debugLog(`[Pokemon] Card ${card.id} (${card.name}) has partial data (ungraded=${existingSnapshot.ungradedPrice !== undefined}, psa10=${existingSnapshot.psa10Price !== undefined}), will retry for complete data`);
+          logDebug(`[Pokemon] Card ${card.id} (${card.name}) has partial data (ungraded=${existingSnapshot.ungradedPrice !== undefined}, psa10=${existingSnapshot.psa10Price !== undefined}), will retry for complete data`);
           // Remove the incomplete snapshot so we can replace it
           const index = updated.findIndex(s => s.cardId === card.id && s.date === today);
           if (index !== -1) {
@@ -1318,7 +1318,7 @@ export async function refreshTodaySnapshots(
           byCardAndDate.delete(key);
         } else {
           // Snapshot exists but doesn't have the required price - need to scrape
-          debugLog(`[Pokemon] Card ${card.id} (${card.name}) has snapshot but missing required price (conditionType: ${card.conditionType}), will scrape`);
+          logDebug(`[Pokemon] Card ${card.id} (${card.name}) has snapshot but missing required price (conditionType: ${card.conditionType}), will scrape`);
           // Remove the incomplete snapshot so we can replace it
           const index = updated.findIndex(s => s.cardId === card.id && s.date === today);
           if (index !== -1) {
@@ -1329,20 +1329,20 @@ export async function refreshTodaySnapshots(
       }
 
       const remainingBeforeScrape = getRemainingTime();
-      debugLog(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name}) [${i + 1}/${settings.cards.length}], ${Math.round(remainingBeforeScrape / 1000)}s remaining`);
+      logDebug(`[Pokemon] Scraping today's (${today}) price for card ${card.id} (${card.name}) [${i + 1}/${settings.cards.length}], ${Math.round(remainingBeforeScrape / 1000)}s remaining`);
       try {
         scrapedCount++;
         const scraped = await scrapePriceChartingForCard(card);
         
         // Check if we got any prices
         if (!scraped.ungradedPrice && !scraped.psa10Price) {
-          debugLog(`[Pokemon] Warning: No prices scraped for card ${card.id} (${card.name}) - both ungraded and psa10 are undefined`);
+          logDebug(`[Pokemon] Warning: No prices scraped for card ${card.id} (${card.name}) - both ungraded and psa10 are undefined`);
           errorCount++;
           failedCards.push({ cardId: card.id, cardName: card.name, error: 'No prices found on page' });
           // Don't add a snapshot with undefined prices - this ensures we'll retry on the next run
           // Instead, log the failure and continue to the next card
           // This is better than creating a snapshot that might prevent retries
-          debugLog(`[Pokemon] Not creating snapshot for ${card.id} - will retry on next run`);
+          logDebug(`[Pokemon] Not creating snapshot for ${card.id} - will retry on next run`);
           continue;
         }
         
@@ -1357,23 +1357,23 @@ export async function refreshTodaySnapshots(
         successfulCards.push(card.id);
         
         const elapsed = Date.now() - startTime;
-        debugLog(`[Pokemon] ✅ Successfully scraped ${card.id}: ungraded=$${scraped.ungradedPrice || 'N/A'}, psa10=$${scraped.psa10Price || 'N/A'} (${Math.round(elapsed / 1000)}s elapsed)`);
+        logDebug(`[Pokemon] ✅ Successfully scraped ${card.id}: ungraded=$${scraped.ungradedPrice || 'N/A'}, psa10=$${scraped.psa10Price || 'N/A'} (${Math.round(elapsed / 1000)}s elapsed)`);
         
         // Save incrementally after each successful scrape
         await saveIncremental();
-        debugLog(`[Pokemon] Incrementally saved snapshot for ${card.id}`);
+        logDebug(`[Pokemon] Incrementally saved snapshot for ${card.id}`);
       } catch (error) {
         errorCount++;
         const errorMsg = error instanceof Error ? error.message : String(error);
         const elapsed = Date.now() - startTime;
         console.error(`[Pokemon] Failed to scrape card ${card.id} (${card.name}):`, errorMsg);
-        debugLog(`[Pokemon] ❌ Error details (${Math.round(elapsed / 1000)}s elapsed): ${errorMsg}`);
+        logDebug(`[Pokemon] ❌ Error details (${Math.round(elapsed / 1000)}s elapsed): ${errorMsg}`);
         failedCards.push({ cardId: card.id, cardName: card.name, error: errorMsg });
         
         // Check if this is a retryable error - if so, don't create a snapshot so we can retry
         const isRetryable = isRetryableError(error);
         if (isRetryable) {
-          debugLog(`[Pokemon] Error is retryable (${errorMsg}), not creating snapshot - will retry on next run`);
+          logDebug(`[Pokemon] Error is retryable (${errorMsg}), not creating snapshot - will retry on next run`);
           // Don't add a snapshot - this ensures we'll retry on the next run
           continue;
         }
@@ -1381,7 +1381,7 @@ export async function refreshTodaySnapshots(
         // For non-retryable errors (e.g., card not found, page structure changed), 
         // we still don't want to create a snapshot with undefined prices as it might prevent future retries
         // Instead, log the error and continue
-        debugLog(`[Pokemon] Non-retryable error for ${card.id}, not creating snapshot - manual intervention may be needed`);
+        logDebug(`[Pokemon] Non-retryable error for ${card.id}, not creating snapshot - manual intervention may be needed`);
         // Continue with other cards even if one fails
       }
     }
@@ -1389,16 +1389,16 @@ export async function refreshTodaySnapshots(
     // Unexpected error in the loop itself (shouldn't happen, but handle it gracefully)
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error(`[Pokemon] Unexpected error in refreshTodaySnapshots loop:`, errorMsg);
-    debugLog(`[Pokemon] Loop error: ${errorMsg}, but will attempt to save partial results`);
+    logDebug(`[Pokemon] Loop error: ${errorMsg}, but will attempt to save partial results`);
     // Continue to save logic below - we want to save whatever we've scraped so far
   }
 
   const totalElapsed = Date.now() - startTime;
   const remaining = getRemainingTime();
   
-  debugLog(`[Pokemon] refreshTodaySnapshots: Scraped ${scrapedCount} cards, errors: ${errorCount}, addedToday: ${addedToday}`);
+  logDebug(`[Pokemon] refreshTodaySnapshots: Scraped ${scrapedCount} cards, errors: ${errorCount}, addedToday: ${addedToday}`);
   if (maxDuration !== Infinity) {
-    debugLog(`[Pokemon] Time tracking: ${Math.round(totalElapsed / 1000)}s elapsed, ${Math.round(remaining / 1000)}s remaining`);
+    logDebug(`[Pokemon] Time tracking: ${Math.round(totalElapsed / 1000)}s elapsed, ${Math.round(remaining / 1000)}s remaining`);
   }
   
   // Calculate how many new/updated snapshots we have
@@ -1408,7 +1408,7 @@ export async function refreshTodaySnapshots(
   ).length;
   const cardsWithoutData = settings.cards.length - cardsWithData;
   
-  debugLog(`[Pokemon] refreshTodaySnapshots summary:`, {
+  logDebug(`[Pokemon] refreshTodaySnapshots summary:`, {
     scraped: scrapedCount,
     errors: errorCount,
     skippedDueToTimeout,
@@ -1436,17 +1436,17 @@ export async function refreshTodaySnapshots(
   if (skippedDueToTimeout > 0) {
     console.warn(`[Pokemon] ⏰ Timeout: ${skippedDueToTimeout} cards were skipped due to timeout and will be retried on the next run`);
     const skippedCardIds = settings.cards.slice(settings.cards.length - skippedDueToTimeout).map(c => c.id);
-    debugLog(`[Pokemon] Skipped card IDs due to timeout: ${skippedCardIds.join(', ')}`);
+    logDebug(`[Pokemon] Skipped card IDs due to timeout: ${skippedCardIds.join(', ')}`);
   }
   
   // Only save if we have new snapshots with actual price data
   // Note: We may have already saved incrementally, but we'll save again to ensure consistency
   // Don't save if we only have failures (no snapshots created)
   if (addedToday && cardsWithData > 0) {
-    debugLog(`[Pokemon] Final save: ${updated.length} total snapshots (${newCount} new/updated for today, ${cardsWithData} with data, ${cardsWithoutData} failed)`);
+    logDebug(`[Pokemon] Final save: ${updated.length} total snapshots (${newCount} new/updated for today, ${cardsWithData} with data, ${cardsWithoutData} failed)`);
     try {
       await setPokemonCardPriceSnapshots(updated);
-      debugLog(`[Pokemon] Successfully saved today's (${today}) price data for ${cardsWithData} cards`);
+      logDebug(`[Pokemon] Successfully saved today's (${today}) price data for ${cardsWithData} cards`);
       
       if (cardsWithoutData > 0 || skippedDueToTimeout > 0) {
         const totalMissing = cardsWithoutData + skippedDueToTimeout;
@@ -1464,9 +1464,9 @@ export async function refreshTodaySnapshots(
     // All cards failed - log warning but don't save (no point saving empty data)
     console.warn(`[Pokemon] ⚠️  All ${settings.cards.length} cards failed to get price data today. This may indicate a systemic issue (rate limiting, site changes, etc.)`);
     console.warn(`[Pokemon] Failed cards: ${failedCards.map(f => `${f.cardName} (${f.error})`).join(', ')}`);
-    debugLog(`[Pokemon] Not saving - no successful scrapes to save`);
+    logDebug(`[Pokemon] Not saving - no successful scrapes to save`);
   } else {
-    debugLog(`[Pokemon] All cards already have today's (${today}) price data, skipping save`);
+    logDebug(`[Pokemon] All cards already have today's (${today}) price data, skipping save`);
   }
   
   return updated;
@@ -1752,7 +1752,7 @@ export async function ensurePokemonIndexUpToDate(
   const today = todayIsoDate();
   const snapshots = await getPokemonCardPriceSnapshots();
   
-  debugLog(`[Pokemon] ensurePokemonIndexUpToDate: Checking ${snapshots.length} existing snapshots for today (${today})`);
+  logDebug(`[Pokemon] ensurePokemonIndexUpToDate: Checking ${snapshots.length} existing snapshots for today (${today})`);
   
   // Filter out test/placeholder snapshots that don't match configured cards
   const configuredCardIds = new Set(settings.cards.map(c => c.id));
@@ -1760,7 +1760,7 @@ export async function ensurePokemonIndexUpToDate(
     configuredCardIds.has(snap.cardId) || snap.date !== today
   );
   
-  debugLog(`[Pokemon] ensurePokemonIndexUpToDate: Filtered ${snapshots.length} snapshots to ${validSnapshots.length} valid snapshots`);
+  logDebug(`[Pokemon] ensurePokemonIndexUpToDate: Filtered ${snapshots.length} snapshots to ${validSnapshots.length} valid snapshots`);
   
   // Check if all configured cards have snapshots for today
   // If any card is missing today's snapshot, we need to refresh
@@ -1785,13 +1785,13 @@ export async function ensurePokemonIndexUpToDate(
 
   let updatedSnapshots = validSnapshots;
   if (missingCards.length > 0) {
-    debugLog(`[Pokemon] ensurePokemonIndexUpToDate: ${missingCards.length} cards missing today's data, refreshing`);
+    logDebug(`[Pokemon] ensurePokemonIndexUpToDate: ${missingCards.length} cards missing today's data, refreshing`);
     // Refresh snapshots - this will only scrape cards that don't have today's data
     // Pass through time tracking options
     updatedSnapshots = await refreshTodaySnapshots(settings, options);
-    debugLog(`[Pokemon] ensurePokemonIndexUpToDate: refreshTodaySnapshots returned ${updatedSnapshots.length} snapshots`);
+    logDebug(`[Pokemon] ensurePokemonIndexUpToDate: refreshTodaySnapshots returned ${updatedSnapshots.length} snapshots`);
   } else {
-    debugLog(`[Pokemon] ensurePokemonIndexUpToDate: All cards have today's data, skipping refresh`);
+    logDebug(`[Pokemon] ensurePokemonIndexUpToDate: All cards have today's data, skipping refresh`);
   }
 
   const series = buildIndexSeriesFromSnapshots(updatedSnapshots, settings);

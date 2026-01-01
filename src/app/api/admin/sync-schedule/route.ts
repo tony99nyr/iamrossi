@@ -4,7 +4,7 @@ import { transformCalendarEvents } from '@/lib/transform-calendar-events';
 import { fetchMHRSchedule, scrapeTeamDetails } from '@/lib/mhr-service';
 import { getSettings, setSchedule, setMHRSchedule, getTeamMap, setTeamMap, isTeamCacheStale, getCalendarSyncStatus, setCalendarSyncStatus } from '@/lib/kv';
 import { verifyAdminAuth } from '@/lib/auth';
-import { debugLog } from '@/lib/logger';
+import { logDebug } from '@/lib/logger';
 
 // Force Node.js runtime (required for Playwright browser automation in mhr-service)
 export const runtime = 'nodejs';
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     // If lastSyncTime is null or very old, and we're marked as revalidating, it's likely stuck
     if (!syncStatus.lastSyncTime || timeSinceLastSync > stuckTimeout) {
       // Reset stuck revalidating flag
-      debugLog('[Calendar Sync] Resetting stuck revalidating flag (no recent sync activity)');
+      logDebug('[Calendar Sync] Resetting stuck revalidating flag (no recent sync activity)');
       await setCalendarSyncStatus({
         ...syncStatus,
         isRevalidating: false,
@@ -67,21 +67,21 @@ export async function POST(request: NextRequest) {
     const mhrYear = settings?.mhrYear || '2025';
 
     // 2. Fetch MHR Schedule (for known opponents)
-    debugLog('Fetching MHR Schedule...');
+    logDebug('Fetching MHR Schedule...');
     const mhrSchedule = await fetchMHRSchedule(mhrTeamId, mhrYear);
-    debugLog(`Fetched ${mhrSchedule.length} games from MHR.`);
+    logDebug(`Fetched ${mhrSchedule.length} games from MHR.`);
     
     // Save MHR Schedule to KV
     await setMHRSchedule(mhrSchedule);
 
     // 2b. Fetch Main Team Stats (with weekly caching)
-    debugLog('Checking Main Team Stats cache...');
+    logDebug('Checking Main Team Stats cache...');
     const teamMap = await getTeamMap();
     const cachedMainTeam = teamMap[mhrTeamId];
     
     let mainTeamStats: { name: string; record: string; rating: string; logo: string };
     if (cachedMainTeam && !isTeamCacheStale(cachedMainTeam) && cachedMainTeam.record && cachedMainTeam.rating) {
-      debugLog('Using cached Main Team Stats (fresh within 7 days)');
+      logDebug('Using cached Main Team Stats (fresh within 7 days)');
       mainTeamStats = {
         name: cachedMainTeam.name || '',
         record: cachedMainTeam.record,
@@ -89,9 +89,9 @@ export async function POST(request: NextRequest) {
         logo: cachedMainTeam.logo || ''
       };
     } else {
-      debugLog('Fetching fresh Main Team Stats (cache stale or missing)...');
+      logDebug('Fetching fresh Main Team Stats (cache stale or missing)...');
       mainTeamStats = await scrapeTeamDetails(mhrTeamId, mhrYear);
-      debugLog('Fetched Main Team Stats:', mainTeamStats);
+      logDebug('Fetched Main Team Stats:', mainTeamStats);
       
       // Update cache with timestamp
       teamMap[mhrTeamId] = {
@@ -99,16 +99,16 @@ export async function POST(request: NextRequest) {
         lastUpdated: Date.now()
       };
       await setTeamMap(teamMap);
-      debugLog('Updated Main Team Stats cache');
+      logDebug('Updated Main Team Stats cache');
     }
 
     // 3. Fetch Calendar Events
-    debugLog('Fetching Calendar Events...');
+    logDebug('Fetching Calendar Events...');
     const calendarEvents = await fetchCalendarEvents();
-    debugLog(`Fetched ${calendarEvents.length} events from Calendar.`);
+    logDebug(`Fetched ${calendarEvents.length} events from Calendar.`);
 
     // 4. Transform and Merge
-    debugLog('Transforming and Merging...');
+    logDebug('Transforming and Merging...');
     const schedule = await transformCalendarEvents(
       calendarEvents, 
       mhrSchedule, 

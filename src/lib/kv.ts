@@ -747,15 +747,103 @@ export async function setPokemonIndexSeries(series: PokemonIndexPoint[]): Promis
 // Re-export type for convenience
 export type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
 
-export async function getAdaptiveStrategyConfig(): Promise<EnhancedAdaptiveStrategyConfig | null> {
+// Strategy history entry
+export interface StrategyHistoryEntry {
+  config: EnhancedAdaptiveStrategyConfig;
+  activeFrom: string; // ISO timestamp when this config became active
+  activeTo?: string; // ISO timestamp when this config was replaced (undefined if current)
+  name?: string; // Optional name/description (e.g., "Default", "ML Optimized 2026-01-01")
+  source?: string; // Optional source (e.g., "ml-optimizer", "manual", "restored")
+}
+
+// Get strategy config key for an asset (import from asset-config)
+import { getStrategyConfigKey, type TradingAsset } from './asset-config';
+
+export async function getAdaptiveStrategyConfig(asset: TradingAsset = 'eth'): Promise<EnhancedAdaptiveStrategyConfig | null> {
   await ensureConnected();
-  const data = await redis.get(KV_KEYS.ETH_ADAPTIVE_STRATEGY_CONFIG);
+  const key = getStrategyConfigKey(asset);
+  const data = await redis.get(key);
   return data ? JSON.parse(data) as EnhancedAdaptiveStrategyConfig : null;
 }
 
-export async function saveAdaptiveStrategyConfig(config: EnhancedAdaptiveStrategyConfig): Promise<void> {
+export async function saveAdaptiveStrategyConfig(
+  config: EnhancedAdaptiveStrategyConfig,
+  asset: TradingAsset = 'eth',
+  options?: { name?: string; source?: string }
+): Promise<void> {
   await ensureConnected();
-  await redis.set(KV_KEYS.ETH_ADAPTIVE_STRATEGY_CONFIG, JSON.stringify(config));
+  const key = getStrategyConfigKey(asset);
+  const historyKey = `${key}:history`;
+  
+  // Get current config to archive it
+  const currentConfig = await getAdaptiveStrategyConfig(asset);
+  const now = new Date().toISOString();
+  
+  // If there's a current config, archive it to history
+  if (currentConfig) {
+    const history = await getStrategyHistory(asset);
+    
+    // Update the previous entry's activeTo timestamp
+    if (history.length > 0) {
+      const lastEntry = history[history.length - 1];
+      if (!lastEntry.activeTo) {
+        lastEntry.activeTo = now;
+      }
+    }
+    
+    // Add current config to history
+    const historyEntry: StrategyHistoryEntry = {
+      config: currentConfig,
+      activeFrom: history.length > 0 && history[history.length - 1]?.activeFrom 
+        ? history[history.length - 1]!.activeFrom 
+        : now, // Use existing activeFrom if available, otherwise use now
+      activeTo: now,
+      name: options?.name || 'Previous Config',
+      source: options?.source || 'system',
+    };
+    
+    history.push(historyEntry);
+    
+    // Keep only last 50 history entries
+    if (history.length > 50) {
+      history.shift();
+    }
+    
+    await redis.set(historyKey, JSON.stringify(history));
+  }
+  
+  // Save new config
+  await redis.set(key, JSON.stringify(config));
+}
+
+export async function getStrategyHistory(asset: TradingAsset = 'eth'): Promise<StrategyHistoryEntry[]> {
+  await ensureConnected();
+  const key = getStrategyConfigKey(asset);
+  const historyKey = `${key}:history`;
+  const data = await redis.get(historyKey);
+  return data ? JSON.parse(data) as StrategyHistoryEntry[] : [];
+}
+
+export async function restoreStrategyFromHistory(
+  entryIndex: number,
+  asset: TradingAsset = 'eth'
+): Promise<EnhancedAdaptiveStrategyConfig> {
+  await ensureConnected();
+  const history = await getStrategyHistory(asset);
+  
+  if (entryIndex < 0 || entryIndex >= history.length) {
+    throw new Error(`Invalid history entry index: ${entryIndex}. Available entries: 0-${history.length - 1}`);
+  }
+  
+  const entry = history[entryIndex]!;
+  
+  // Save the restored config (this will archive the current one)
+  await saveAdaptiveStrategyConfig(entry.config, asset, {
+    name: `Restored: ${entry.name || 'Unknown'}`,
+    source: 'restored',
+  });
+  
+  return entry.config;
 }
 
 // ============================================================================

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/auth';
 import { getExercises, setExercises, Exercise } from '@/lib/kv';
 import { exerciseSchema, exerciseUpdateSchema, exerciseDeleteSchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 import { revalidatePath } from 'next/cache';
 
@@ -11,7 +11,7 @@ export async function GET() {
         const exercises = await getExercises();
         return NextResponse.json(exercises);
     } catch (error) {
-        logger.apiError('GET', '/api/rehab/exercises', error);
+        logError('API Error', error, { method: 'GET', path: '/api/rehab/exercises' });
         return NextResponse.json({ error: 'Failed to read exercises' }, { status: 500 });
     }
 }
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(newExercise, { status: 201 });
     } catch (error) {
-        logger.apiError('POST', '/api/rehab/exercises', error);
+        logError('API Error', error, { method: 'POST', path: '/api/rehab/exercises' });
         return NextResponse.json({ error: 'Failed to create exercise' }, { status: 500 });
     }
 }
@@ -97,7 +97,7 @@ export async function PATCH(request: NextRequest) {
 
         return NextResponse.json(updatedExercise);
     } catch (error) {
-        logger.apiError('PATCH', '/api/rehab/exercises', error);
+        logError('API Error', error, { method: 'PATCH', path: '/api/rehab/exercises' });
         return NextResponse.json({ error: 'Failed to update exercise' }, { status: 500 });
     }
 }
@@ -137,7 +137,7 @@ export async function DELETE(request: NextRequest) {
 
         return NextResponse.json({ success: true, id });
     } catch (error) {
-        logger.apiError('DELETE', '/api/rehab/exercises', error);
+        logError('API Error', error, { method: 'DELETE', path: '/api/rehab/exercises' });
         return NextResponse.json({ error: 'Failed to delete exercise' }, { status: 500 });
     }
 }

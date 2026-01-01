@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/auth';
 import { getPokemonCardPriceSnapshots, setPokemonCardPriceSnapshots, getPokemonIndexSettings } from '@/lib/kv';
 import { ensurePokemonIndexUpToDate } from '@/lib/pokemon-index-service';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       snapshots: limitedSnapshots,
     });
   } catch (error) {
-    logger.apiError('GET', '/api/pokemon-index/snapshots', error);
+    logError('API Error', error, { method: 'GET', path: '/api/pokemon-index/snapshots' });
     return NextResponse.json({ error: 'Failed to fetch Pokemon price snapshots' }, { status: 500 });
   }
 }
@@ -96,7 +96,7 @@ export async function DELETE(request: NextRequest) {
       remainingSnapshots: filteredSnapshots.length,
     });
   } catch (error) {
-    logger.apiError('DELETE', '/api/pokemon-index/snapshots', error);
+    logError('API Error', error, { method: 'DELETE', path: '/api/pokemon-index/snapshots' });
     return NextResponse.json({ error: 'Failed to delete Pokemon price snapshots' }, { status: 500 });
   }
 }

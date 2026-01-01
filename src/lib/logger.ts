@@ -1,90 +1,93 @@
 /**
- * Centralized logging service for the application
- * Provides consistent logging with context and appropriate log levels
+ * Centralized logging utility with levels and sanitization
+ * Replaces console.log/warn/error with structured logging
  */
 
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLevel = 'info' | 'warn' | 'error' | 'debug';
 
 interface LogContext {
   [key: string]: unknown;
 }
 
-class Logger {
-  private isDevelopment = process.env.NODE_ENV === 'development';
-  private isProduction = process.env.NODE_ENV === 'production';
-
-  /**
-   * Debug logs - only shown in development
-   */
-  debug(message: string, context?: LogContext): void {
-    if (this.isDevelopment) {
-      console.debug(`[DEBUG] ${message}`, context || '');
+/**
+ * Sanitize log data to prevent leaking sensitive information
+ */
+function sanitizeLogData(data: unknown): unknown {
+  if (typeof data === 'string') {
+    // Remove potential file paths, API keys, tokens, etc.
+    return data
+      .replace(/\/[^\s]+/g, '[path]') // Remove file paths
+      .replace(/[A-Za-z0-9]{32,}/g, '[token]') // Remove long alphanumeric strings (potential tokens)
+      .replace(/Bearer\s+[^\s]+/gi, 'Bearer [token]') // Remove bearer tokens
+      .replace(/api[_-]?key[=:]\s*[^\s]+/gi, 'api_key=[key]') // Remove API keys
+      .replace(/secret[=:]\s*[^\s]+/gi, 'secret=[secret]'); // Remove secrets
+  }
+  
+  if (typeof data === 'object' && data !== null) {
+    if (Array.isArray(data)) {
+      return data.map(sanitizeLogData);
     }
+    
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      // Skip sensitive keys
+      if (['password', 'secret', 'token', 'apiKey', 'api_key', 'auth', 'authorization'].some(sensitive => 
+        key.toLowerCase().includes(sensitive.toLowerCase())
+      )) {
+        sanitized[key] = '[redacted]';
+      } else {
+        sanitized[key] = sanitizeLogData(value);
+      }
+    }
+    return sanitized;
   }
+  
+  return data;
+}
 
-  /**
-   * Info logs - general application flow
-   */
-  info(message: string, context?: LogContext): void {
-    console.log(`[INFO] ${message}`, context || '');
-  }
+/**
+ * Format log message with context
+ */
+function formatLogMessage(level: LogLevel, message: string, context?: LogContext): string {
+  const timestamp = new Date().toISOString();
+  const contextStr = context ? ` ${JSON.stringify(sanitizeLogData(context))}` : '';
+  return `[${timestamp}] [${level.toUpperCase()}] ${message}${contextStr}`;
+}
 
-  /**
-   * Warning logs - unexpected but recoverable situations
-   */
-  warn(message: string, context?: LogContext): void {
-    console.warn(`[WARN] ${message}`, context || '');
-  }
-
-  /**
-   * Error logs - errors that need attention
-   */
-  error(message: string, error?: Error | unknown, context?: LogContext): void {
-    const errorDetails = error instanceof Error
-      ? { message: error.message, stack: error.stack, ...context }
-      : { error, ...context };
-
-    console.error(`[ERROR] ${message}`, errorDetails);
-  }
-
-  /**
-   * API request logging helper
-   */
-  apiRequest(method: string, path: string, context?: LogContext): void {
-    this.debug(`API ${method} ${path}`, context);
-  }
-
-  /**
-   * API error logging helper
-   */
-  apiError(method: string, path: string, error: Error | unknown, context?: LogContext): void {
-    this.error(`API ${method} ${path} failed`, error, context);
-  }
-
-  /**
-   * Redis operation logging helper
-   */
-  redisOperation(operation: string, key: string, context?: LogContext): void {
-    this.debug(`Redis ${operation}: ${key}`, context);
-  }
-
-  /**
-   * Redis error logging helper
-   */
-  redisError(operation: string, key: string, error: Error | unknown): void {
-    this.error(`Redis ${operation} failed for key: ${key}`, error);
+/**
+ * Log info message
+ */
+export function logInfo(message: string, context?: LogContext): void {
+  if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEBUG_LOGS === 'true') {
+    console.log(formatLogMessage('info', message, context));
   }
 }
 
-// Export singleton instance
-export const logger = new Logger();
+/**
+ * Log warning message
+ */
+export function logWarn(message: string, context?: LogContext): void {
+  console.warn(formatLogMessage('warn', message, context));
+}
 
-// Export legacy debugLog for backwards compatibility
-export const debugLog = (...args: unknown[]) => {
+/**
+ * Log error message
+ */
+export function logError(message: string, error?: unknown, context?: LogContext): void {
+  const errorContext: LogContext = {
+    ...context,
+    error: error instanceof Error 
+      ? { message: error.message, name: error.name }
+      : String(error),
+  };
+  console.error(formatLogMessage('error', message, errorContext));
+}
+
+/**
+ * Log debug message (only in development)
+ */
+export function logDebug(message: string, context?: LogContext): void {
   if (process.env.NODE_ENV !== 'production') {
-    console.log(...args);
+    console.debug(formatLogMessage('debug', message, context));
   }
-};
-
-// Export type for extensions
-export type { LogLevel, LogContext };
+}

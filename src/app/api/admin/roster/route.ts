@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRoster, setRoster, Player } from '@/lib/kv';
 import { verifyAdminAuth } from '@/lib/auth';
 import { rosterSchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 export async function GET() {
   try {
     const roster = await getRoster();
     return NextResponse.json(roster);
   } catch (error) {
-    logger.apiError('GET', '/api/admin/roster', error);
+    logError('API Error', error, { method: 'GET', path: '/api/admin/roster' });
     return NextResponse.json({ error: 'Failed to load roster' }, { status: 500 });
   }
 }
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Roster saved successfully' });
   } catch (error) {
-    logger.apiError('POST', '/api/admin/roster', error);
+    logError('API Error', error, { method: 'POST', path: '/api/admin/roster' });
     return NextResponse.json({ error: 'Failed to save roster' }, { status: 500 });
   }
 }

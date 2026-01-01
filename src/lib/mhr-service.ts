@@ -1,12 +1,12 @@
 import { chromium } from 'playwright-core';
 import chromiumPkg from '@sparticuz/chromium-min';
-import { debugLog } from '@/lib/logger';
+import { logDebug } from '@/lib/logger';
 import { getTeamMap, setTeamMap, isTeamCacheStale, type MHRTeamData } from '@/lib/kv';
 import type { MHRSearchResult, MHRScheduleGame } from '@/types';
 
 // Scrape team details (name, record, rating, logo) from team info page
 export async function scrapeTeamDetails(teamId: string, year: string): Promise<{ name: string; record: string; rating: string; logo: string }> {
-    debugLog(`[MHR] Scraping team details for ID ${teamId}, year ${year}`);
+    logDebug(`[MHR] Scraping team details for ID ${teamId}, year ${year}`);
     
     const browser = await chromium.launch({
         args: chromiumPkg.args,
@@ -79,7 +79,7 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
             return h2?.textContent?.trim() || '';
         });
 
-        debugLog(`[MHR] Scraped data for ${teamId}:`, { name, record, rating, logo });
+        logDebug(`[MHR] Scraped data for ${teamId}:`, { name, record, rating, logo });
         
         return { name, record, rating, logo };
     } catch (error) {
@@ -91,7 +91,7 @@ export async function scrapeTeamDetails(teamId: string, year: string): Promise<{
 }
 
 export async function fetchMHRSchedule(teamId: string, year: string): Promise<MHRScheduleGame[]> {
-    debugLog(`Fetching MHR schedule for Team ID: ${teamId}, Year: ${year}`);
+    logDebug(`Fetching MHR schedule for Team ID: ${teamId}, Year: ${year}`);
     
     const browser = await chromium.launch({
         args: chromiumPkg.args,
@@ -113,7 +113,7 @@ export async function fetchMHRSchedule(teamId: string, year: string): Promise<MH
             route.continue();
         });
 
-        debugLog('Navigating to MHR games page...');
+        logDebug('Navigating to MHR games page...');
         await page.goto(`https://myhockeyrankings.com/team-info/${teamId}/${year}/games`, {
             waitUntil: 'domcontentloaded',
             timeout: 30000
@@ -127,7 +127,7 @@ export async function fetchMHRSchedule(teamId: string, year: string): Promise<MH
             throw new Error('Could not retrieve X-Mhr-Token');
         }
 
-        debugLog('Token retrieved. Fetching schedule data...');
+        logDebug('Token retrieved. Fetching schedule data...');
 
         // Fetch schedule data using the token
         const scheduleData = await page.evaluate(async ([tId, yr, tok]: [string, string, string]) => {
@@ -170,7 +170,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, _preferred
         let normalizedQuery = query;
         if (/\bpheonix\b/i.test(query)) {
             normalizedQuery = query.replace(/\bpheonix\b/gi, 'Phoenix');
-            debugLog(`[MHR] Fixed typo in search query: "${query}" -> "${normalizedQuery}"`);
+            logDebug(`[MHR] Fixed typo in search query: "${query}" -> "${normalizedQuery}"`);
         }
         
         const encodedQuery = encodeURIComponent(normalizedQuery);
@@ -190,7 +190,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, _preferred
             if (ageGroupTeams.length > 0) {
                 teams = ageGroupTeams;
             } else {
-                debugLog(`[MHR] No teams found matching age group "${ageGroup}" for query "${query}". Returning best guess.`);
+                logDebug(`[MHR] No teams found matching age group "${ageGroup}" for query "${query}". Returning best guess.`);
             }
         }
 
@@ -200,7 +200,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, _preferred
             // First, try to find AAA teams
             const aaaTeam = teams.find((t) => /\bAAA\b/i.test(t.name));
             if (aaaTeam) {
-                debugLog(`[MHR] Found AAA team (prioritized): ${aaaTeam.name}`);
+                logDebug(`[MHR] Found AAA team (prioritized): ${aaaTeam.name}`);
                 return {
                     name: aaaTeam.name,
                     mhrId: aaaTeam.nbr,
@@ -211,7 +211,7 @@ export async function searchMHRTeam(query: string, ageGroup?: string, _preferred
             // If no AAA, try to find AA teams
             const aaTeam = teams.find((t) => /\bAA\b/i.test(t.name) && !/\bAAA\b/i.test(t.name));
             if (aaTeam) {
-                debugLog(`[MHR] Found AA team (fallback): ${aaTeam.name}`);
+                logDebug(`[MHR] Found AA team (fallback): ${aaTeam.name}`);
                 return {
                     name: aaTeam.name,
                     mhrId: aaTeam.nbr,
@@ -255,17 +255,17 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
     const aliases = settings.aliases || {};
     const resolvedName = aliases[opponentName] || opponentName;
     
-    debugLog(`[MHR] Getting data for opponent: ${opponentName}${resolvedName !== opponentName ? ` (resolved to: ${resolvedName})` : ''}, ageGroup: ${ageGroup}, year: ${year}`);
+    logDebug(`[MHR] Getting data for opponent: ${opponentName}${resolvedName !== opponentName ? ` (resolved to: ${resolvedName})` : ''}, ageGroup: ${ageGroup}, year: ${year}`);
     const map = await getTeamMap();
 
     // 1. Check Cache (check both original and resolved names)
     if (map[resolvedName]) {
         // Check if cache is stale (7 days)
         if (!isTeamCacheStale(map[resolvedName])) {
-            debugLog(`[MHR] Found ${resolvedName} in fresh cache:`, map[resolvedName]);
+            logDebug(`[MHR] Found ${resolvedName} in fresh cache:`, { teamData: map[resolvedName] });
             return map[resolvedName];
         }
-        debugLog(`[MHR] Cache for ${resolvedName} is stale, refreshing...`);
+        logDebug(`[MHR] Cache for ${resolvedName} is stale, refreshing...`);
         // If stale and we have mhrId, refresh the data
         if (map[resolvedName].mhrId) {
             const scrapedDetails = await scrapeTeamDetails(String(map[resolvedName].mhrId), year);
@@ -289,7 +289,7 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
     });
 
     if (knownMatch) {
-        debugLog(`[MHR] Found ${resolvedName} in known opponents:`, knownMatch);
+        logDebug(`[MHR] Found ${resolvedName} in known opponents:`, knownMatch);
         const data: MHRTeamData = {
             name: knownMatch.opponent_name || resolvedName,
             logo: knownMatch.opponent_logo,
@@ -320,19 +320,19 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
         else if (settings.teamName.endsWith(' A')) preferredLevel = 'A';
     }
 
-    debugLog(`[MHR] Searching MHR for: ${resolvedName} (Age: ${ageGroup}, Level: ${preferredLevel}${preferredLevelOverride ? ' [Tier 1 override]' : ''})`);
+    logDebug(`[MHR] Searching MHR for: ${resolvedName} (Age: ${ageGroup}, Level: ${preferredLevel}${preferredLevelOverride ? ' [Tier 1 override]' : ''})`);
     const searchResult = await searchMHRTeam(resolvedName, ageGroup, preferredLevel);
 
     if (searchResult && searchResult.mhrId) {
-        debugLog(`[MHR] Search found team:`, searchResult);
+        logDebug(`[MHR] Search found team:`, { teamData: searchResult });
         // Scrape additional details (record, rating) from team page
-        debugLog(`[MHR] Scraping details for searched team ${searchResult.mhrId}`);
+        logDebug(`[MHR] Scraping details for searched team ${searchResult.mhrId}`);
         const scrapedDetails = await scrapeTeamDetails(searchResult.mhrId, year);
         searchResult.record = scrapedDetails.record;
         searchResult.rating = scrapedDetails.rating;
         searchResult.logo = scrapedDetails.logo;
         searchResult.lastUpdated = Date.now();
-        debugLog(`[MHR] Final data for ${resolvedName}:`, searchResult);
+        logDebug(`[MHR] Final data for ${resolvedName}:`, { teamData: searchResult });
 
         // Update cache
         map[resolvedName] = searchResult;
@@ -340,6 +340,6 @@ export async function getMHRTeamData(opponentName: string, year: string, ageGrou
         return searchResult;
     }
 
-    debugLog(`[MHR] No data found for ${resolvedName}`);
+    logDebug(`[MHR] No data found for ${resolvedName}`);
     return null;
 }

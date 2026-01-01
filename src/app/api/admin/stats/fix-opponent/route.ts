@@ -3,7 +3,7 @@ import { verifyAdminAuth } from '@/lib/auth';
 import { getSettings, getStatSessions, setStatSessions } from '@/lib/kv';
 import { adminFixStatOpponentSchema, safeValidateRequest } from '@/lib/validation';
 import { isUsTeamName } from '@/lib/stat-opponent';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
   if (!(await verifyAdminAuth(request))) {
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       sessions: sessionPreview.map((s) => ({ ...s, opponent: newOpponent })),
     });
   } catch (error) {
-    logger.apiError('POST', '/api/admin/stats/fix-opponent', error);
+    logError('API Error', error, { method: 'POST', path: '/api/admin/stats/fix-opponent' });
     return NextResponse.json({ error: 'Failed to update stat sessions' }, { status: 500 });
   }
 }

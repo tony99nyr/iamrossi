@@ -34,9 +34,9 @@
         }
       }
     ],
-    "buyThreshold": 0.55,
-    "sellThreshold": -0.5423113880714022,
-    "maxPositionPct": 0.8550764360457123,
+    "buyThreshold": 0.2643493986942156,
+    "sellThreshold": -0.3,
+    "maxPositionPct": 0.95,
     "initialCapital": 1000
   },
   "bearishStrategy": {
@@ -58,25 +58,25 @@
         }
       }
     ],
-    "buyThreshold": 0.8443617142776371,
-    "sellThreshold": -0.27897754308072675,
-    "maxPositionPct": 0.168625548842908,
+    "buyThreshold": 0.525874885831358,
+    "sellThreshold": -0.20899732855078285,
+    "maxPositionPct": 0.39597687328049574,
     "initialCapital": 1000
   },
-  "regimeConfidenceThreshold": 0.34212175505666303,
-  "momentumConfirmationThreshold": 0.27618731246586364,
+  "regimeConfidenceThreshold": 0.2644021669487175,
+  "momentumConfirmationThreshold": 0.3012946026514209,
   "regimePersistencePeriods": 1,
-  "bullishPositionMultiplier": 0.9398965552434064,
-  "maxBullishPosition": 0.9068168473347106,
+  "bullishPositionMultiplier": 0.9119148946202374,
+  "maxBullishPosition": 0.8764251764237666,
   "kellyCriterion": {
     "enabled": true,
-    "fractionalMultiplier": 0.26592562664178215,
+    "fractionalMultiplier": 0.30024458261790427,
     "minTrades": 10,
     "lookbackPeriod": 50
   },
   "stopLoss": {
     "enabled": true,
-    "atrMultiplier": 1.6028965121318692,
+    "atrMultiplier": 2.7319178968055047,
     "trailing": true,
     "useEMA": true,
     "atrPeriod": 14

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCalendarSyncStatus, setCalendarSyncStatus } from '@/lib/kv';
-import { debugLog } from '@/lib/logger';
+import { logDebug } from '@/lib/logger';
 
 const STUCK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -16,7 +16,7 @@ export async function GET() {
       
       // If stuck for more than 10 minutes, reset the flag
       if (!status.lastSyncTime || timeSinceLastSync > STUCK_TIMEOUT_MS) {
-        debugLog('[Calendar Sync Status] Detected stuck revalidating flag, resetting');
+        logDebug('[Calendar Sync Status] Detected stuck revalidating flag, resetting');
         status = {
           ...status,
           isRevalidating: false,

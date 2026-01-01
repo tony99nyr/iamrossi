@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminSecret, verifyPin, createAuthToken, ADMIN_AUTH_COOKIE_CONFIG, getClientIdentifier } from '@/lib/auth';
 import { adminVerifySchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 import { checkRateLimit, recordFailedAttempt, resetRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     
     return response;
   } catch (error) {
-    logger.apiError('POST', '/api/admin/verify', error);
+    logError('API Error', error, { method: 'POST', path: '/api/admin/verify' });
     return NextResponse.json({ error: 'Verification failed' }, { status: 500 });
   }
 }

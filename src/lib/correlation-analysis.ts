@@ -7,6 +7,24 @@
  */
 
 import type { PriceCandle } from '@/types';
+import { redis, ensureConnected } from './kv';
+
+// Cache TTL for correlation analysis (5 minutes)
+const CORRELATION_CACHE_TTL = 5 * 60; // 5 minutes in seconds
+
+/**
+ * Generate cache key for correlation analysis
+ */
+function getCorrelationCacheKey(ethCandles: PriceCandle[], btcCandles: PriceCandle[], period: number): string {
+  // Use last candle timestamps and period to create cache key
+  const ethLast = ethCandles.length > 0 ? ethCandles[ethCandles.length - 1]!.timestamp : 0;
+  const btcLast = btcCandles.length > 0 ? btcCandles[btcCandles.length - 1]!.timestamp : 0;
+  const ethFirst = ethCandles.length > 0 ? ethCandles[0]!.timestamp : 0;
+  const btcFirst = btcCandles.length > 0 ? btcCandles[0]!.timestamp : 0;
+  
+  // Create key from first/last timestamps and period
+  return `correlation:${ethFirst}:${ethLast}:${btcFirst}:${btcLast}:${period}`;
+}
 
 export interface CorrelationResult {
   correlation: number; // Pearson correlation coefficient (-1 to 1)
@@ -142,14 +160,62 @@ export function getCorrelationSignal(
 }
 
 /**
- * Full correlation analysis between ETH and BTC candles
+ * Full correlation analysis between ETH and BTC candles (with caching)
+ * 
+ * @param ethCandles ETH price candles
+ * @param btcCandles BTC price candles (aligned by timestamp)
+ * @param period Rolling period for correlation calculation
+ * @param useCache Whether to use cache (default: true)
+ * @returns Comprehensive correlation analysis
+ */
+export async function analyzeCorrelation(
+  ethCandles: PriceCandle[],
+  btcCandles: PriceCandle[],
+  period: number = 30,
+  useCache: boolean = true
+): Promise<RollingCorrelation> {
+  // Try to get from cache first
+  if (useCache) {
+    try {
+      await ensureConnected();
+      const cacheKey = getCorrelationCacheKey(ethCandles, btcCandles, period);
+      const cached = await redis.get(cacheKey);
+      
+      if (cached) {
+        return JSON.parse(cached) as RollingCorrelation;
+      }
+    } catch {
+      // Cache read failed - continue with calculation
+      // Non-critical, so we don't log errors
+    }
+  }
+  
+  // Calculate correlation (original logic)
+  const result = analyzeCorrelationInternal(ethCandles, btcCandles, period);
+  
+  // Cache the result
+  if (useCache) {
+    try {
+      await ensureConnected();
+      const cacheKey = getCorrelationCacheKey(ethCandles, btcCandles, period);
+      await redis.setEx(cacheKey, CORRELATION_CACHE_TTL, JSON.stringify(result));
+    } catch {
+      // Cache write failed - non-critical
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Internal correlation analysis (without caching)
  * 
  * @param ethCandles ETH price candles
  * @param btcCandles BTC price candles (aligned by timestamp)
  * @param period Rolling period for correlation calculation
  * @returns Comprehensive correlation analysis
  */
-export function analyzeCorrelation(
+function analyzeCorrelationInternal(
   ethCandles: PriceCandle[],
   btcCandles: PriceCandle[],
   period: number = 30

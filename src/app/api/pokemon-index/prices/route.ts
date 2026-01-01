@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPokemonIndexSettings } from '@/lib/kv';
 import { ensurePokemonIndexUpToDate, getOrBuildPokemonIndexSeries } from '@/lib/pokemon-index-service';
-import { logger } from '@/lib/logger';
+import { logError, logInfo } from '@/lib/logger';
 import type { PokemonIndexPoint } from '@/types';
 
 // Allow up to 5 minutes for the cron job to complete (Vercel Pro plan allows up to 300s)
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     let series: PokemonIndexPoint[];
     try {
       if (forceRefresh) {
-        logger.info('[Pokemon Prices API] Forced refresh requested', {
+        logInfo('[Pokemon Prices API] Forced refresh requested', {
           isCronRequest,
           cardCount: settings.cards.length,
         });
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
         series = await getOrBuildPokemonIndexSeries(settings);
       }
     } catch (error) {
-      logger.apiError('GET', '/api/pokemon-index/prices', error);
+      logError('API Error', error, { method: 'GET', path: '/api/pokemon-index/prices' });
       // If refresh fails, try to get existing series
       series = await getOrBuildPokemonIndexSeries(settings);
     }
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
 
     const duration = Date.now() - startTime;
     if (forceRefresh || duration > 1000) {
-      logger.info('[Pokemon Prices API] Request completed', {
+      logInfo('[Pokemon Prices API] Request completed', {
         duration: `${duration}ms`,
         seriesLength: series.length,
         forceRefresh,
@@ -78,8 +78,8 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const duration = Date.now() - startTime;
-    logger.apiError('GET', '/api/pokemon-index/prices', error);
-    logger.error('[Pokemon Prices API] Fatal error', {
+    logError('API Error', error, { method: 'GET', path: '/api/pokemon-index/prices' });
+    logError('[Pokemon Prices API] Fatal error', undefined, {
       error: error instanceof Error ? error.message : String(error),
       duration: `${duration}ms`,
     });

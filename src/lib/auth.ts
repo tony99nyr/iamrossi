@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import crypto from 'crypto';
-import { logger } from './logger';
+import { logError } from './logger';
 
 const COOKIE_NAME = 'rehab_auth';
 const ADMIN_COOKIE_NAME = 'admin_auth';
@@ -29,7 +29,7 @@ export function verifyPin(pin: string): boolean {
     const correctPin = process.env.WORKOUT_ADMIN_PIN;
 
     if (!correctPin) {
-        logger.error('WORKOUT_ADMIN_PIN environment variable is not set');
+        logError('WORKOUT_ADMIN_PIN environment variable is not set');
         return false;
     }
 
@@ -102,7 +102,7 @@ export function verifyAdminSecret(secret: string): boolean {
     const correctSecret = process.env.ADMIN_SECRET;
 
     if (!correctSecret) {
-        logger.error('ADMIN_SECRET environment variable is not set');
+        logError('ADMIN_SECRET environment variable is not set');
         return false;
     }
 

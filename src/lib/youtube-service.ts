@@ -1,6 +1,6 @@
 import { chromium, Page } from 'playwright-core';
 import chromiumPkg from '@sparticuz/chromium-min';
-import { debugLog } from '@/lib/logger';
+import { logDebug } from '@/lib/logger';
 
 export interface YouTubeVideo {
     title: string;
@@ -56,7 +56,7 @@ async function retryNavigation(
                         throw new Error(`Rate limited by YouTube after ${maxRetries} attempts. Please wait before trying again.`);
                     }
                     
-                    debugLog(`[YouTube] Rate limited (429), waiting ${waitTime}ms before retry ${attempt}/${maxRetries}...`);
+                    logDebug(`[YouTube] Rate limited (429), waiting ${waitTime}ms before retry ${attempt}/${maxRetries}...`);
                     await page.waitForTimeout(waitTime);
                     continue;
                 }
@@ -75,7 +75,7 @@ async function retryNavigation(
                     if (isLastAttempt) {
                         throw new Error(`Rate limited by YouTube after ${maxRetries} attempts. Please wait before trying again.`);
                     }
-                    debugLog(`[YouTube] Rate limited, waiting ${waitTime}ms before retry ${attempt}/${maxRetries}...`);
+                    logDebug(`[YouTube] Rate limited, waiting ${waitTime}ms before retry ${attempt}/${maxRetries}...`);
                     await page.waitForTimeout(waitTime);
                     continue;
                 }
@@ -87,7 +87,7 @@ async function retryNavigation(
                 
                 // Exponential backoff: 2s, 4s, 8s for other errors
                 const backoffMs = Math.pow(2, attempt) * 1000;
-                debugLog(`[YouTube] Navigation attempt ${attempt} failed, retrying in ${backoffMs}ms...`);
+                logDebug(`[YouTube] Navigation attempt ${attempt} failed, retrying in ${backoffMs}ms...`);
                 await page.waitForTimeout(backoffMs);
             }
         }
@@ -103,7 +103,7 @@ async function retryNavigation(
  * This is more resilient to YouTube DOM changes
  */
 async function extractVideosFromWatchLinks(page: Page): Promise<YouTubeVideo[]> {
-    debugLog('[YouTube] Using fallback extraction via watch links...');
+    logDebug('[YouTube] Using fallback extraction via watch links...');
     
     const videos = await page.evaluate(() => {
         const results: YouTubeVideo[] = [];
@@ -154,7 +154,7 @@ async function extractVideosFromWatchLinks(page: Page): Promise<YouTubeVideo[]> 
         return results;
     });
     
-    debugLog(`[YouTube] Fallback extraction found ${videos.length} videos`);
+    logDebug(`[YouTube] Fallback extraction found ${videos.length} videos`);
     return videos;
 }
 
@@ -162,7 +162,7 @@ async function extractVideosFromWatchLinks(page: Page): Promise<YouTubeVideo[]> 
  * Scrape videos from the YouTube channel's videos tab
  */
 async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
-    debugLog('[YouTube] Scraping videos tab...');
+    logDebug('[YouTube] Scraping videos tab...');
     
     const url = `https://www.youtube.com/${CHANNEL_HANDLE}/videos`;
     await retryNavigation(page, url, {
@@ -179,9 +179,9 @@ async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
     try {
         await page.waitForSelector('ytd-rich-grid-media, ytd-grid-video-renderer', { timeout: 20000 });
         selectorFound = true;
-        debugLog('[YouTube] Video grid selector found');
+        logDebug('[YouTube] Video grid selector found');
     } catch {
-        debugLog('[YouTube] Primary video grid selector not found, will try fallback');
+        logDebug('[YouTube] Primary video grid selector not found, will try fallback');
     }
 
     // Scroll to load more videos
@@ -231,14 +231,14 @@ async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
         return results;
     });
 
-    debugLog(`[YouTube] Primary extraction found ${videos.length} videos`);
+    logDebug(`[YouTube] Primary extraction found ${videos.length} videos`);
     
     // If primary extraction failed, try fallback
     if (videos.length === 0 && !selectorFound) {
         videos = await extractVideosFromWatchLinks(page);
     }
 
-    debugLog(`[YouTube] Total videos from videos tab: ${videos.length}`);
+    logDebug(`[YouTube] Total videos from videos tab: ${videos.length}`);
     return videos;
 }
 
@@ -246,7 +246,7 @@ async function scrapeVideosTab(page: Page): Promise<YouTubeVideo[]> {
  * Scrape live and upcoming streams from the YouTube channel's streams tab
  */
 async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
-    debugLog('[YouTube] Scraping streams tab...');
+    logDebug('[YouTube] Scraping streams tab...');
     
     const url = `https://www.youtube.com/${CHANNEL_HANDLE}/streams`;
     await retryNavigation(page, url, {
@@ -349,7 +349,7 @@ async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
         return results;
     });
 
-    debugLog(`[YouTube] Primary streams extraction found ${streams.length} streams`);
+    logDebug(`[YouTube] Primary streams extraction found ${streams.length} streams`);
     
     // If primary extraction failed, try fallback
     if (streams.length === 0) {
@@ -357,7 +357,7 @@ async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
         // Mark these as regular since we can't detect live/upcoming without proper selectors
     }
 
-    debugLog(`[YouTube] Total streams: ${streams.length}`);
+    logDebug(`[YouTube] Total streams: ${streams.length}`);
     return streams;
 }
 
@@ -365,7 +365,7 @@ async function scrapeStreamsTab(page: Page): Promise<YouTubeVideo[]> {
  * Fetch all videos from the YouTube channel (regular videos + live/upcoming streams)
  */
 export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
-    debugLog(`[YouTube] Starting scrape for channel: ${CHANNEL_HANDLE}`);
+    logDebug(`[YouTube] Starting scrape for channel: ${CHANNEL_HANDLE}`);
     
     // Prepare browser args - ensure no user data directory issues in serverless
     const browserArgs = [
@@ -379,7 +379,7 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
         '--disable-gpu'
     ];
     
-    debugLog(`[YouTube] Using Chromium v${CHROMIUM_VERSION}`);
+    logDebug(`[YouTube] Using Chromium v${CHROMIUM_VERSION}`);
     const browser = await chromium.launch({
         args: browserArgs,
         executablePath: await chromiumPkg.executablePath(CHROMIUM_URL),
@@ -407,11 +407,11 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
         
         try {
             videos = await scrapeVideosTab(videosPage);
-            debugLog(`[YouTube] Successfully scraped ${videos.length} videos`);
+            logDebug(`[YouTube] Successfully scraped ${videos.length} videos`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             videosError = errorMessage;
-            debugLog(`[YouTube] Error scraping videos tab: ${errorMessage}`);
+            logDebug(`[YouTube] Error scraping videos tab: ${errorMessage}`);
             console.error('[YouTube] Error scraping videos tab:', error);
             
             // Capture diagnostic info when videos tab fails
@@ -435,11 +435,11 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
         
         try {
             streams = await scrapeStreamsTab(streamsPage);
-            debugLog(`[YouTube] Successfully scraped ${streams.length} streams`);
+            logDebug(`[YouTube] Successfully scraped ${streams.length} streams`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             streamsError = errorMessage;
-            debugLog(`[YouTube] Error scraping streams tab: ${errorMessage}`);
+            logDebug(`[YouTube] Error scraping streams tab: ${errorMessage}`);
             console.error('[YouTube] Error scraping streams tab:', error);
         }
 
@@ -455,7 +455,7 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
             new Map(allVideos.map(v => [v.url, v])).values()
         );
 
-        debugLog(`[YouTube] Total unique videos: ${uniqueVideos.length} (${videos.length} from videos tab, ${streams.length} from streams tab)`);
+        logDebug(`[YouTube] Total unique videos: ${uniqueVideos.length} (${videos.length} from videos tab, ${streams.length} from streams tab)`);
         
         if (videos.length === 0 && streams.length === 0) {
             // Include error details in the failure message
@@ -468,11 +468,11 @@ export async function fetchYouTubeVideos(): Promise<YouTubeVideo[]> {
         }
         
         if (videos.length === 0) {
-            debugLog('[YouTube] Warning: Videos tab returned no results, but streams tab succeeded');
+            logDebug('[YouTube] Warning: Videos tab returned no results, but streams tab succeeded');
         }
         
         if (streams.length === 0) {
-            debugLog('[YouTube] Warning: Streams tab returned no results, but videos tab succeeded');
+            logDebug('[YouTube] Warning: Streams tab returned no results, but videos tab succeeded');
         }
 
         return uniqueVideos;

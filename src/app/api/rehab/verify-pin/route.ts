@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPin, createAuthToken, AUTH_COOKIE_CONFIG } from '@/lib/auth';
 import { pinVerifySchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 // In-memory rate limiting store (resets on server restart)
 // In production, consider using Redis or a database
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
         
         return response;
     } catch (error) {
-        logger.apiError('POST', '/api/rehab/verify-pin', error);
+        logError('API Error', error, { method: 'POST', path: '/api/rehab/verify-pin' });
         return NextResponse.json(
             { error: 'Internal server error' },
             { status: 500 }

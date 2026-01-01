@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, setSettings, Settings } from '@/lib/kv';
 import { verifyAdminAuth } from '@/lib/auth';
 import { adminSettingsSchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 export async function GET() {
   try {
@@ -18,7 +18,7 @@ export async function GET() {
       identifiers: ['Black', 'Jr Canes', 'Carolina', 'Jr']
     });
   } catch (error) {
-    logger.apiError('GET', '/api/admin/settings', error);
+    logError('API Error', error, { method: 'GET', path: '/api/admin/settings' });
     return NextResponse.json({ error: 'Failed to load settings' }, { status: 500 });
   }
 }
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Settings saved successfully' });
   } catch (error) {
-    logger.apiError('POST', '/api/admin/settings', error);
+    logError('API Error', error, { method: 'POST', path: '/api/admin/settings' });
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
   }
 }

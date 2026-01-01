@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/auth';
 import { getEntries, setEntries, RehabEntry } from '@/lib/kv';
 import { rehabEntrySchema, rehabEntryPatchSchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 import { revalidatePath } from 'next/cache';
 
@@ -11,7 +11,7 @@ export async function GET() {
         const entries = await getEntries();
         return NextResponse.json(entries);
     } catch (error) {
-        logger.apiError('GET', '/api/rehab/entries', error);
+        logError('API Error', error, { method: 'GET', path: '/api/rehab/entries' });
         return NextResponse.json({ error: 'Failed to read entries' }, { status: 500 });
     }
 }
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(newEntry, { status: existingEntryIndex !== -1 ? 200 : 201 });
     } catch (error) {
-        logger.apiError('POST', '/api/rehab/entries', error);
+        logError('API Error', error, { method: 'POST', path: '/api/rehab/entries' });
         return NextResponse.json({ error: 'Failed to save entry' }, { status: 500 });
     }
 }
@@ -118,7 +118,7 @@ export async function PATCH(request: NextRequest) {
         
         return NextResponse.json(entries.find(e => e.date === date));
     } catch (error) {
-        logger.apiError('PATCH', '/api/rehab/entries', error);
+        logError('API Error', error, { method: 'PATCH', path: '/api/rehab/entries' });
         return NextResponse.json({ error: 'Failed to update entry' }, { status: 500 });
     }
 }

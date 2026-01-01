@@ -183,11 +183,15 @@ function generate8hCandlesForRegime(
       const open = period === 0 ? startPrice : candles[candles.length - 1]!.close;
       const close = currentPrice;
       
+      // Ensure valid OHLC relationships
+      const actualHigh = Math.max(open, high, close);
+      const actualLow = Math.min(open, low, close);
+      
       candles.push({
         timestamp,
         open,
-        high,
-        low,
+        high: actualHigh,
+        low: actualLow,
         close,
         volume: 1000000 + Math.random() * 500000,
       });
@@ -220,11 +224,15 @@ function generate8hCandlesForRegime(
       const open = period === 0 ? startPrice : candles[candles.length - 1]!.close;
       const close = currentPrice;
       
+      // Ensure valid OHLC relationships
+      const actualHigh = Math.max(open, high, close);
+      const actualLow = Math.min(open, low, close);
+      
       candles.push({
         timestamp,
         open,
-        high,
-        low,
+        high: actualHigh,
+        low: actualLow,
         close,
         volume: 1200000 + Math.random() * 600000,
       });
@@ -256,11 +264,15 @@ function generate8hCandlesForRegime(
       const open = period === 0 ? startPrice : candles[candles.length - 1]!.close;
       const close = currentPrice;
       
+      // Ensure valid OHLC relationships
+      const actualHigh = Math.max(open, high, close);
+      const actualLow = Math.min(open, low, close);
+      
       candles.push({
         timestamp,
         open,
-        high,
-        low,
+        high: actualHigh,
+        low: actualLow,
         close,
         volume: progress < 0.7 ? 800000 : 2000000 + Math.random() * 1000000,
       });
@@ -287,11 +299,15 @@ function generate8hCandlesForRegime(
       const open = period === 0 ? startPrice : candles[candles.length - 1]!.close;
       const close = currentPrice;
       
+      // Ensure valid OHLC relationships
+      const actualHigh = Math.max(open, high, close);
+      const actualLow = Math.min(open, low, close);
+      
       candles.push({
         timestamp,
         open,
-        high,
-        low,
+        high: actualHigh,
+        low: actualLow,
         close,
         volume: 900000 + Math.random() * 300000,
       });

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchYouTubeVideos } from '@/lib/youtube-service';
 import { setYouTubeVideos, getSyncStatus, setSyncStatus } from '@/lib/kv';
 import { verifyAdminAuth } from '@/lib/auth';
-import { debugLog } from '@/lib/logger';
+import { logDebug } from '@/lib/logger';
 
 // Force Node.js runtime (required for Playwright browser automation)
 export const runtime = 'nodejs';
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       // If lastSyncTime is null or very old, and we're marked as revalidating, it's likely stuck
       if (!syncStatus.lastSyncTime || timeSinceLastSync > stuckTimeout) {
         // Reset stuck revalidating flag
-        debugLog('[YouTube Sync] Resetting stuck revalidating flag (no recent sync activity)');
+        logDebug('[YouTube Sync] Resetting stuck revalidating flag (no recent sync activity)');
         await setSyncStatus({
           ...syncStatus,
           isRevalidating: false,
@@ -72,11 +72,11 @@ export async function POST(request: NextRequest) {
       lastError: null
     });
 
-    debugLog('[YouTube Sync] Starting sync...');
+    logDebug('[YouTube Sync] Starting sync...');
 
     // Fetch videos from YouTube
     const videos = await fetchYouTubeVideos();
-    debugLog(`[YouTube Sync] Fetched ${videos.length} videos`);
+    logDebug(`[YouTube Sync] Fetched ${videos.length} videos`);
 
     // Save to KV
     await setYouTubeVideos(videos);
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       lastError: null
     });
 
-    debugLog('[YouTube Sync] Sync completed successfully');
+    logDebug('[YouTube Sync] Sync completed successfully');
 
     return NextResponse.json({ 
       success: true, 
@@ -147,7 +147,7 @@ export async function GET() {
       
       // If stuck for more than 10 minutes, reset the flag
       if (!syncStatus.lastSyncTime || timeSinceLastSync > stuckTimeout) {
-        debugLog('[YouTube Sync Status] Detected stuck revalidating flag, resetting');
+        logDebug('[YouTube Sync Status] Detected stuck revalidating flag, resetting');
         syncStatus = {
           ...syncStatus,
           isRevalidating: false,

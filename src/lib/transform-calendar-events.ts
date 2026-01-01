@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { getMHRTeamData, scrapeTeamDetails } from './mhr-service';
 import { getSettings as getSettingsFromKV, type MHRTeamData } from './kv';
-import { debugLog } from '@/lib/logger';
+import { logDebug } from '@/lib/logger';
+import type { Game, MHRScheduleGame } from '@/types';
 
 async function getSettings() {
     const settings = await getSettingsFromKV();
@@ -77,20 +78,18 @@ interface CalendarEvent {
  * Used for MHR games that aren't in the calendar
  */
 async function createGameFromMHR(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mhrGame: any,
+    mhrGame: MHRScheduleGame,
     dateStr: string,
     settings: { teamName: string; identifiers: string[]; mhrTeamId?: string },
     year: string,
     ourTeamLogo: string,
     mainTeamStats?: { record: string; rating: string }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any | null> {
+): Promise<Game | null> {
     try {
         // Determine home/away and opponent
-        const homeTeamName = mhrGame.home_team_name || '';
-        const visitorTeamName = mhrGame.visitor_team_name || '';
-        const opponentName = mhrGame.opponent_name || '';
+        const homeTeamName = (typeof mhrGame.home_team_name === 'string' ? mhrGame.home_team_name : '') || '';
+        const visitorTeamName = (typeof mhrGame.visitor_team_name === 'string' ? mhrGame.visitor_team_name : '') || '';
+        const opponentName = (typeof mhrGame.opponent_name === 'string' ? mhrGame.opponent_name : '') || '';
 
         // Check if our team is home or visitor
         const isUsHome = isUs(homeTeamName, settings.identifiers);
@@ -120,7 +119,7 @@ async function createGameFromMHR(
                 }
 
                 // Format time
-                const gameTime = mhrGame.game_time_format || '00:00:00';
+                const gameTime = (typeof mhrGame.game_time_format === 'string' ? mhrGame.game_time_format : '') || '00:00:00';
                 const gameTimeFormatted = gameTime.length >= 5 ? gameTime.substring(0, 5) : gameTime;
 
                 // Parse date for pretty formatting
@@ -150,7 +149,9 @@ async function createGameFromMHR(
                 }
 
                 return {
-                    game_nbr: mhrGame.game_nbr || crypto.createHash('md5').update(`${dateStr}-${opponent}`).digest('hex').substring(0, 8),
+                    game_date: dateStr,
+                    game_time: gameTime,
+                    game_nbr: (typeof mhrGame.game_nbr === 'string' || typeof mhrGame.game_nbr === 'number' ? mhrGame.game_nbr : undefined) || crypto.createHash('md5').update(`${dateStr}-${opponent}`).digest('hex').substring(0, 8),
                     game_date_format: dateStr,
                     game_time_format: gameTime,
                     game_date_format_pretty: gameDatePretty,
@@ -159,22 +160,22 @@ async function createGameFromMHR(
                     visitor_team_name: isHomeGame ? (mhrData?.name || opponent) : settings.teamName,
                     home_team_logo: isHomeGame ? ourTeamLogo : (mhrData?.logo || ''),
                     visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : ourTeamLogo,
-                    home_team_score: mhrGame.home_team_score ?? 0,
-                    visitor_team_score: mhrGame.visitor_team_score ?? 0,
-                    rink_name: mhrGame.rink_name || mhrGame.venue || 'TBD',
-                    game_type: mhrGame.game_type || 'Regular Season',
+                    home_team_score: (typeof mhrGame.home_team_score === 'number' ? mhrGame.home_team_score : undefined) ?? 0,
+                    visitor_team_score: (typeof mhrGame.visitor_team_score === 'number' ? mhrGame.visitor_team_score : undefined) ?? 0,
+                    rink_name: (typeof mhrGame.rink_name === 'string' ? mhrGame.rink_name : '') || (typeof mhrGame.venue === 'string' ? mhrGame.venue : '') || 'TBD',
+                    game_type: (typeof mhrGame.game_type === 'string' ? mhrGame.game_type : '') || 'Regular Season',
                     opponent_record: mhrData?.record || mhrGame.opponent_record || '',
                     opponent_rating: mhrData?.rating || mhrGame.opponent_rating || '',
                     home_team_record: isHomeGame ? (mainTeamStats?.record || '') : (mhrData?.record || ''),
                     home_team_rating: isHomeGame ? (mainTeamStats?.rating || '') : (mhrData?.rating || ''),
                     visitor_team_record: isHomeGame ? (mhrData?.record || '') : (mainTeamStats?.record || ''),
                     visitor_team_rating: isHomeGame ? (mhrData?.rating || '') : (mainTeamStats?.rating || ''),
-                    game_home_team: isHomeGame ? settings.mhrTeamId : opponentTeamId,
-                    game_visitor_team: isHomeGame ? opponentTeamId : settings.mhrTeamId,
+            game_home_team: isHomeGame ? (settings.mhrTeamId || undefined) : (opponentTeamId ? opponentTeamId : undefined),
+            game_visitor_team: isHomeGame ? (opponentTeamId ? opponentTeamId : undefined) : (settings.mhrTeamId || undefined),
                     source: 'mhr-only'
                 };
             }
-            debugLog(`[MHR] Cannot determine home/away for MHR game: ${JSON.stringify(mhrGame)}`);
+            logDebug(`[MHR] Cannot determine home/away for MHR game: ${JSON.stringify(mhrGame)}`);
             return null;
         }
 
@@ -182,7 +183,7 @@ async function createGameFromMHR(
         const opponent = isHomeGame ? visitorTeamName : homeTeamName;
 
         if (!opponent) {
-            debugLog(`[MHR] No opponent found for MHR game: ${JSON.stringify(mhrGame)}`);
+            logDebug(`[MHR] No opponent found for MHR game: ${JSON.stringify(mhrGame)}`);
             return null;
         }
 
@@ -208,7 +209,7 @@ async function createGameFromMHR(
         }
 
         // Format time
-        const gameTime = mhrGame.game_time_format || '00:00:00';
+        const gameTime = (typeof mhrGame.game_time_format === 'string' ? mhrGame.game_time_format : '') || '00:00:00';
         const gameTimeFormatted = gameTime.length >= 5 ? gameTime.substring(0, 5) : gameTime;
 
         // Parse date for pretty formatting
@@ -238,7 +239,9 @@ async function createGameFromMHR(
         }
 
         return {
-            game_nbr: mhrGame.game_nbr || crypto.createHash('md5').update(`${dateStr}-${opponent}`).digest('hex').substring(0, 8),
+            game_date: dateStr,
+            game_time: gameTime,
+            game_nbr: (typeof mhrGame.game_nbr === 'string' || typeof mhrGame.game_nbr === 'number' ? mhrGame.game_nbr : undefined) || crypto.createHash('md5').update(`${dateStr}-${opponent}`).digest('hex').substring(0, 8),
             game_date_format: dateStr,
             game_time_format: gameTime,
             game_date_format_pretty: gameDatePretty,
@@ -247,22 +250,22 @@ async function createGameFromMHR(
             visitor_team_name: isHomeGame ? (mhrData?.name || opponent) : settings.teamName,
             home_team_logo: isHomeGame ? ourTeamLogo : (mhrData?.logo || ''),
             visitor_team_logo: isHomeGame ? (mhrData?.logo || '') : ourTeamLogo,
-            home_team_score: mhrGame.home_team_score ?? 0,
-            visitor_team_score: mhrGame.visitor_team_score ?? 0,
-            rink_name: mhrGame.rink_name || mhrGame.venue || 'TBD',
-            game_type: mhrGame.game_type || 'Regular Season',
+            home_team_score: (typeof mhrGame.home_team_score === 'number' ? mhrGame.home_team_score : undefined) ?? 0,
+            visitor_team_score: (typeof mhrGame.visitor_team_score === 'number' ? mhrGame.visitor_team_score : undefined) ?? 0,
+            rink_name: (typeof mhrGame.rink_name === 'string' ? mhrGame.rink_name : '') || (typeof mhrGame.venue === 'string' ? mhrGame.venue : '') || 'TBD',
+            game_type: (typeof mhrGame.game_type === 'string' ? mhrGame.game_type : '') || 'Regular Season',
             opponent_record: mhrData?.record || mhrGame.opponent_record || '',
             opponent_rating: mhrData?.rating || mhrGame.opponent_rating || '',
             home_team_record: isHomeGame ? (mainTeamStats?.record || '') : (mhrData?.record || ''),
             home_team_rating: isHomeGame ? (mainTeamStats?.rating || '') : (mhrData?.rating || ''),
             visitor_team_record: isHomeGame ? (mhrData?.record || '') : (mainTeamStats?.record || ''),
             visitor_team_rating: isHomeGame ? (mhrData?.rating || '') : (mainTeamStats?.rating || ''),
-            game_home_team: isHomeGame ? settings.mhrTeamId : opponentTeamId,
-            game_visitor_team: isHomeGame ? opponentTeamId : settings.mhrTeamId,
+            game_home_team: isHomeGame ? (settings.mhrTeamId || undefined) : (opponentTeamId || undefined),
+            game_visitor_team: isHomeGame ? (opponentTeamId || undefined) : (settings.mhrTeamId || undefined),
             source: 'mhr-only'
         };
     } catch (error) {
-        debugLog(`[MHR] Error creating game from MHR data:`, error);
+        logDebug(`[MHR] Error creating game from MHR data:`, { error });
         return null;
     }
 }
@@ -305,11 +308,10 @@ function isPlaceholderEvent(event: CalendarEvent, summary: string): boolean {
 
 export async function transformCalendarEvents(
     events: CalendarEvent[],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mhrSchedule: any[] = [],
+    mhrSchedule: MHRScheduleGame[] = [],
     year: string = '2025',
     mainTeamStats?: { record: string; rating: string }
-) {
+): Promise<Game[]> {
     const settings = await getSettings();
     const { mhrYear } = settings;
 
@@ -323,7 +325,7 @@ export async function transformCalendarEvents(
     const seasonStartDate = new Date(`${startYear}-08-01T00:00:00`);
     const seasonEndDate = new Date(`${endYear}-03-01T23:59:59`);
     
-    debugLog(`[Season Filter] Season: ${seasonStartDate.toISOString()} to ${seasonEndDate.toISOString()} (MHR Year: ${effectiveYear})`);
+    logDebug(`[Season Filter] Season: ${seasonStartDate.toISOString()} to ${seasonEndDate.toISOString()} (MHR Year: ${effectiveYear})`);
 
     // Fetch our team's MHR data to get logo
     let ourTeamLogo = '';
@@ -332,10 +334,10 @@ export async function transformCalendarEvents(
             const ourTeamData = await scrapeTeamDetails(settings.mhrTeamId, effectiveYear);
             ourTeamLogo = ourTeamData?.logo || '';
             if (ourTeamData?.logo) {
-                debugLog(`[MHR] Found logo for our team: ${settings.teamName}`);
+                logDebug(`[MHR] Found logo for our team: ${settings.teamName}`);
             }
         } catch (error) {
-            debugLog(`[MHR] Error fetching logo for our team:`, error);
+            logDebug(`[MHR] Error fetching logo for our team:`, { error });
         }
     }
 
@@ -348,11 +350,11 @@ export async function transformCalendarEvents(
         
         // Skip events outside season boundaries
         if (eventStartDate < seasonStartDate) {
-            debugLog(`Skipping event before season start: "${event.summary}" (${eventStartDate.toISOString()}) - Season starts ${seasonStartDate.toISOString()}`);
+            logDebug(`Skipping event before season start: "${event.summary}" (${eventStartDate.toISOString()}) - Season starts ${seasonStartDate.toISOString()}`);
             continue;
         }
         if (eventStartDate > seasonEndDate) {
-            debugLog(`Skipping event after season end: "${event.summary}" (${eventStartDate.toISOString()}) - Season ends ${seasonEndDate.toISOString()}`);
+            logDebug(`Skipping event after season end: "${event.summary}" (${eventStartDate.toISOString()}) - Season ends ${seasonEndDate.toISOString()}`);
             continue;
         }
 
@@ -363,7 +365,7 @@ export async function transformCalendarEvents(
             lowerSummary.includes('pd practice') ||
             lowerSummary.includes('film review');
         if (isPracticeLikeEvent) {
-            debugLog(`Skipping practice/film review event: "${event.summary}"`);
+            logDebug(`Skipping practice/film review event: "${event.summary}"`);
             continue;
         }
 
@@ -423,8 +425,9 @@ export async function transformCalendarEvents(
                 cleanSummary = event.summary;
             }
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const placeholderEntry: any = {
+            const placeholderEntry: Game = {
+                game_date: localDateStr,
+                game_time: '00:00:00',
                 game_nbr: placeholderId,
                 game_date_format: localDateStr,
                 game_time_format: '00:00:00', // Use valid time for date filtering/sorting
@@ -434,6 +437,8 @@ export async function transformCalendarEvents(
                 visitor_team_name: 'TBD',
                 rink_name: event.location || 'TBD',
                 game_type: 'Placeholder',
+                home_team_score: undefined,
+                visitor_team_score: undefined,
                 // Placeholder-specific fields
                 isPlaceholder: true,
                 placeholderStartDate: startDate.toISOString(),
@@ -445,7 +450,7 @@ export async function transformCalendarEvents(
             };
 
             schedule.push(placeholderEntry);
-            debugLog(`[Placeholder] Created placeholder entry for "${cleanSummary}" (was "${event.summary}")`);
+            logDebug(`[Placeholder] Created placeholder entry for "${cleanSummary}" (was "${event.summary}")`);
             continue;
         }
 
@@ -453,7 +458,7 @@ export async function transformCalendarEvents(
 
         // Skip if no opponent found (not a valid game)
         if (!opponent) {
-            debugLog(`Skipping event "${event.summary}" - no opponent found`);
+            logDebug(`Skipping event "${event.summary}" - no opponent found`);
             continue;
         }
 
@@ -477,7 +482,7 @@ export async function transformCalendarEvents(
         let normalizedOpponent = opponentOverride?.normalizedName || opponent;
         if (/\bpheonix\b/i.test(normalizedOpponent)) {
             normalizedOpponent = normalizedOpponent.replace(/\bpheonix\b/gi, 'Phoenix');
-            debugLog(`[MHR] Fixed typo: "${opponent}" -> "${normalizedOpponent}"`);
+            logDebug(`[MHR] Fixed typo: "${opponent}" -> "${normalizedOpponent}"`);
         }
         
         // Check if this is the Dec 14 Buffalo Jr Sabres game that needs override
@@ -500,10 +505,10 @@ export async function transformCalendarEvents(
                 const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
                 if (needsBuffaloOverride && normalizedKey.includes('buffalo') && (normalizedKey.includes('sabres') || normalizedKey.includes('jrsabres'))) {
                     delete teamMap[key];
-                    debugLog(`[MHR] Cleared cached team data for "${key}" to force fresh search`);
+                    logDebug(`[MHR] Cleared cached team data for "${key}" to force fresh search`);
                 } else if (needsPhoenixOverride && normalizedKey.includes('phoenix') && normalizedKey.includes('coyotes')) {
                     delete teamMap[key];
-                    debugLog(`[MHR] Cleared cached team data for "${key}" to force fresh search`);
+                    logDebug(`[MHR] Cleared cached team data for "${key}" to force fresh search`);
                 }
             });
             await setTeamMap(teamMap);
@@ -514,19 +519,17 @@ export async function transformCalendarEvents(
         let mhrData = await getMHRTeamData(normalizedOpponent, effectiveYear, '10U', mhrSchedule, isTier1Event ? 'AAA' : undefined);
         
         if (mhrData) {
-            debugLog(`[MHR] Found data for ${opponent}:`, mhrData.name);
+            logDebug(`[MHR] Found data for ${opponent}:`, { opponentName: mhrData.name });
         }
 
         // Try to match this calendar event with an MHR game to get the real game_nbr and scores
-        let mhrGameNbr = gameId; // Default to hash ID
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let matchedGame: any = null;
+        let mhrGameNbr: string | number = gameId; // Default to hash ID
+        let matchedGame: MHRScheduleGame | undefined = undefined;
         if (mhrSchedule && Array.isArray(mhrSchedule)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            matchedGame = mhrSchedule.find((mhrGame: any) => {
+            matchedGame = mhrSchedule.find((mhrGame: MHRScheduleGame) => {
                 // Match by date - normalize MHR date to Eastern Time for comparison
-                const mhrGameDate = mhrGame.game_date_format || mhrGame.game_date;
-                if (!mhrGameDate) return false;
+                const mhrGameDate = (typeof mhrGame.game_date_format === 'string' ? mhrGame.game_date_format : '') || (typeof mhrGame.game_date === 'string' ? mhrGame.game_date : '');
+                if (!mhrGameDate || typeof mhrGameDate !== 'string') return false;
                 
                 // Normalize MHR date to Eastern Time format
                 const mhrDateStr = normalizeDateToEastern(mhrGameDate);
@@ -536,8 +539,8 @@ export async function transformCalendarEvents(
                 // Match by opponent name, but DO NOT rely on calendar-inferred home/away.
                 // Calendar titles can explicitly override (Home)/(Away), which may contradict
                 // MHR's home/away; we still want to match by "who are we playing?".
-                const mhrHomeName = String(mhrGame.home_team_name || '');
-                const mhrVisitorName = String(mhrGame.visitor_team_name || '');
+                const mhrHomeName = String((typeof mhrGame.home_team_name === 'string' ? mhrGame.home_team_name : '') || '');
+                const mhrVisitorName = String((typeof mhrGame.visitor_team_name === 'string' ? mhrGame.visitor_team_name : '') || '');
 
                 // Normalize names for comparison
                 const normalizeOpponent = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -562,16 +565,19 @@ export async function transformCalendarEvents(
 
                 // Match by time (if available) to distinguish games on same day
                 const calTime = normalizeTimeToHHMM(gameTime);
-                const mhrTime = normalizeTimeToHHMM(mhrGame.game_time_format || mhrGame.game_time);
+                const mhrTime = normalizeTimeToHHMM((typeof mhrGame.game_time_format === 'string' ? mhrGame.game_time_format : '') || (typeof mhrGame.game_time === 'string' ? mhrGame.game_time : ''));
                 if (calTime && mhrTime && calTime !== mhrTime) return false;
 
                 return true;
             });
             
-            if (matchedGame && matchedGame.game_nbr) {
-                mhrGameNbr = matchedGame.game_nbr;
-                matchedMhrGameNbrs.add(matchedGame.game_nbr);
-                debugLog(`[MHR] Matched calendar event to MHR game ${mhrGameNbr}`);
+            if (matchedGame) {
+                const matchedNbr = typeof matchedGame.game_nbr === 'string' || typeof matchedGame.game_nbr === 'number' ? matchedGame.game_nbr : undefined;
+                if (matchedNbr !== undefined) {
+                    mhrGameNbr = matchedNbr; // Keep original type (string or number)
+                    matchedMhrGameNbrs.add(matchedNbr);
+                }
+                logDebug(`[MHR] Matched calendar event to MHR game ${mhrGameNbr}`);
             }
         }
 
@@ -583,11 +589,11 @@ export async function transformCalendarEvents(
         // Dec 14, 2024/2025 game against Buffalo Jr Sabres should use team ID 4624
         if (needsBuffaloOverride) {
             opponentTeamId = '4624';
-            debugLog(`[MHR] Using override team ID 4624 for Buffalo Jr Sabres game on Dec 14 (forcing override regardless of cache/match)`);
+            logDebug(`[MHR] Using override team ID 4624 for Buffalo Jr Sabres game on Dec 14 (forcing override regardless of cache/match)`);
             
             // If we don't have mhrData, fetch it using the override team ID
             if (!mhrData) {
-                debugLog(`[MHR] No team data found via search, fetching details for team ID 4624`);
+                logDebug(`[MHR] No team data found via search, fetching details for team ID 4624`);
                 try {
                     const scrapedDetails = await scrapeTeamDetails('4624', effectiveYear);
                     const { getTeamMap, setTeamMap } = await import('./kv');
@@ -606,10 +612,10 @@ export async function transformCalendarEvents(
                         await setTeamMap(teamMap);
                         // Update mhrData so it can be used below
                         mhrData = overrideTeamData;
-                        debugLog(`[MHR] Fetched and cached team data for "${cacheKey}" with team ID 4624`);
+                        logDebug(`[MHR] Fetched and cached team data for "${cacheKey}" with team ID 4624`);
                     }
                 } catch (error) {
-                    debugLog(`[MHR] Error fetching team details for ID 4624:`, error);
+                    logDebug(`[MHR] Error fetching team details for ID 4624:`, { error });
                 }
             } else {
                 // Update existing mhrData with correct team ID
@@ -623,17 +629,17 @@ export async function transformCalendarEvents(
                         lastUpdated: Date.now()
                     };
                     await setTeamMap(teamMap);
-                    debugLog(`[MHR] Updated team map cache for "${cacheKey}" with correct team ID 4624`);
+                    logDebug(`[MHR] Updated team map cache for "${cacheKey}" with correct team ID 4624`);
                 }
             }
         } else if (needsPhoenixOverride) {
             // Phoenix Coyotes (including "Pheonix" typo) should use team ID 4576
             opponentTeamId = '4576';
-            debugLog(`[MHR] Using override team ID 4576 for Phoenix Coyotes (forcing override regardless of cache/match)`);
+            logDebug(`[MHR] Using override team ID 4576 for Phoenix Coyotes (forcing override regardless of cache/match)`);
             
             // If we don't have mhrData, fetch it using the override team ID
             if (!mhrData) {
-                debugLog(`[MHR] No team data found via search, fetching details for team ID 4576`);
+                logDebug(`[MHR] No team data found via search, fetching details for team ID 4576`);
                 try {
                     const scrapedDetails = await scrapeTeamDetails('4576', effectiveYear);
                     const { getTeamMap, setTeamMap } = await import('./kv');
@@ -652,10 +658,10 @@ export async function transformCalendarEvents(
                         await setTeamMap(teamMap);
                         // Update mhrData so it can be used below
                         mhrData = overrideTeamData;
-                        debugLog(`[MHR] Fetched and cached team data for "${cacheKey}" with team ID 4576`);
+                        logDebug(`[MHR] Fetched and cached team data for "${cacheKey}" with team ID 4576`);
                     }
                 } catch (error) {
-                    debugLog(`[MHR] Error fetching team details for ID 4576:`, error);
+                    logDebug(`[MHR] Error fetching team details for ID 4576:`, { error });
                 }
             } else {
                 // Update existing mhrData with correct team ID
@@ -669,13 +675,13 @@ export async function transformCalendarEvents(
                         lastUpdated: Date.now()
                     };
                     await setTeamMap(teamMap);
-                    debugLog(`[MHR] Updated team map cache for "${cacheKey}" with correct team ID 4576`);
+                    logDebug(`[MHR] Updated team map cache for "${cacheKey}" with correct team ID 4576`);
                 }
             }
         } else if (opponentOverride?.teamId) {
             opponentTeamId = opponentOverride.teamId;
             if (!mhrData || mhrData.mhrId !== opponentOverride.teamId) {
-                debugLog(`[MHR] Applying override for ${opponentOverride.normalizedName} (team ID ${opponentOverride.teamId})`);
+                logDebug(`[MHR] Applying override for ${opponentOverride.normalizedName} (team ID ${opponentOverride.teamId})`);
                 try {
                     const scrapedDetails = await scrapeTeamDetails(opponentOverride.teamId, effectiveYear);
                     const { getTeamMap, setTeamMap } = await import('./kv');
@@ -693,10 +699,10 @@ export async function transformCalendarEvents(
                         teamMap[cacheKey] = overrideTeamData;
                         await setTeamMap(teamMap);
                         mhrData = overrideTeamData;
-                        debugLog(`[MHR] Cached override data for "${cacheKey}" with team ID ${opponentOverride.teamId}`);
+                        logDebug(`[MHR] Cached override data for "${cacheKey}" with team ID ${opponentOverride.teamId}`);
                     }
                 } catch (error) {
-                    debugLog(`[MHR] Error applying override for ${opponentOverride.normalizedName}:`, error);
+                    logDebug(`[MHR] Error applying override for ${opponentOverride.normalizedName}:`, { error });
                     mhrData = {
                         name: opponentOverride.normalizedName,
                         mhrId: opponentOverride.teamId,
@@ -711,7 +717,7 @@ export async function transformCalendarEvents(
             // If matched game has opponent_team_id, use it
             if (matchedGame.opponent_team_id) {
                 opponentTeamId = String(matchedGame.opponent_team_id);
-                debugLog(`[MHR] Using opponent_team_id from matched game: ${opponentTeamId}`);
+                logDebug(`[MHR] Using opponent_team_id from matched game: ${opponentTeamId}`);
             } else if (matchedGame.home_team_id && matchedGame.visitor_team_id) {
                 // Determine based on which team is NOT us (independent of calendar overrides).
                 const ourId = settings.mhrTeamId ? String(settings.mhrTeamId) : '';
@@ -720,7 +726,7 @@ export async function transformCalendarEvents(
                 if (ourId && homeId === ourId) opponentTeamId = visitorId;
                 else if (ourId && visitorId === ourId) opponentTeamId = homeId;
                 else opponentTeamId = isHomeGame ? visitorId : homeId;
-                debugLog(`[MHR] Using team ID from matched game (resolved opponent): ${opponentTeamId}`);
+                logDebug(`[MHR] Using team ID from matched game (resolved opponent): ${opponentTeamId}`);
             }
         }
         
@@ -731,26 +737,30 @@ export async function transformCalendarEvents(
         
         // Smart merge: prefer calendar for location/time, prefer MHR for scores/opponent details
         // Location: prefer calendar, fallback to MHR
-        const rinkName = event.location || matchedGame?.rink_name || matchedGame?.venue || 'TBD';
+        const matchedRinkName = typeof matchedGame?.rink_name === 'string' ? matchedGame.rink_name : '';
+        const matchedVenue = typeof matchedGame?.venue === 'string' ? matchedGame.venue : '';
+        const rinkName = event.location || matchedRinkName || matchedVenue || 'TBD';
         
         // Time: prefer calendar (more accurate), but use MHR if calendar time is missing
-        const finalGameTime = gameTime !== '00:00:00' ? gameTime : (matchedGame?.game_time_format || '00:00:00');
+        const matchedGameTime = typeof matchedGame?.game_time_format === 'string' ? matchedGame.game_time_format : '';
+        const finalGameTime = gameTime !== '00:00:00' ? gameTime : (matchedGameTime || '00:00:00');
         const finalGameTimePretty = gameTime !== '00:00:00' 
             ? gameDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })
-            : (matchedGame?.game_time_format && matchedGame.game_time_format !== '00:00:00' 
-                ? matchedGame.game_time_format.substring(0, 5)
+            : (matchedGameTime && matchedGameTime !== '00:00:00' 
+                ? matchedGameTime.substring(0, 5)
                 : 'TBD');
 
         // Scores: prefer MHR (source of truth for results)
-        const homeScore = matchedGame?.home_team_score ?? 0;
-        const visitorScore = matchedGame?.visitor_team_score ?? 0;
+        const homeScore = (typeof matchedGame?.home_team_score === 'number' ? matchedGame.home_team_score : undefined) ?? 0;
+        const visitorScore = (typeof matchedGame?.visitor_team_score === 'number' ? matchedGame.visitor_team_score : undefined) ?? 0;
 
         // Opponent details: prefer MHR data (more complete)
         const finalOpponentName = mhrData?.name || normalizedOpponent;
         const finalOpponentLogo = mhrData?.logo || '';
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const gameEntry: any = {
+        const gameEntry: Game = {
+            game_date: localDateStr,
+            game_time: finalGameTime,
             game_nbr: mhrGameNbr, // Use MHR game_nbr if matched, otherwise hash ID
             game_date_format: localDateStr,
             game_time_format: finalGameTime,
@@ -763,7 +773,7 @@ export async function transformCalendarEvents(
             home_team_score: homeScore,
             visitor_team_score: visitorScore,
             rink_name: rinkName,
-            game_type: matchedGame?.game_type || 'Regular Season',
+            game_type: (typeof matchedGame?.game_type === 'string' ? matchedGame.game_type : '') || 'Regular Season',
             // Legacy fields for backward compatibility
             opponent_record: mhrData?.record || '',
             opponent_rating: mhrData?.rating || '',
@@ -773,8 +783,8 @@ export async function transformCalendarEvents(
             visitor_team_record: isHomeGame ? (mhrData?.record || '') : (mainTeamStats?.record || ''),
             visitor_team_rating: isHomeGame ? (mhrData?.rating || '') : (mainTeamStats?.rating || ''),
             // Team IDs for links - use opponentTeamId from matched game if available
-            game_home_team: isHomeGame ? settings.mhrTeamId : opponentTeamId,
-            game_visitor_team: isHomeGame ? opponentTeamId : settings.mhrTeamId,
+            game_home_team: isHomeGame ? (settings.mhrTeamId || undefined) : (opponentTeamId || undefined),
+            game_visitor_team: isHomeGame ? (opponentTeamId || undefined) : (settings.mhrTeamId || undefined),
             // Mark as calendar event (not MHR-only) for deduplication
             source: 'calendar'
         };
@@ -786,32 +796,34 @@ export async function transformCalendarEvents(
     if (mhrSchedule && Array.isArray(mhrSchedule)) {
         for (const mhrGame of mhrSchedule) {
             // Skip if already matched to a calendar event
-            if (mhrGame.game_nbr && matchedMhrGameNbrs.has(mhrGame.game_nbr)) {
+            const gameNbr = typeof mhrGame.game_nbr === 'string' || typeof mhrGame.game_nbr === 'number' ? mhrGame.game_nbr : undefined;
+            if (gameNbr !== undefined && matchedMhrGameNbrs.has(gameNbr)) {
                 continue;
             }
 
             // Verify required fields: date and opponent information
             const mhrGameDate = mhrGame.game_date_format || mhrGame.game_date;
             if (!mhrGameDate) {
-                debugLog(`[MHR] Skipping MHR game without date: ${JSON.stringify(mhrGame)}`);
+                logDebug(`[MHR] Skipping MHR game without date: ${JSON.stringify(mhrGame)}`);
                 continue;
             }
 
             // Check if we have opponent information (either home_team_name or visitor_team_name)
             const hasOpponentInfo = mhrGame.home_team_name || mhrGame.visitor_team_name || mhrGame.opponent_name;
             if (!hasOpponentInfo) {
-                debugLog(`[MHR] Skipping MHR game without opponent info: ${JSON.stringify(mhrGame)}`);
+                logDebug(`[MHR] Skipping MHR game without opponent info: ${JSON.stringify(mhrGame)}`);
                 continue;
             }
 
             // Normalize date format to Eastern Time for consistency
-            const mhrDateStr = normalizeDateToEastern(mhrGameDate);
+            // mhrGameDate is already validated as string above
+            const mhrDateStr = normalizeDateToEastern(mhrGameDate as string);
             
             // Parse date for season filtering (use the Eastern Time date)
             const [year, month, day] = mhrDateStr.split('-').map(Number);
             const mhrGameDateObj = new Date(year, month - 1, day, 12, 0, 0);
             if (mhrGameDateObj < seasonStartDate || mhrGameDateObj > seasonEndDate) {
-                debugLog(`[MHR] Skipping MHR game outside season: ${mhrDateStr}`);
+                logDebug(`[MHR] Skipping MHR game outside season: ${mhrDateStr}`);
                 continue;
             }
 
@@ -827,7 +839,8 @@ export async function transformCalendarEvents(
 
             if (mhrGameEntry) {
                 schedule.push(mhrGameEntry);
-                debugLog(`[MHR] Created game entry from unmatched MHR game: ${mhrGame.game_nbr || 'unknown'}`);
+                const gameNbrForLog = (typeof mhrGame.game_nbr === 'string' || typeof mhrGame.game_nbr === 'number' ? String(mhrGame.game_nbr) : 'unknown');
+                logDebug(`[MHR] Created game entry from unmatched MHR game: ${gameNbrForLog}`);
             }
         }
     }
@@ -848,14 +861,11 @@ export async function transformCalendarEvents(
  * Merges data intelligently: calendar for location/time, MHR for scores/details
  */
 function deduplicateGames(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    games: any[],
+    games: Game[],
     identifiers: string[]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any[] {
+): Game[] {
     // Create a map to track games by their unique key (date + time + opponent)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const gameMap = new Map<string, any>();
+    const gameMap = new Map<string, Game>();
     
     for (const game of games) {
         // Skip placeholders - they shouldn't be deduplicated
@@ -919,7 +929,7 @@ function deduplicateGames(
                 }
             }
             
-            debugLog(`[Deduplicate] Merged duplicate game: ${date} ${time} vs ${opponent}`);
+            logDebug(`[Deduplicate] Merged duplicate game: ${date} ${time} vs ${opponent}`);
         }
     }
     
@@ -931,12 +941,9 @@ function deduplicateGames(
  * Primary should be the calendar event (if available), secondary is MHR-only
  */
 function mergeGameData(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    secondary: any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    primary: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any {
+    secondary: Game,
+    primary: Game
+): Game {
     // Start with primary (calendar event)
     const merged = { ...primary };
     

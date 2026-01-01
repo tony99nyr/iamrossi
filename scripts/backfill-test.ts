@@ -14,12 +14,13 @@ import { executeTrade } from '../src/lib/trade-executor';
 import { updateStopLoss } from '../src/lib/atr-stop-loss';
 // ATR is now pre-calculated, so we don't need to import getATRValue
 import { disconnectRedis } from '../src/lib/kv';
-import { getAssetConfig, type TradingAsset } from '../src/lib/asset-config';
+import { getAssetConfig, getStrategyConfigKey, type TradingAsset } from '../src/lib/asset-config';
 import { analyzeCorrelation, getCorrelationContext } from '../src/lib/correlation-analysis';
 import { fetchAlignedCandles } from '../src/lib/btc-price-service';
 import type { PriceCandle, Portfolio, Trade, PortfolioSnapshot } from '@/types';
 import type { EnhancedAdaptiveStrategyConfig } from '@/lib/adaptive-strategy-enhanced';
 import type { StopLossConfig, OpenPosition } from '../src/lib/atr-stop-loss';
+import { validateDateRange, validateDataSource, validateCandleQuality, checkDataAvailability } from '../src/lib/backfill-validation';
 import * as fs from 'fs';
 import * as path from 'path';
 import { gunzipSync } from 'zlib';
@@ -195,8 +196,23 @@ export function loadSyntheticData(year: number, asset: TradingAsset = 'eth', tim
   const decompressed = gunzipSync(compressed);
   const candles = JSON.parse(decompressed.toString()) as PriceCandle[];
   
-  console.log(`📊 Loaded ${candles.length} synthetic ${timeframe} candles from ${path.basename(filepath)}`);
+  // Removed verbose candle loading log - not useful for debugging
   return candles;
+}
+
+/**
+ * Apply timeout to backtest execution
+ */
+async function withBacktestTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number = 5 * 60 * 1000 // 5 minutes default
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`Backtest timed out after ${timeoutMs / 1000} seconds`)), timeoutMs);
+    }),
+  ]);
 }
 
 export async function runBacktest(
@@ -210,6 +226,30 @@ export async function runBacktest(
   timeframe?: string,
   useCorrelation: boolean = false
 ): Promise<BacktestResult> {
+  // Wrap entire backtest in timeout
+  return withBacktestTimeout(
+    runBacktestInternal(startDate, endDate, isSynthetic, configOverride, kellyMultiplier, atrMultiplier, asset, timeframe, useCorrelation),
+    5 * 60 * 1000 // 5 minutes timeout
+  );
+}
+
+async function runBacktestInternal(
+  startDate: string,
+  endDate: string,
+  isSynthetic: boolean = false,
+  configOverride?: EnhancedAdaptiveStrategyConfig,
+  kellyMultiplier?: number,
+  atrMultiplier?: number,
+  asset: TradingAsset = 'eth',
+  timeframe?: string,
+  useCorrelation: boolean = false
+): Promise<BacktestResult> {
+  // Validate date range first (allow future dates for synthetic data)
+  const dateValidation = validateDateRange(startDate, endDate, isSynthetic);
+  if (!dateValidation.valid) {
+    throw new Error(`Invalid date range: ${dateValidation.error}`);
+  }
+  
   const assetConfig = getAssetConfig(asset);
   const symbol = assetConfig.symbol;
   const effectiveTimeframe = timeframe || process.env.TIMEFRAME || assetConfig.defaultTimeframe;
@@ -218,7 +258,9 @@ export async function runBacktest(
   const startYear = parseInt(startDate.split('-')[0]!, 10);
   const endYear = parseInt(endDate.split('-')[0]!, 10);
   const config = configOverride || DEFAULT_CONFIG;
-  const configName = configOverride ? getConfigShortName(config) : 'Default';
+  const configShortName = getConfigShortName(config);
+  const configKey = getStrategyConfigKey(asset);
+  const configSource = configOverride ? 'custom' : 'default';
   
   // Format year label for multi-year periods
   const yearLabel = startYear === endYear 
@@ -226,7 +268,7 @@ export async function runBacktest(
     : (isSynthetic ? ` (Synthetic ${startYear}-${endYear})` : ` (${startYear}-${endYear})`);
   
   console.log(`\n📊 Running backtest: ${startDate} to ${endDate}${yearLabel} - ${assetConfig.displayName} (${effectiveTimeframe})`);
-  console.log(`   Config: ${configName}`);
+  console.log(`   Config: ${configKey} [${configSource}] - ${configShortName}`);
   
   // Clear caches
   clearRegimeHistory();
@@ -252,8 +294,22 @@ export async function runBacktest(
           console.warn(`⚠️  Could not load synthetic data for ${year}: ${error}`);
         }
       }
-      // Sort by timestamp
+      // Sort by timestamp and deduplicate
       candles.sort((a, b) => a.timestamp - b.timestamp);
+      const { deduplicateCandles, fillGapsInCandles, fixOHLCRelationships } = await import('../src/lib/historical-file-utils');
+      candles = deduplicateCandles(candles);
+      
+      // Fix OHLC relationships before gap filling
+      candles = fixOHLCRelationships(candles);
+      
+      // Fill gaps in synthetic data (can have gaps between years or within years)
+      // For synthetic data, don't fetch from API (it's synthetic, so interpolate)
+      const beforeFill = candles.length;
+      candles = await fillGapsInCandles(candles, effectiveTimeframe, symbol, false);
+      const afterFill = candles.length;
+      if (afterFill > beforeFill) {
+        console.log(`🔧 Filled ${afterFill - beforeFill} missing candles to eliminate gaps`);
+      }
     }
     
     // DON'T filter to requested date range - we need warmup candles for indicators
@@ -271,7 +327,7 @@ export async function runBacktest(
       throw new Error(`Not enough synthetic candles: ${candles.length}. Need at least 50 for indicators.`);
     }
     
-    console.log(`📈 Loaded ${candles.length} candles (${candlesInPeriod} in test period ${startDate} to ${endDate})`);
+    // Removed verbose candle loading log - not useful for debugging
   } else {
     // For multi-year historical periods, we need to handle them specially
     // Use already-calculated startYear/endYear from above (parsed from date string to avoid timezone issues)
@@ -287,7 +343,7 @@ export async function runBacktest(
       const actualHistoryStart = historyStart < minHistoryDate ? minHistoryDate : historyStart;
       
       candles = await fetchPriceCandles(symbol, effectiveTimeframe, actualHistoryStart, endDate, undefined, true, true); // skipAPIFetch=true, allowSyntheticData=true for backfill tests
-      console.log(`📈 Loaded ${candles.length} candles from ${actualHistoryStart} to ${endDate}`);
+      // Removed verbose candle loading log - not useful for debugging
     } else {
       // Multi-year: combine historical 2025 with synthetic 2026/2027
       candles = [];
@@ -308,16 +364,78 @@ export async function runBacktest(
         }
       }
       
-      // Sort by timestamp
+      // Sort by timestamp and deduplicate
       candles.sort((a, b) => a.timestamp - b.timestamp);
+      const { deduplicateCandles, fillGapsInCandles, fixOHLCRelationships } = await import('../src/lib/historical-file-utils');
+      candles = deduplicateCandles(candles);
+      
+      // Fix OHLC relationships before gap filling
+      const beforeOHLCFix = candles.length;
+      candles = fixOHLCRelationships(candles);
+      const afterOHLCFix = candles.length;
+      if (afterOHLCFix !== beforeOHLCFix) {
+        console.log(`🔧 Fixed OHLC relationships in ${beforeOHLCFix} candles`);
+      }
+      
+      // Fill gaps at year boundaries and within data (e.g., between 2025 and 2026, or gaps in historical data)
+      // Try to fetch from API for historical gaps, interpolate for future/synthetic gaps
+      const isHistoricalData = endYear <= new Date().getFullYear();
+      const beforeFill = candles.length;
+      candles = await fillGapsInCandles(candles, effectiveTimeframe, symbol, isHistoricalData && !isSynthetic);
+      const afterFill = candles.length;
+      if (afterFill > beforeFill) {
+        console.log(`🔧 Filled ${afterFill - beforeFill} missing candles to eliminate gaps`);
+      }
       
       // Filter to requested date range
       const startTime = new Date(startDate).getTime();
       const endTime = new Date(endDate).getTime();
       candles = candles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
       
-      console.log(`📈 Loaded ${candles.length} candles (multi-year: ${startYear}-${endYear})`);
+      // Fill gaps again after filtering (in case filtering removed some candles and created new gaps)
+      const { fillGapsInCandles: fillGapsAgain } = await import('../src/lib/historical-file-utils');
+      const beforeRefill = candles.length;
+      candles = await fillGapsInCandles(candles, effectiveTimeframe, symbol, isHistoricalData && !isSynthetic);
+      const afterRefill = candles.length;
+      if (afterRefill > beforeRefill) {
+        console.log(`🔧 Filled ${afterRefill - beforeRefill} additional missing candles after filtering`);
+      }
+      
+      // Removed verbose candle loading log - not useful for debugging
     }
+  }
+  
+  // Validate data availability
+  const availabilityCheck = checkDataAvailability(candles, startDate, endDate, 50);
+  if (!availabilityCheck.available) {
+    throw new Error(`Data availability check failed: ${availabilityCheck.error}`);
+  }
+  
+  // Validate data source (ensure synthetic data is only used in backfill tests, never in paper trading)
+  const dataSourceValidation = validateDataSource(candles, isSynthetic, 'backfill_test');
+  if (!dataSourceValidation.valid) {
+    throw new Error(`Data source validation failed: ${dataSourceValidation.error}`);
+  }
+  
+  // Fix OHLC relationships before validation (in case they weren't fixed during loading)
+  const { fixOHLCRelationships } = await import('../src/lib/historical-file-utils');
+  candles = fixOHLCRelationships(candles);
+  
+  // Fill gaps one final time before validation to ensure all gaps are filled
+  const { fillGapsInCandles: fillGapsFinal } = await import('../src/lib/historical-file-utils');
+  candles = await fillGapsFinal(candles, effectiveTimeframe, symbol, !isSynthetic);
+  
+  // Validate candle quality (allow future dates if synthetic data is present or if endDate is in the future)
+  // Check if candles contain future dates (for indicator warmup data that extends beyond test period)
+  const hasFutureDates = candles.some(c => c.timestamp > Date.now());
+  const allowFutureDates = isSynthetic || hasFutureDates || parseInt(endDate.split('-')[0]!, 10) > new Date().getFullYear();
+  const qualityValidation = validateCandleQuality(candles, effectiveTimeframe, allowFutureDates);
+  if (!qualityValidation.valid) {
+    console.error('Candle quality errors:', qualityValidation.errors);
+    throw new Error(`Candle quality validation failed: ${qualityValidation.errors.join(', ')}`);
+  }
+  if (qualityValidation.warnings.length > 0) {
+    console.warn('Candle quality warnings:', qualityValidation.warnings);
   }
   
   if (candles.length < 50) {
@@ -386,7 +504,7 @@ export async function runBacktest(
           const btcWindow = alignedCandles.btc.slice(Math.max(0, i - 30), i + 1);
           
           if (ethWindow.length === btcWindow.length && ethWindow.length >= 30) {
-            const correlationAnalysis = analyzeCorrelation(ethWindow, btcWindow, 30);
+            const correlationAnalysis = await analyzeCorrelation(ethWindow, btcWindow, 30, false); // Disable cache for backfill tests
             const context = getCorrelationContext(correlationAnalysis);
             
             // OPTIMIZATION: Use Map lookup instead of findIndex (O(1) vs O(n))
@@ -515,8 +633,9 @@ export async function runBacktest(
   let returns: number[] = [];
   
   for (let i = startIndex; i < candles.length; i++) {
-    const candle = candles[i]!;
-    const currentPrice = candle.close;
+    try {
+      const candle = candles[i]!;
+      const currentPrice = candle.close;
 
     // Update open positions (for trailing stops)
     // OPTIMIZATION: Use pre-calculated ATR instead of recalculating
@@ -621,6 +740,24 @@ export async function runBacktest(
       signal: signal.signal,
       trade,
     });
+    } catch (error) {
+      // Log error but continue processing (graceful degradation)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Error processing period at index ${i}: ${errorMessage}`);
+      
+      // Add period with error state
+      periods.push({
+        timestamp: candles[i]!.timestamp,
+        price: candles[i]!.close,
+        regime: 'neutral',
+        confidence: 0,
+        signal: 0,
+        trade: null,
+      });
+      
+      // Continue to next period (don't break the entire backtest)
+      continue;
+    }
   }
   
   // Calculate ETH hold Sharpe ratio

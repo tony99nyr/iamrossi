@@ -3,7 +3,7 @@ import { getStatSessions, saveStatSession, deleteStatSession } from '@/lib/kv';
 import { verifyAuthToken } from '@/lib/auth';
 import { StatSession } from '@/types';
 import { statSessionSchema, deleteSessionSchema, safeValidateRequest } from '@/lib/validation';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json(sessions);
   } catch (error) {
-    logger.apiError('GET', '/api/stats', error);
+    logError('API Error', error, { method: 'GET', path: '/api/stats' });
     return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 });
   }
 }
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     await saveStatSession(validation.data as StatSession);
     return NextResponse.json({ success: true });
   } catch (error) {
-    logger.apiError('POST', '/api/stats', error);
+    logError('API Error', error, { method: 'POST', path: '/api/stats' });
     return NextResponse.json({ error: 'Failed to save session' }, { status: 500 });
   }
 }
@@ -67,7 +67,7 @@ export async function DELETE(request: NextRequest) {
     await deleteStatSession(validation.data.id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    logger.apiError('DELETE', '/api/stats', error);
+    logError('API Error', error, { method: 'DELETE', path: '/api/stats' });
     return NextResponse.json({ error: 'Failed to delete session' }, { status: 500 });
   }
 }

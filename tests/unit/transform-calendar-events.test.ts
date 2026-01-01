@@ -13,7 +13,10 @@ vi.mock('@/lib/mhr-service', () => ({
 }));
 
 vi.mock('@/lib/logger', () => ({
-    debugLog: vi.fn(),
+    logDebug: vi.fn(),
+    logError: vi.fn(),
+    logInfo: vi.fn(),
+    logWarn: vi.fn(),
 }));
 
 describe('transformCalendarEvents', () => {
@@ -43,8 +46,8 @@ describe('transformCalendarEvents', () => {
 
         const result = await transformCalendarEvents(events);
 
-        const placeholder1 = result.find(e => e.placeholderStartDate.includes('2025-12-13'));
-        const placeholder2 = result.find(e => e.placeholderStartDate.includes('2026-01-01'));
+        const placeholder1 = result.find(e => e.placeholderStartDate?.includes('2025-12-13'));
+        const placeholder2 = result.find(e => e.placeholderStartDate?.includes('2026-01-01'));
 
         expect(placeholder1).toBeDefined();
         expect(placeholder1?.isPlaceholder).toBe(true);

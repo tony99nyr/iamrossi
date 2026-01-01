@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStatSessions, getSelectedLiveSession } from '@/lib/kv';
-import { logger } from '@/lib/logger';
+import { logError } from '@/lib/logger';
 
 export async function GET() {
   try {
@@ -29,7 +29,7 @@ export async function GET() {
     
     return NextResponse.json({ session: selectedSession });
   } catch (error) {
-    logger.apiError('GET', '/api/stats/live', error);
+    logError('API Error', error, { method: 'GET', path: '/api/stats/live' });
     return NextResponse.json({ error: 'Failed to fetch live session' }, { status: 500 });
   }
 }

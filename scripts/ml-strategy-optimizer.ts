@@ -200,26 +200,26 @@ function calculateFitnessScore(metrics: OptimizationResult['metrics'], defaultBa
   // Use default baseline if provided, otherwise use minimum threshold
   const baseline = defaultBaseline ?? DEFAULT_BASELINE_RETURN ?? 5.0;
   
-  // Heavy penalty for not beating default config
+  // AGGRESSIVE: Heavy penalty for not beating baseline - we MUST beat the default
   const baselinePenalty = metrics.totalReturn < baseline
-    ? (metrics.totalReturn - baseline) * 5 // Very heavy penalty (5x) for below baseline
+    ? (metrics.totalReturn - baseline) * 10 // Very heavy penalty (10x) - strongly discourage underperforming
     : 0;
   
-  // Bonus for beating default config
+  // AGGRESSIVE: Large bonus for beating baseline - reward improvements heavily
   const beatBaselineBonus = defaultBaseline && metrics.totalReturn > defaultBaseline
-    ? (metrics.totalReturn - defaultBaseline) * 3 // 3x bonus for each % above baseline
+    ? (metrics.totalReturn - defaultBaseline) * 5 // Large bonus (5x) - strongly reward beating baseline
     : 0;
   
-  // Weighted combination of multiple factors (updated weights)
-  const returnScore = metrics.totalReturn * 0.7; // 70% weight on returns (increased from 60%)
-  const sharpeScore = metrics.sharpeRatio * 10 * 0.15; // 15% weight on risk-adjusted returns (reduced from 20%)
-  const drawdownPenalty = -Math.abs(metrics.maxDrawdown) * 0.1; // 10% penalty for drawdown
-  const winRateScore = metrics.winRate * 100 * 0.05; // 5% weight on win rate (reduced from 10%)
+  // AGGRESSIVE: Prioritize returns heavily - we want to beat the default's 22.80% average
+  const returnScore = metrics.totalReturn * 0.6; // 60% weight on returns (prioritize profitability)
+  const sharpeScore = metrics.sharpeRatio * 10 * 0.20; // 20% weight on risk-adjusted returns
+  const drawdownPenalty = -Math.abs(metrics.maxDrawdown) * 0.10; // 10% penalty for drawdown
+  const winRateScore = metrics.winRate * 100 * 0.10; // 10% weight on win rate
   
-  // Bonus for reasonable trade frequency (not too few, not too many)
-  const tradeFrequencyBonus = metrics.totalTrades > 20 && metrics.totalTrades < 200 
+  // Encourage reasonable trade frequency
+  const tradeFrequencyBonus = metrics.totalTrades > 15 && metrics.totalTrades < 250 
     ? 5 
-    : -Math.abs(metrics.totalTrades - 100) * 0.05;
+    : -Math.abs(metrics.totalTrades - 100) * 0.03;
   
   return returnScore + sharpeScore + drawdownPenalty + winRateScore + tradeFrequencyBonus + baselinePenalty + beatBaselineBonus;
 }
@@ -235,17 +235,20 @@ function generateRandomConfig(baseConfig: EnhancedAdaptiveStrategyConfig): Enhan
     ...baseConfig,
     bullishStrategy: {
       ...baseConfig.bullishStrategy,
-      buyThreshold: randomRange(0.25, 0.55),
+      // ADJUSTED: Narrower range closer to default (0.41) to avoid overly conservative configs
+      buyThreshold: randomRange(0.25, 0.50), // Reduced max from 0.55 to 0.50
       sellThreshold: randomRange(-0.6, -0.3),
       maxPositionPct: randomRange(0.75, 0.95),
     },
     bearishStrategy: {
       ...baseConfig.bearishStrategy,
-      buyThreshold: randomRange(0.5, 0.85),
+      // ADJUSTED: Narrower range closer to default (0.65) to avoid overly conservative configs
+      buyThreshold: randomRange(0.5, 0.75), // Reduced max from 0.85 to 0.75
       sellThreshold: randomRange(-0.4, -0.15),
       maxPositionPct: randomRange(0.15, 0.4),
     },
-    regimeConfidenceThreshold: randomRange(0.15, 0.35),
+    // ADJUSTED: Narrower range closer to default (0.22) to avoid overly conservative configs
+    regimeConfidenceThreshold: randomRange(0.15, 0.30), // Reduced max from 0.35 to 0.30
     momentumConfirmationThreshold: randomRange(0.2, 0.35),
     regimePersistencePeriods: Math.floor(randomRange(1, 4)),
     bullishPositionMultiplier: randomRange(0.9, 1.2),
@@ -258,7 +261,8 @@ function generateRandomConfig(baseConfig: EnhancedAdaptiveStrategyConfig): Enhan
     },
     stopLoss: {
       enabled: true,
-      atrMultiplier: randomRange(1.5, 3.0),
+      // ADJUSTED: Narrower range closer to default (2.0) to avoid overly tight stops
+      atrMultiplier: randomRange(1.8, 3.0), // Increased min from 1.5 to 1.8
       trailing: true,
       useEMA: true,
       atrPeriod: 14,
@@ -268,11 +272,13 @@ function generateRandomConfig(baseConfig: EnhancedAdaptiveStrategyConfig): Enhan
 
 /**
  * Mutate a config slightly (for local search)
+ * AGGRESSIVE: Increased mutation rate and step size for more exploration
  */
-function mutateConfig(config: EnhancedAdaptiveStrategyConfig, mutationRate: number = 0.1): EnhancedAdaptiveStrategyConfig {
+function mutateConfig(config: EnhancedAdaptiveStrategyConfig, mutationRate: number = 0.2): EnhancedAdaptiveStrategyConfig {
   const mutate = (value: number, min: number, max: number) => {
     if (Math.random() < mutationRate) {
-      return Math.max(min, Math.min(max, value + (Math.random() - 0.5) * 0.1));
+      // Increased mutation step size from 0.1 to 0.15 for more aggressive exploration
+      return Math.max(min, Math.min(max, value + (Math.random() - 0.5) * 0.15));
     }
     return value;
   };
@@ -342,8 +348,12 @@ async function testConfig(
   }> = [];
   
   // OPTIMIZATION: Early termination - test a subset first, skip remaining if clearly bad
-  const earlyTerminationThreshold = Math.max(5, Math.floor(periods.length * 0.3)); // Test at least 30% of periods
-  const earlyTerminationMinScore = bestScoreSoFar * 0.5; // If score is less than 50% of best, likely won't improve
+  // ADJUSTED: Test more periods before early termination (was 30%, now 50%)
+  // This prevents cutting off configs that might perform well on later periods
+  const earlyTerminationThreshold = Math.max(5, Math.floor(periods.length * 0.5)); // Test at least 50% of periods
+  // ADJUSTED: Less aggressive early termination threshold (was 50%, now 30% of best)
+  // This allows more configs to complete testing, finding better generalizers
+  const earlyTerminationMinScore = bestScoreSoFar * 0.3; // If score is less than 30% of best, likely won't improve
   
   // OPTIMIZATION: Test periods in parallel (each backtest is independent)
   // Use a reasonable concurrency limit to avoid overwhelming the system
@@ -531,9 +541,9 @@ async function trainModel(trainingData: TrainingData): Promise<tf.LayersModel> {
 function predictBestConfig(
   model: tf.LayersModel,
   baseConfig: EnhancedAdaptiveStrategyConfig,
-  numCandidates: number = 100
+  numCandidates: number = 200 // AGGRESSIVE: Increased from 100 to 200 for more exploration
 ): EnhancedAdaptiveStrategyConfig {
-  // Generate candidate configs
+  // Generate candidate configs - more candidates = better chance of finding good config
   const candidates = Array.from({ length: numCandidates }, () => 
     generateRandomConfig(baseConfig)
   );
@@ -657,9 +667,9 @@ async function optimizeStrategy(
     const population: EnhancedAdaptiveStrategyConfig[] = [
       bestConfig, // Always include current best
       ...Array.from({ length: populationSize - 1 }, () => 
-        Math.random() < 0.5 
+        Math.random() < 0.7 // AGGRESSIVE: Increased from 0.5 to 0.7 - favor random exploration
           ? generateRandomConfig(baseConfig)
-          : mutateConfig(bestConfig, 0.2)
+          : mutateConfig(bestConfig, 0.25) // AGGRESSIVE: Increased mutation rate from 0.2 to 0.25
       ),
     ];
     
@@ -729,7 +739,7 @@ async function optimizeStrategy(
         const model = await trainModel(trainingData);
         
         // Use model to suggest better config
-        const suggestedConfig = predictBestConfig(model, bestConfig, 50);
+        const suggestedConfig = predictBestConfig(model, bestConfig, 100); // AGGRESSIVE: Increased from 50 to 100
         console.log(`   🔮 ML suggested new config, testing...`);
         
         const suggestedMetrics = await testConfig(suggestedConfig, asset, periods, bestScore, defaultReturn);
@@ -806,8 +816,10 @@ async function main() {
     process.exit(1);
   }
   
-  // Run optimization
-  const optimizedConfig = await optimizeStrategy(asset, periods, 10, 20);
+  // AGGRESSIVE: Increased iterations and population for better exploration
+  // More iterations = more chances to find better configs
+  // Larger population = more diversity, less likely to get stuck in local optima
+  const optimizedConfig = await optimizeStrategy(asset, periods, 15, 30); // Increased from 10,20 to 15,30
   
   // Save result
   saveConfig(optimizedConfig, asset);

@@ -20,14 +20,110 @@ export const pinVerifySchema = z.object({
 // Trading Schemas
 // ============================================================================
 
+/**
+ * Validates a date string in YYYY-MM-DD format
+ * Ensures it's a valid calendar date and not in the future
+ */
+export const dateStringSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
+  .refine(
+    (dateStr) => {
+      const date = new Date(dateStr + 'T00:00:00.000Z');
+      // Check if date is valid (handles leap years, month boundaries, etc.)
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const dateCheck = new Date(Date.UTC(year, month - 1, day));
+      return (
+        dateCheck.getUTCFullYear() === year &&
+        dateCheck.getUTCMonth() === month - 1 &&
+        dateCheck.getUTCDate() === day &&
+        !isNaN(date.getTime())
+      );
+    },
+    { message: 'Invalid calendar date' }
+  )
+  .refine(
+    (dateStr) => {
+      const date = new Date(dateStr + 'T00:00:00.000Z');
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      return date <= today;
+    },
+    { message: 'Date cannot be in the future' }
+  );
+
+/**
+ * Validates a date range (startDate < endDate, both valid dates, not future)
+ */
+export const dateRangeSchema = z
+  .object({
+    startDate: dateStringSchema,
+    endDate: dateStringSchema,
+  })
+  .refine(
+    (data) => {
+      const start = new Date(data.startDate + 'T00:00:00.000Z');
+      const end = new Date(data.endDate + 'T00:00:00.000Z');
+      return start <= end;
+    },
+    {
+      message: 'Start date must be before or equal to end date',
+      path: ['startDate'],
+    }
+  );
+
+/**
+ * Validates timeframe enum strictly
+ */
+export const timeframeSchema = z.enum(['1m', '5m', '15m', '1h', '4h', '8h', '12h', '1d']);
+
+/**
+ * Validates numeric values with bounds
+ */
+export function boundedNumberSchema(min: number, max: number, message?: string) {
+  return z.number().min(min, message || `Value must be at least ${min}`).max(max, message || `Value must be at most ${max}`);
+}
+
+/**
+ * Validates positive numbers
+ */
+export const positiveNumberSchema = z.number().positive('Value must be positive');
+
+/**
+ * Validates non-negative numbers
+ */
+export const nonNegativeNumberSchema = z.number().nonnegative('Value must be non-negative');
+
 export const tradingStartSchema = z.object({
-  name: z.string().optional(),
+  name: z.string().max(100, 'Name must be 100 characters or less').optional(),
   asset: z.enum(['eth', 'btc']).optional().default('eth'), // Asset to trade, defaults to 'eth' for backward compatibility
 });
 
 // Asset query parameter schema (for API routes)
 export const assetQuerySchema = z.object({
   asset: z.enum(['eth', 'btc']).optional().default('eth'),
+});
+
+/**
+ * Query parameter schema for candles endpoint
+ */
+export const candlesQuerySchema = z.object({
+  symbol: z.string().max(20, 'Symbol must be 20 characters or less').optional().default('ETHUSDT'),
+  timeframe: timeframeSchema.optional().default('8h'),
+  startDate: dateStringSchema.optional(),
+  endDate: dateStringSchema.optional(),
+  currentPrice: z.coerce.number().positive().optional(),
+  skipAPIFetch: z.coerce.boolean().optional().default(false),
+});
+
+/**
+ * Query parameter schema for audit endpoint
+ */
+export const auditQuerySchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),
+  type: z.enum(['buy', 'sell']).optional(),
+  outcome: z.enum(['win', 'loss', 'breakeven', 'pending']).optional(),
 });
 
 // ============================================================================
@@ -248,28 +344,26 @@ export const pokemonIndexSettingsSchema = z.object({
 
 export const indicatorConfigSchema = z.object({
   type: z.enum(['sma', 'ema', 'macd', 'rsi', 'bollinger', 'vwap', 'obv', 'volume_roc', 'vwmacd']),
-  weight: z.number().min(0).max(1),
-  params: z.record(z.string(), z.number()),
+  weight: boundedNumberSchema(0, 1, 'Weight must be between 0 and 1'),
+  params: z.record(z.string(), z.number().finite('Parameter must be a finite number')),
 });
 
 export const tradingConfigSchema = z.object({
-  name: z.string().optional(),
-  description: z.string().optional(),
-  timeframe: z.enum(['1m', '5m', '15m', '1h', '4h', '8h', '12h', '1d']),
-  indicators: z.array(indicatorConfigSchema),
-  buyThreshold: z.number().min(-1).max(1),
-  sellThreshold: z.number().min(-1).max(1),
-  maxPositionPct: z.number().min(0).max(1),
-  initialCapital: z.number().positive(),
+  name: z.string().max(100, 'Name must be 100 characters or less').optional(),
+  description: z.string().max(500, 'Description must be 500 characters or less').optional(),
+  timeframe: timeframeSchema,
+  indicators: z.array(indicatorConfigSchema).min(1, 'At least one indicator is required').max(20, 'Maximum 20 indicators allowed'),
+  buyThreshold: boundedNumberSchema(-1, 1, 'Buy threshold must be between -1 and 1'),
+  sellThreshold: boundedNumberSchema(-1, 1, 'Sell threshold must be between -1 and 1'),
+  maxPositionPct: boundedNumberSchema(0, 1, 'Max position percentage must be between 0 and 1'),
+  initialCapital: positiveNumberSchema.max(1000000000, 'Initial capital must be less than 1 billion'),
 });
 
-export const backtestRequestSchema = z.object({
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
-  initialCapital: z.number().positive().optional(),
+export const backtestRequestSchema = dateRangeSchema.safeExtend({
+  initialCapital: positiveNumberSchema.optional(),
   config: tradingConfigSchema,
   saveRun: z.boolean().optional().default(false),
-  runName: z.string().optional(),
+  runName: z.string().max(100, 'Run name must be 100 characters or less').optional(),
 });
 
 export const strategyRunQuerySchema = z.object({

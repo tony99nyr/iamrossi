@@ -1,6 +1,6 @@
 # Trading Strategy Project Status
 
-**Last Updated**: 2026-01-01 (Updated: ML optimizer, config logging, timezone fixes)  
+**Last Updated**: 2026-01-01 (Updated: Strategy history system, optimized config active, improved backfill logging)  
 **Current Phase**: Phase 10 - Multi-Asset Trading System ✅ **COMPLETED**
 - ✅ 8h timeframe standardized for both ETH and BTC
 - ✅ Correlation integration complete (affects confidence and thresholds)
@@ -20,7 +20,7 @@
 ### Phase 1: Timeframe Migration (8h)
 - ✅ Updated type definitions to support 8h/12h timeframes
 - ✅ Updated price service to fetch/store 8h candles
-- ✅ Created script to convert 1d historical data to 8h candles
+- ✅ Created script to convert 1d historical data to 8h candless
 - ✅ Updated strategy configs with 8h-optimized indicator periods
 - ✅ Made all scripts use configurable timeframe (default 8h)
 - ✅ Updated paper trading service to use 8h timeframe
@@ -320,6 +320,12 @@
   - Tests across ALL periods by default for robustness
   - Command: `pnpm eth:ml-optimize [asset] [years]`
   - Documentation updated in `ML_INTEGRATION_GUIDE.md`
+  - **🎉 Excellent Results (Jan 2026):**
+    - Optimized config: **57.59% average return** vs **22.80% default** (+34.79% improvement, **2.5x better**)
+    - Wins 17/32 periods (53%) vs default's 8/32 (25%)
+    - Particularly strong in bullish periods (386% vs 56% on bull runs)
+    - Robust across diverse market conditions (bull, bear, crash, whipsaw)
+    - Comparison script: `pnpm eth:compare-config` to compare optimized vs default
 - ✅ **Config Name Logging** - Backfill tests now show which config is being tested
   - Format: `B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0`
   - Shows in backfill test logs and ML optimizer output
@@ -572,78 +578,6 @@
 - ✅ ATR stop loss implementation
 - ✅ Kelly Criterion integration
 - ✅ Backfill test API call optimization
-
-### Files to Commit
-- `scripts/generate-synthetic-2027-data-enhanced.ts` - New
-- `scripts/generate-divergence-test-data.ts` - New (realistic divergence test scenarios)
-- `scripts/comprehensive-optimization-kelly-atr.ts` - New
-- `scripts/compare-top-strategies.ts` - New (reliable strategy comparison)
-- `scripts/fill-missing-candles.ts` - New (gap filling)
-- `scripts/verify-regime-history.ts` - New (regime verification)
-- `src/lib/kelly-criterion.ts` - New
-- `src/lib/atr-stop-loss.ts` - New
-- `src/lib/trade-executor.ts` - New (unified trade execution logic)
-- `src/lib/volatility-position-sizing.ts` - New
-- `src/lib/notifications.ts` - New (Discord webhook alerting)
-- `src/lib/divergence-detector.ts` - New (RSI/MACD divergence detection)
-- `src/lib/btc-price-service.ts` - New (BTC price data fetching)
-- `src/lib/correlation-analysis.ts` - New (ETH-BTC rolling correlation)
-- `src/lib/asset-config.ts` - New (Asset configuration and constants)
-- `src/app/tools/trading/components/TradingBotClient.tsx` - New (Shared asset-agnostic component)
-- `src/app/tools/btc-trading/page.tsx` - New (BTC trading page)
-- `src/app/tools/trading-overview/page.tsx` - New (Overview dashboard)
-- `src/app/tools/trading-overview/TradingOverviewClient.tsx` - New (Overview client component)
-- `scripts/generate-btc-synthetic-data.ts` - New (BTC synthetic data generator)
-- `scripts/generate-btc-synthetic-data-divergence.ts` - New (BTC divergence data generator)
-- `scripts/compare-timeframes.ts` - New (Timeframe comparison script)
-- `scripts/compare-assets.ts` - New (Asset comparison script)
-- `scripts/comprehensive-multi-asset-backfill.ts` - New (Comprehensive test script)
-- `scripts/compare-correlation-impact.ts` - New (Correlation impact comparison script)
-- `src/app/api/trading/audit/route.ts` - New (trade audit reports)
-- `src/app/api/trading/candles/route.ts` - New (historical candles, asset-agnostic)
-- `src/app/api/trading/paper/start/route.ts` - New (start paper trading session)
-- `src/app/api/trading/paper/status/route.ts` - New (get session status)
-- `src/app/api/trading/paper/update/route.ts` - New (update session)
-- `src/app/api/trading/paper/stop/route.ts` - New (stop session)
-- `src/app/api/trading/paper/price/route.ts` - New (get latest price)
-- `src/app/api/trading/paper/cron-update/route.ts` - New (background cron job)
-- `src/app/api/trading/paper/migrate-redis/route.ts` - New (migrate Redis to files)
-- `src/app/tools/eth-trading/audit/page.tsx` - New
-- `src/app/tools/eth-trading/components/PortfolioPerformancePanel.tsx` - New
-- `src/app/tools/eth-trading/components/StrategySignalPanel.tsx` - New
-- `tests/lib/kelly-criterion.test.ts` - New
-- `tests/lib/atr-stop-loss.test.ts` - New
-- `tests/lib/divergence-detector.test.ts` - New (15 tests)
-- `tests/integration/paper-trading.test.ts` - New (20 tests)
-- `scripts/backfill-test.ts` - Updated (2027 support, skipAPIFetch, configOverride)
-- `src/lib/eth-price-service.ts` - Updated (asset-agnostic, cutoff date 2026-12-31, multi-asset support, allowSyntheticData parameter)
-- `src/lib/paper-trading-enhanced.ts` - Updated (asset-agnostic, supports multiple assets)
-- `src/lib/notifications.ts` - Updated (asset-agnostic, supports ETH and BTC)
-- `src/lib/market-regime-detector-cached.ts` - Updated (correlation context support)
-- `src/lib/adaptive-strategy-enhanced.ts` - Updated (correlation context support, asset-agnostic)
-- `src/app/tools/eth-trading/page.tsx` - Updated (uses shared TradingBotClient)
-- `src/app/tools/eth-trading/components/PriceChart.tsx` - Updated (asset-agnostic symbol handling)
-- `src/app/api/trading/paper/*` - Updated (all routes accept asset parameter)
-- `src/lib/kv.ts` - Updated (BTC Redis keys added)
-- `src/lib/validation.ts` - Updated (asset query parameter schema)
-- `src/lib/data-quality-validator.ts` - Updated (improved gap detection)
-- `src/lib/market-regime-detector-cached.ts` - Updated (divergence integration)
-- `src/lib/risk-metrics.ts` - Updated (Omega Ratio, Ulcer Index)
-- `src/lib/paper-trading-enhanced.ts` - Updated (Discord notifications)
-- `src/types/index.ts` - Updated (RiskMetrics interface)
-- `src/app/tools/eth-trading/EthTradingBotClient.tsx` - Updated (consolidated panels, 48H view)
-- `src/app/tools/eth-trading/components/PriceChart.tsx` - Updated (regime consistency)
-- `STRATEGY_DOCUMENTATION.md` - Updated
-- `PROJECT_STATUS.md` - Updated
-- `data/historical-prices/synthetic/ethusdt_8h_2027-*.json.gz` - New data
-- `data/historical-prices/synthetic/ethusdt_8h_2028-*.json.gz` - New divergence test data
-
-### Exclude from Commit
-- `data/backfill-reports/*.log` - Log files
-- `data/backfill-reports/strategy-comparison-*.md` - Generated reports (keep latest)
-- `data/backfill-reports/optimization-*.md` - Generated optimization reports
-
----
 
 ## 📝 Notes
 

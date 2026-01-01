@@ -2,8 +2,10 @@ import type { PriceCandle } from '@/types';
 import { redis, ensureConnected } from './kv';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { gunzipSync, gzipSync } from 'zlib';
 import { getAssetFromSymbol, getPriceCachePrefix } from './asset-config';
+import { canMakeRequest, recordSuccess, recordFailure } from './api-circuit-breaker';
+import { getCachedRequest, cacheRequest } from './request-deduplication';
+import { getHistoricalDataPath, loadCandlesFromFile, fixOHLCRelationships, saveCandlesToFile } from './historical-file-utils';
 
 const BINANCE_API_URL = process.env.BINANCE_API_URL || 'https://api.binance.com/api/v3';
 const COINGECKO_API_URL = process.env.COINGECKO_API_URL || 'https://api.coingecko.com/api/v3';
@@ -31,70 +33,9 @@ function getCacheKey(symbol: string, interval: string, startTime: number, endTim
   return `${prefix}${symbol}:${interval}:${startTime}:${endTime}`;
 }
 
-/**
- * Get file path for historical price data
- * Simplified: Single file per symbol/interval (no dates in filename)
- * Format: {symbol}_{interval}.json.gz (e.g., ethusdt_8h.json.gz)
- */
-function getHistoricalDataPath(symbol: string, interval: string): string {
-  const filename = `${symbol.toLowerCase()}_${interval}.json`;
-  return path.join(HISTORICAL_DATA_DIR, symbol.toLowerCase(), interval, filename);
-}
+// Historical file utilities are now imported from historical-file-utils.ts
 
-/**
- * Load historical price data from local JSON file (always expects .json.gz)
- */
-async function loadFromFile(filePath: string): Promise<PriceCandle[] | null> {
-  try {
-    // Always try compressed file first (.json.gz)
-    const compressedPath = `${filePath}.gz`;
-    const compressed = await fs.readFile(compressedPath);
-    const decompressed = gunzipSync(compressed);
-    const jsonString = decompressed.toString('utf-8');
-    return JSON.parse(jsonString) as PriceCandle[];
-  } catch {
-    // Fallback: try uncompressed file (for backward compatibility with existing files)
-    try {
-      const data = await fs.readFile(filePath, 'utf-8');
-      const parsed = JSON.parse(data) as PriceCandle[];
-      // Note: File compression is handled by GitHub Actions workflow
-      // We just return the parsed data here
-      return parsed;
-    } catch {
-      // Neither file exists or is invalid - return null
-      return null;
-    }
-  }
-}
-
-/**
- * Save historical price data to local file (always as compressed .json.gz)
- * Note: Currently unused - file saving is handled by GitHub Actions workflow
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function saveToFile(filePath: string, candles: PriceCandle[]): Promise<void> {
-  try {
-    // Ensure directory exists
-    const dir = path.dirname(filePath);
-    await fs.mkdir(dir, { recursive: true });
-    
-    // Always save as compressed .gz file
-    const compressedPath = `${filePath}.gz`;
-    const jsonString = JSON.stringify(candles, null, 2);
-    const compressed = gzipSync(jsonString);
-    await fs.writeFile(compressedPath, compressed);
-    
-    // Remove any uncompressed file if it exists (cleanup)
-    try {
-      await fs.unlink(filePath);
-    } catch {
-      // File doesn't exist, which is fine
-    }
-  } catch (error) {
-    // File write failure is not critical - log and continue
-    console.warn(`Failed to save historical data to ${filePath}.gz:`, error);
-  }
-}
+// File saving utilities are now in historical-file-utils.ts
 
 /**
  * Rate limit helper for Binance
@@ -121,7 +62,7 @@ async function rateLimitCoinGecko(): Promise<void> {
 }
 
 /**
- * Fetch historical price data from Binance
+ * Fetch historical price data from Binance (with circuit breaker and deduplication)
  */
 async function fetchBinanceCandles(
   symbol: string,
@@ -129,30 +70,59 @@ async function fetchBinanceCandles(
   startTime: number,
   endTime: number
 ): Promise<PriceCandle[]> {
-  await rateLimitBinance();
-
-  const url = new URL(`${BINANCE_API_URL}/klines`);
-  url.searchParams.set('symbol', symbol);
-  url.searchParams.set('interval', interval);
-  url.searchParams.set('startTime', String(startTime));
-  url.searchParams.set('endTime', String(endTime));
-  url.searchParams.set('limit', '1000');
-
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => response.statusText);
-    throw new Error(`Binance API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`);
+  const endpoint = 'binance_klines';
+  
+  // Check circuit breaker
+  if (!canMakeRequest(endpoint)) {
+    throw new Error('Binance API circuit breaker is open. Too many recent failures.');
   }
+  
+  // Check request deduplication cache
+  const cacheKey = { symbol, interval, startTime, endTime };
+  const cached = getCachedRequest<PriceCandle[]>(endpoint, cacheKey);
+  if (cached) {
+    return cached;
+  }
+  
+  try {
+    await rateLimitBinance();
 
-  const data = await response.json();
-  return data.map((candle: (string | number)[]) => ({
-    timestamp: typeof candle[0] === 'number' ? candle[0] : parseInt(String(candle[0]), 10),
-    open: parseFloat(String(candle[1])),
-    high: parseFloat(String(candle[2])),
-    low: parseFloat(String(candle[3])),
-    close: parseFloat(String(candle[4])),
-    volume: parseFloat(String(candle[5])),
-  }));
+    const url = new URL(`${BINANCE_API_URL}/klines`);
+    url.searchParams.set('symbol', symbol);
+    url.searchParams.set('interval', interval);
+    url.searchParams.set('startTime', String(startTime));
+    url.searchParams.set('endTime', String(endTime));
+    url.searchParams.set('limit', '1000');
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      recordFailure(endpoint);
+      throw new Error(`Binance API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`);
+    }
+
+    const data = await response.json();
+    const candles = data.map((candle: (string | number)[]) => ({
+      timestamp: typeof candle[0] === 'number' ? candle[0] : parseInt(String(candle[0]), 10),
+      open: parseFloat(String(candle[1])),
+      high: parseFloat(String(candle[2])),
+      low: parseFloat(String(candle[3])),
+      close: parseFloat(String(candle[4])),
+      volume: parseFloat(String(candle[5])),
+    }));
+    
+    // Cache successful result and record success
+    cacheRequest(endpoint, cacheKey, candles);
+    recordSuccess(endpoint);
+    
+    return candles;
+  } catch (error) {
+    // Only record failure if it's not a circuit breaker error
+    if (!(error instanceof Error && error.message.includes('circuit breaker'))) {
+      recordFailure(endpoint);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -507,10 +477,12 @@ export async function fetchPriceCandles(
     for (const file of syntheticFiles) {
       const filePath = path.join(syntheticDir, file);
       try {
-        const compressed = await fs.readFile(filePath);
-        const decompressed = gunzipSync(compressed);
-        const jsonString = decompressed.toString('utf-8');
-        const candles = JSON.parse(jsonString) as PriceCandle[];
+        // Remove .gz extension if present for loadCandlesFromFile
+        const basePath = file.endsWith('.gz') ? filePath.slice(0, -3) : filePath;
+        const candles = await loadCandlesFromFile(basePath);
+        if (!candles) {
+          continue;
+        }
         
         // For synthetic data, include all candles that are >= startTime
         // Don't filter by endTime too strictly - synthetic data may extend into the future
@@ -551,14 +523,27 @@ export async function fetchPriceCandles(
   
   // Load from single historical file (simplified: no cutoff dates, no multiple files)
   const historicalFilePath = getHistoricalDataPath(symbol, interval);
-  const historicalData = await loadFromFile(historicalFilePath);
+  const historicalData = await loadCandlesFromFile(historicalFilePath);
   
   if (historicalData && historicalData.length > 0) {
+    // Fix OHLC relationships before using the data
+    const fixedData = fixOHLCRelationships(historicalData);
+    
     // Filter to requested date range
-    const filtered = historicalData.filter(c => 
+    const filtered = fixedData.filter(c => 
       c.timestamp >= startTime && c.timestamp <= actualEndTime
     );
     allCandles.push(...filtered);
+    
+    // If we fixed any OHLC issues, save the fixed data back to file
+    if (fixedData.length !== historicalData.length || fixedData.some((c, i) => 
+      c.high !== historicalData[i]!.high || c.low !== historicalData[i]!.low
+    )) {
+      // Save fixed candles back to file (async, non-blocking)
+      saveCandlesToFile(historicalFilePath, fixedData).catch((err: unknown) => {
+        console.warn(`Failed to save fixed OHLC data to ${historicalFilePath}:`, err);
+      });
+    }
   }
   
   // Also check for legacy files with date-based names (for backward compatibility during migration)
@@ -579,17 +564,31 @@ export async function fetchPriceCandles(
     for (const file of legacyFiles) {
       const filePath = path.join(dir, file);
       try {
-        const compressed = await fs.readFile(filePath);
-        const decompressed = gunzipSync(compressed);
-        const jsonString = decompressed.toString('utf-8');
-        const candles = JSON.parse(jsonString) as PriceCandle[];
+        // Remove .gz extension if present for loadCandlesFromFile
+        const basePath = file.endsWith('.gz') ? filePath.slice(0, -3) : filePath;
+        const candles = await loadCandlesFromFile(basePath);
+        if (!candles) {
+          continue;
+        }
         
-        const filtered = candles.filter(c => 
+        // Fix OHLC relationships
+        const fixedCandles = fixOHLCRelationships(candles);
+        
+        const filtered = fixedCandles.filter(c => 
           c.timestamp >= startTime && c.timestamp <= actualEndTime
         );
         
         if (filtered.length > 0) {
           allCandles.push(...filtered);
+        }
+        
+        // If we fixed any OHLC issues, save the fixed data back to file
+        if (fixedCandles.length !== candles.length || fixedCandles.some((c, i) => 
+          c.high !== candles[i]!.high || c.low !== candles[i]!.low
+        )) {
+          saveCandlesToFile(basePath, fixedCandles).catch((err: unknown) => {
+            console.warn(`Failed to save fixed OHLC data to ${basePath}:`, err);
+          });
         }
       } catch {
         continue;
@@ -1602,17 +1601,43 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
 }
 
 /**
- * Fetch latest price from APIs (internal, with retry logic)
+ * Fetch latest price from APIs (internal, with retry logic, circuit breaker, and deduplication)
  */
 async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number> {
+  const endpoint = 'price_ticker';
+  
+  // Check request deduplication cache
+  const cacheKey = { symbol, endpoint: 'latest_price' };
+  const cached = getCachedRequest<number>(endpoint, cacheKey);
+  if (cached && cached > 0) {
+    return cached;
+  }
+  
   // Try Binance first with retry
   try {
+    // Check circuit breaker for Binance
+    if (!canMakeRequest('binance_ticker')) {
+      throw new Error('Binance API circuit breaker is open');
+    }
+    
     const url = `${BINANCE_API_URL}/ticker/price?symbol=${symbol}`;
     const price = await fetchPriceWithRetry(url, {}, 3, 1000, undefined, 'Binance');
+    
+    // Cache successful result
+    if (price > 0) {
+      cacheRequest(endpoint, cacheKey, price);
+      recordSuccess('binance_ticker');
+    }
+    
     return price;
   } catch (error) {
-    // Only log non-rate-limit errors at error level (rate limits are expected and handled gracefully)
+    // Record failure for Binance (unless it's a circuit breaker error)
     const errorMessage = error instanceof Error ? error.message : String(error);
+    if (!errorMessage.includes('circuit breaker')) {
+      recordFailure('binance_ticker');
+    }
+    
+    // Only log non-rate-limit errors at error level (rate limits are expected and handled gracefully)
     if (errorMessage.includes('Rate limited') || errorMessage.includes('451') || errorMessage.includes('429')) {
       console.log(`ℹ️ Binance rate limited, trying CoinGecko...`);
     } else if (!errorMessage.includes('Rate limited') && !errorMessage.includes('451') && !errorMessage.includes('429')) {
@@ -1621,6 +1646,10 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
     
     // Fallback to CoinGecko with retry
     try {
+      // Check circuit breaker for CoinGecko
+      if (!canMakeRequest('coingecko_price')) {
+        throw new Error('CoinGecko API circuit breaker is open');
+      }
       // Map symbol to CoinGecko coin ID
       const coinIdMap: Record<string, string> = {
         'ETHUSDT': 'ethereum',
@@ -1636,11 +1665,22 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
       
       const price = await fetchPriceWithRetry(url, headers, 3, 2000, undefined, 'CoinGecko');
       if (!price || price === 0) {
+        recordFailure('coingecko_price');
         throw new Error('CoinGecko returned invalid price');
       }
+      
+      // Cache successful result
+      cacheRequest(endpoint, cacheKey, price);
+      recordSuccess('coingecko_price');
+      
       return price;
     } catch (fallbackError) {
+      // Record failure for CoinGecko (unless it's a circuit breaker error)
       const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      if (!fallbackMessage.includes('circuit breaker')) {
+        recordFailure('coingecko_price');
+      }
+      
       if (fallbackMessage.includes('Rate limited') || fallbackMessage.includes('451') || fallbackMessage.includes('429')) {
         console.log(`ℹ️ CoinGecko rate limited, trying Coinbase...`);
       } else if (!fallbackMessage.includes('Rate limited') && !fallbackMessage.includes('451') && !fallbackMessage.includes('429')) {
@@ -1648,6 +1688,10 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
       }
       // Third fallback: Coinbase (public API, no key required)
       try {
+        // Check circuit breaker for Coinbase
+        if (!canMakeRequest('coinbase_price')) {
+          throw new Error('Coinbase API circuit breaker is open');
+        }
         // Map symbol to Coinbase currency code
         const currencyMap: Record<string, string> = {
           'ETHUSDT': 'ETH',
@@ -1668,9 +1712,13 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
             const data = await response.json();
             const price = parseFloat(data.data?.rates?.USD);
             if (price && price > 0) {
+              // Cache successful result
+              cacheRequest(endpoint, cacheKey, price);
+              recordSuccess('coinbase_price');
               return price;
             }
           }
+          recordFailure('coinbase_price');
           throw new Error(`Coinbase returned ${response.status}`);
         } catch (fetchError) {
           clearTimeout(timeoutId);
@@ -1681,6 +1729,10 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
         }
       } catch (coinbaseError) {
         const coinbaseMessage = coinbaseError instanceof Error ? coinbaseError.message : String(coinbaseError);
+        // Record failure for Coinbase (unless it's a circuit breaker error)
+        if (!coinbaseMessage.includes('circuit breaker')) {
+          recordFailure('coinbase_price');
+        }
         // Only log non-rate-limit errors at error level
         if (!coinbaseMessage.includes('Rate limited') && !coinbaseMessage.includes('451') && !coinbaseMessage.includes('429')) {
           console.error('Coinbase price fetch failed:', coinbaseError);

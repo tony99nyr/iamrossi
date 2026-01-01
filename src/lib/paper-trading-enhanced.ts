@@ -20,6 +20,18 @@ import { sendTradeAlert, sendRegimeChangeAlert, sendSessionAlert, createTradeNot
 import { getAssetConfig, getPaperSessionKey, type TradingAsset } from './asset-config';
 import { analyzeCorrelation, getCorrelationContext } from './correlation-analysis';
 import { fetchAlignedCandles } from './btc-price-service';
+// Circuit breaker imports removed - not currently used in paper trading
+
+// Maximum number of portfolio history snapshots to keep (rolling window)
+const MAX_PORTFOLIO_HISTORY = 1000;
+
+// Session expiration: 90 days of inactivity (for autonomous long-running sessions)
+// Sessions that are actively being updated will never expire
+// Only truly abandoned/inactive sessions will be cleaned up
+const SESSION_EXPIRATION_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+// Cleanup job interval: run every hour
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 export interface EnhancedPaperTradingSession {
   id: string;
@@ -45,6 +57,8 @@ export interface EnhancedPaperTradingSession {
   openPositions?: OpenPosition[]; // Track open positions with stop losses
   currentATR?: number; // Current ATR value for display
   kellyMultiplier?: number; // Current Kelly multiplier for display
+  // Session management
+  expiresAt?: number; // Timestamp when session expires (if inactive)
 }
 
 // Helper to get active session key for an asset
@@ -53,9 +67,109 @@ function getActiveSessionKey(asset: TradingAsset = 'eth'): string {
 }
 
 /**
+ * Manage portfolio history with rolling window
+ * Keeps only the most recent MAX_PORTFOLIO_HISTORY snapshots
+ */
+function managePortfolioHistory(history: PortfolioSnapshot[]): PortfolioSnapshot[] {
+  if (history.length <= MAX_PORTFOLIO_HISTORY) {
+    return history;
+  }
+  
+  // Keep the most recent snapshots (remove oldest)
+  const sorted = [...history].sort((a, b) => a.timestamp - b.timestamp);
+  return sorted.slice(-MAX_PORTFOLIO_HISTORY);
+}
+
+/**
+ * Deduplicate portfolio history snapshots by timestamp
+ */
+function deduplicatePortfolioHistory(history: PortfolioSnapshot[]): PortfolioSnapshot[] {
+  const seen = new Map<number, PortfolioSnapshot>();
+  
+  for (const snapshot of history) {
+    const existing = seen.get(snapshot.timestamp);
+    if (!existing || snapshot.timestamp > existing.timestamp) {
+      seen.set(snapshot.timestamp, snapshot);
+    }
+  }
+  
+  return Array.from(seen.values()).sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/**
  * Paper Trading Service
  */
 export class PaperTradingService {
+  /**
+   * Validate session state (check for corruption, missing fields, etc.)
+   */
+  static validateSession(session: EnhancedPaperTradingSession): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    
+    if (!session.id) {
+      errors.push('Session missing ID');
+    }
+    
+    if (!session.asset) {
+      errors.push('Session missing asset');
+    }
+    
+    if (!session.portfolio) {
+      errors.push('Session missing portfolio');
+    } else {
+      if (typeof session.portfolio.initialCapital !== 'number' || session.portfolio.initialCapital <= 0) {
+        errors.push('Invalid initial capital');
+      }
+      if (typeof session.portfolio.usdcBalance !== 'number' || session.portfolio.usdcBalance < 0) {
+        errors.push('Invalid USDC balance');
+      }
+      if (typeof session.portfolio.ethBalance !== 'number' || session.portfolio.ethBalance < 0) {
+        errors.push('Invalid asset balance');
+      }
+    }
+    
+    if (!session.trades || !Array.isArray(session.trades)) {
+      errors.push('Session missing or invalid trades array');
+    }
+    
+    if (!session.portfolioHistory || !Array.isArray(session.portfolioHistory)) {
+      errors.push('Session missing or invalid portfolio history');
+    }
+    
+    if (session.isActive && !session.lastUpdate) {
+      errors.push('Active session missing lastUpdate timestamp');
+    }
+    
+    // Check for expired session
+    if (session.isActive && session.expiresAt && Date.now() > session.expiresAt) {
+      errors.push('Session has expired');
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+  
+  /**
+   * Check if session is expired (only for truly inactive sessions)
+   * For autonomous long-running sessions, expiration only occurs if the session
+   * hasn't been updated in a very long time (90 days). Active sessions that are
+   * being updated regularly will never expire.
+   */
+  static isSessionExpired(session: EnhancedPaperTradingSession): boolean {
+    if (!session.isActive) {
+      return false; // Inactive sessions don't expire
+    }
+    
+    // Check based on lastUpdate (most reliable indicator of activity)
+    const timeSinceUpdate = Date.now() - (session.lastUpdate || session.startedAt);
+    
+    // Only expire if session hasn't been updated in 90 days
+    // This allows autonomous sessions to run for weeks/months as long as they're being updated
+    return timeSinceUpdate > SESSION_EXPIRATION_MS;
+  }
+  
   /**
    * Start a new paper trading session
    */
@@ -162,13 +276,13 @@ export class PaperTradingService {
     // Fetch and merge recent intraday candles (5m or 1h) from Redis for the last 48 hours
     // This provides granular price movements for recent periods
     try {
-      const now = Date.now();
-      const recentCutoff = now - (48 * 60 * 60 * 1000); // Last 48 hours
+      const currentTime = Date.now();
+      const recentCutoff = currentTime - (48 * 60 * 60 * 1000); // Last 48 hours
       
       // Try to fetch 5-minute candles first (most granular), fall back to hourly if not available
       let intradayCandles: PriceCandle[] = [];
       const recentStartDate = new Date(recentCutoff).toISOString().split('T')[0];
-      const recentEndDate = new Date(now).toISOString().split('T')[0];
+      const recentEndDate = new Date(currentTime).toISOString().split('T')[0];
       
       try {
         // Try 5-minute candles first
@@ -246,11 +360,11 @@ export class PaperTradingService {
     // Add current snapshot with actual current price (only if today's candle wasn't already included)
     // If today's candle exists, it should already have the latest price from fetchPriceCandles
     // But we add a "now" snapshot to show the very latest price
-    const now = Date.now();
-    if (!todayCandle || todayCandle.timestamp < now - 5 * 60 * 1000) {
+    const currentTime = Date.now();
+    if (!todayCandle || todayCandle.timestamp < currentTime - 5 * 60 * 1000) {
       // Only add if today's candle is missing or more than 5 minutes old
       portfolioHistory.push({
-        timestamp: now,
+        timestamp: currentTime,
         usdcBalance: initialCapital,
         ethBalance: 0,
         totalValue: initialCapital,
@@ -259,7 +373,7 @@ export class PaperTradingService {
     } else if (todayCandle.close !== initialPrice) {
       // Today's candle exists but price has changed - add update snapshot
       portfolioHistory.push({
-        timestamp: now,
+        timestamp: currentTime,
         usdcBalance: initialCapital,
         ethBalance: 0,
         totalValue: initialCapital,
@@ -271,12 +385,13 @@ export class PaperTradingService {
     portfolioHistory.sort((a, b) => a.timestamp - b.timestamp);
 
     // Create session
+    const sessionStartTime = Date.now();
     const session: EnhancedPaperTradingSession = {
       id: sessionId,
       name,
       asset,
       config,
-      startedAt: Date.now(),
+      startedAt: sessionStartTime,
       isActive: true,
       trades: [],
       portfolioHistory,
@@ -293,10 +408,11 @@ export class PaperTradingService {
       currentIndicators: initialSignal.indicators,
       lastSignal: initialSignal,
       lastPrice: initialPrice,
-      lastUpdate: Date.now(),
+      lastUpdate: sessionStartTime,
+      expiresAt: sessionStartTime + SESSION_EXPIRATION_MS,
       dataQuality,
       regimeHistory: [{
-        timestamp: Date.now(),
+        timestamp: sessionStartTime,
         regime: initialSignal.regime.regime,
         confidence: initialSignal.regime.confidence,
       }],
@@ -437,7 +553,7 @@ export class PaperTradingService {
           const recentEth = ethCandles.slice(-30);
           const recentBtc = btcCandles.slice(-30);
           
-          const correlationAnalysis = analyzeCorrelation(recentEth, recentBtc, 30);
+          const correlationAnalysis = await analyzeCorrelation(recentEth, recentBtc, 30, true);
           const context = getCorrelationContext(correlationAnalysis);
           
           // For BTC, reverse the signal perspective
@@ -568,21 +684,26 @@ export class PaperTradingService {
     } as typeof updatedSession.lastSignal;
 
     // Add portfolio snapshot with current price
-    const now = Date.now();
+    const updateTime = Date.now();
     updatedSession.portfolioHistory.push({
-      timestamp: now,
+      timestamp: updateTime,
       usdcBalance: portfolio.usdcBalance,
       ethBalance: portfolio.ethBalance,
       totalValue: newTotalValue,
       ethPrice: currentPrice,
     });
     
+    // Deduplicate and manage history size (rolling window)
+    updatedSession.portfolioHistory = deduplicatePortfolioHistory(updatedSession.portfolioHistory);
+    updatedSession.portfolioHistory = managePortfolioHistory(updatedSession.portfolioHistory);
+    
     // Also fetch and merge recent intraday candles (5m or 1h) from Redis for the last 48 hours
     // This ensures the chart shows granular price movements for recent periods
     try {
-      const recentCutoff = now - (48 * 60 * 60 * 1000); // Last 48 hours
+      const currentTimestamp = Date.now();
+      const recentCutoff = currentTimestamp - (48 * 60 * 60 * 1000); // Last 48 hours
       const recentStartDate = new Date(recentCutoff).toISOString().split('T')[0];
-      const recentEndDate = new Date(now).toISOString().split('T')[0];
+      const recentEndDate = new Date(currentTimestamp).toISOString().split('T')[0];
       
       // Try to fetch 5-minute candles first (most granular), fall back to hourly if not available
       let intradayCandles: PriceCandle[] = [];
@@ -634,9 +755,10 @@ export class PaperTradingService {
           return !isDailyCandle; // Remove daily candles in recent period, keep intraday
         });
         
-        // Sort by timestamp
+        // Sort by timestamp, deduplicate, and manage size
         filteredHistory.sort((a, b) => a.timestamp - b.timestamp);
-        updatedSession.portfolioHistory = filteredHistory;
+        updatedSession.portfolioHistory = deduplicatePortfolioHistory(filteredHistory);
+        updatedSession.portfolioHistory = managePortfolioHistory(updatedSession.portfolioHistory);
       }
     } catch (error) {
       // Non-critical - log but continue
@@ -700,11 +822,13 @@ export class PaperTradingService {
     }
 
     // Update session state
+    const updateTimestamp = Date.now();
     updatedSession.currentRegime = signal.regime;
     updatedSession.currentIndicators = signal.indicators;
     updatedSession.lastSignal = signal;
     updatedSession.lastPrice = currentPrice;
-    updatedSession.lastUpdate = Date.now();
+    updatedSession.lastUpdate = updateTimestamp;
+    updatedSession.expiresAt = updateTimestamp + SESSION_EXPIRATION_MS; // Refresh expiration on update
     updatedSession.portfolio = portfolio;
     updatedSession.dataQuality = dataQuality;
 
@@ -793,5 +917,63 @@ export class PaperTradingService {
 
     return session;
   }
+  
+  /**
+   * Cleanup expired sessions (run periodically)
+   * Only stops sessions that are truly inactive (haven't been updated in 90+ days)
+   * Active autonomous sessions that are being updated regularly will continue running indefinitely
+   */
+  static async cleanupExpiredSessions(): Promise<{ cleaned: number; errors: string[] }> {
+    await ensureConnected();
+    
+    const errors: string[] = [];
+    let cleaned = 0;
+    
+    // Check all known assets
+    const assets: TradingAsset[] = ['eth', 'btc'];
+    
+    for (const asset of assets) {
+      try {
+        const session = await this.getActiveSession(asset);
+        if (session && this.isSessionExpired(session)) {
+          const timeSinceUpdate = Date.now() - (session.lastUpdate || session.startedAt);
+          const daysInactive = Math.floor(timeSinceUpdate / (24 * 60 * 60 * 1000));
+          console.log(`Cleaning up expired session: ${session.id} (${asset}) - inactive for ${daysInactive} days`);
+          try {
+            await this.stopSession(session.id, asset);
+            cleaned++;
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            errors.push(`Failed to stop expired session ${session.id}: ${errorMessage}`);
+          }
+        }
+      } catch (error) {
+        // Ignore errors for sessions that don't exist
+        if (!(error instanceof Error && error.message.includes('not found'))) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          errors.push(`Error checking session for ${asset}: ${errorMessage}`);
+        }
+      }
+    }
+    
+    return { cleaned, errors };
+  }
+}
+
+// Start cleanup job if running in server environment
+if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'test') {
+  // Run cleanup every hour
+  setInterval(() => {
+    PaperTradingService.cleanupExpiredSessions().catch(error => {
+      console.error('[Paper Trading] Cleanup job failed:', error);
+    });
+  }, CLEANUP_INTERVAL_MS);
+  
+  // Run initial cleanup after 1 minute (to avoid startup race conditions)
+  setTimeout(() => {
+    PaperTradingService.cleanupExpiredSessions().catch(error => {
+      console.error('[Paper Trading] Initial cleanup failed:', error);
+    });
+  }, 60 * 1000);
 }
 

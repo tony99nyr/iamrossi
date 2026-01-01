@@ -142,7 +142,7 @@ async function runBacktestWithCorrelation(
       
       if (alignedCandles.eth.length >= 30 && alignedCandles.btc.length >= 30) {
         // Calculate correlation
-        const correlationAnalysis = analyzeCorrelation(alignedCandles.eth, alignedCandles.btc, 30);
+        const correlationAnalysis = await analyzeCorrelation(alignedCandles.eth, alignedCandles.btc, 30);
         const context = getCorrelationContext(correlationAnalysis);
         
         // For BTC, we reverse the signal (BTC correlation with ETH)
