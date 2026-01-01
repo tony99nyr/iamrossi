@@ -319,7 +319,8 @@ async function testConfig(
   config: EnhancedAdaptiveStrategyConfig,
   asset: TradingAsset,
   periods: Array<{ startDate: string; endDate: string; isSynthetic: boolean }>,
-  bestScoreSoFar: number = -Infinity
+  bestScoreSoFar: number = -Infinity,
+  defaultReturn?: number
 ): Promise<OptimizationResult['metrics']> {
   const results: Array<{
     startDate: string;
@@ -430,7 +431,9 @@ async function testConfig(
         winRate: intermediateWinRate,
         totalTrades: intermediateTrades,
       };
-      const intermediateScore = calculateFitnessScore(intermediateMetrics, defaultReturn);
+      // Ensure defaultReturn is accessible (handle optional parameter)
+      const baselineReturn = typeof defaultReturn !== 'undefined' ? defaultReturn : undefined;
+      const intermediateScore = calculateFitnessScore(intermediateMetrics, baselineReturn);
       
       // If intermediate score is much worse than best, skip remaining periods
       if (bestScoreSoFar !== -Infinity && intermediateScore < earlyTerminationMinScore) {
@@ -628,7 +631,7 @@ async function optimizeStrategy(
   
   // Test default config first to establish baseline
   console.log(`📊 Testing default config to establish baseline...`);
-  const defaultMetrics = await testConfig(baseConfig, asset, periods);
+  const defaultMetrics = await testConfig(baseConfig, asset, periods, -Infinity, undefined);
   const defaultScore = calculateFitnessScore(defaultMetrics);
   const defaultReturn = defaultMetrics.totalReturn;
   console.log(`   Default config baseline: ${defaultReturn.toFixed(2)}% return, score: ${defaultScore.toFixed(2)}`);
@@ -676,7 +679,7 @@ async function optimizeStrategy(
           const configName = getConfigShortName(config);
           try {
             // OPTIMIZATION: Pass bestScoreSoFar for early termination
-            const metrics = await testConfig(config, asset, periods, bestScore);
+            const metrics = await testConfig(config, asset, periods, bestScore, defaultReturn);
             const score = calculateFitnessScore(metrics, defaultReturn);
             
             if ((globalIndex + 1) % 5 === 0 || globalIndex === 0) {
@@ -729,7 +732,7 @@ async function optimizeStrategy(
         const suggestedConfig = predictBestConfig(model, bestConfig, 50);
         console.log(`   🔮 ML suggested new config, testing...`);
         
-        const suggestedMetrics = await testConfig(suggestedConfig, asset, periods);
+        const suggestedMetrics = await testConfig(suggestedConfig, asset, periods, bestScore, defaultReturn);
         const suggestedScore = calculateFitnessScore(suggestedMetrics, defaultReturn);
         
         if (suggestedScore > bestScore) {
