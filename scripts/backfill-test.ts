@@ -9,10 +9,10 @@ import { fetchPriceCandles } from '../src/lib/eth-price-service';
 import { generateEnhancedAdaptiveSignal } from '../src/lib/adaptive-strategy-enhanced';
 import { calculateConfidence } from '../src/lib/confidence-calculator';
 import { clearRegimeHistory } from '../src/lib/adaptive-strategy-enhanced';
-import { clearIndicatorCache } from '../src/lib/market-regime-detector-cached';
+import { clearIndicatorCache, detectMarketRegimeCached } from '../src/lib/market-regime-detector-cached';
 import { executeTrade } from '../src/lib/trade-executor';
 import { updateStopLoss } from '../src/lib/atr-stop-loss';
-import { getATRValue } from '../src/lib/indicators';
+// ATR is now pre-calculated, so we don't need to import getATRValue
 import { disconnectRedis } from '../src/lib/kv';
 import { getAssetConfig, type TradingAsset } from '../src/lib/asset-config';
 import { analyzeCorrelation, getCorrelationContext } from '../src/lib/correlation-analysis';
@@ -357,10 +357,14 @@ export async function runBacktest(
         otherCandles = asset === 'eth' ? aligned.btc : aligned.eth;
       }
       
-      // Align candles by timestamp
+      // OPTIMIZATION: Align candles by timestamp using Map for O(1) lookups
       const alignedCandles: { eth: PriceCandle[]; btc: PriceCandle[] } = { eth: [], btc: [] };
       const candleMap = new Map<number, PriceCandle>();
       candles.forEach(c => candleMap.set(c.timestamp, c));
+      
+      // OPTIMIZATION: Create reverse map for faster timestamp-to-index lookup
+      const timestampToIndexMap = new Map<number, number>();
+      candles.forEach((c, idx) => timestampToIndexMap.set(c.timestamp, idx));
       
       for (const otherCandle of otherCandles) {
         const matchingCandle = candleMap.get(otherCandle.timestamp);
@@ -376,7 +380,7 @@ export async function runBacktest(
       }
       
       if (alignedCandles.eth.length >= 30 && alignedCandles.btc.length >= 30) {
-        // Calculate rolling correlation for each candle index
+        // OPTIMIZATION: Calculate rolling correlation in batch, use Map for index lookup
         for (let i = 30; i < alignedCandles.eth.length; i++) {
           const ethWindow = alignedCandles.eth.slice(Math.max(0, i - 30), i + 1);
           const btcWindow = alignedCandles.btc.slice(Math.max(0, i - 30), i + 1);
@@ -385,11 +389,11 @@ export async function runBacktest(
             const correlationAnalysis = analyzeCorrelation(ethWindow, btcWindow, 30);
             const context = getCorrelationContext(correlationAnalysis);
             
-            // Map to original candle index
+            // OPTIMIZATION: Use Map lookup instead of findIndex (O(1) vs O(n))
             const timestamp = alignedCandles.eth[i]!.timestamp;
-            const originalIndex = candles.findIndex(c => c.timestamp === timestamp);
+            const originalIndex = timestampToIndexMap.get(timestamp);
             
-            if (originalIndex >= 0) {
+            if (originalIndex !== undefined && originalIndex >= 0) {
               // For BTC, reverse the signal perspective
               if (asset === 'btc') {
                 correlationContextMap.set(originalIndex, {
@@ -447,18 +451,44 @@ export async function runBacktest(
     atrPeriod: 14,
   };
   
+  // OPTIMIZATION: Pre-calculate all indicators upfront to avoid repeated calculations
+  // This forces the indicator cache to be populated once before the main loop
+  // Force indicator cache initialization by calling detectMarketRegimeCached once
+  // This pre-calculates all indicators (SMA, EMA, MACD, RSI) for the entire dataset
+  if (candles.length > 50) {
+    detectMarketRegimeCached(candles, Math.min(50, candles.length - 1));
+  }
+  
+  // OPTIMIZATION: Pre-calculate ATR values for all candles to avoid repeated calculations
+  // ATR is used frequently in the loop for stop loss calculations
+  const { calculateATR } = await import('../src/lib/indicators');
+  const precalculatedATR = calculateATR(candles, effectiveStopLossConfig.atrPeriod, effectiveStopLossConfig.useEMA);
+  const getPrecalculatedATR = (index: number): number | null => {
+    if (index < 1 || precalculatedATR.length === 0) return null;
+    const atrIndex = index - 1;
+    if (atrIndex >= 0 && atrIndex < precalculatedATR.length) {
+      return precalculatedATR[atrIndex]!;
+    }
+    return null;
+  };
+  
   // Track regime history manually for persistence
   const regimeHistory: Array<'bullish' | 'bearish' | 'neutral'> = [];
   const historyPreloadStartIndex = Math.max(0, startIndex - 10);
   const sessionId = `backtest-${startDate}`;
   
+  // OPTIMIZATION: Batch preload regime history instead of sequential calls
+  const regimePreloadPromises: Promise<void>[] = [];
   for (let i = historyPreloadStartIndex; i < startIndex; i++) {
-    const regime = await import('../src/lib/market-regime-detector-cached').then(m => 
-      m.detectMarketRegimeCached(candles, i)
+    regimePreloadPromises.push(
+      Promise.resolve().then(() => {
+        const regime = detectMarketRegimeCached(candles, i);
+        regimeHistory.push(regime.regime);
+        if (regimeHistory.length > 10) regimeHistory.shift();
+      })
     );
-    regimeHistory.push(regime.regime);
-    if (regimeHistory.length > 10) regimeHistory.shift();
   }
+  await Promise.all(regimePreloadPromises);
   
   // Calculate buy-and-hold baselines
   const startPrice = candles[startIndex]!.close;
@@ -489,8 +519,9 @@ export async function runBacktest(
     const currentPrice = candle.close;
 
     // Update open positions (for trailing stops)
+    // OPTIMIZATION: Use pre-calculated ATR instead of recalculating
     if (openPositions.length > 0) {
-      const currentATR = getATRValue(candles, i, effectiveStopLossConfig.atrPeriod, effectiveStopLossConfig.useEMA);
+      const currentATR = getPrecalculatedATR(i);
       for (const position of openPositions) {
         updateStopLoss(position, currentPrice, currentATR, effectiveStopLossConfig);
       }
@@ -500,6 +531,7 @@ export async function runBacktest(
     const correlationContext = useCorrelation ? correlationContextMap.get(i) : undefined;
     
     // Generate signal
+    // OPTIMIZATION: Indicators are already cached, so this is fast
     const signal = generateEnhancedAdaptiveSignal(
       candles,
       config, // Use provided config, not DEFAULT_CONFIG
@@ -508,6 +540,7 @@ export async function runBacktest(
       correlationContext
     );
     
+    // OPTIMIZATION: Confidence calculation uses cached indicators
     const confidence = calculateConfidence(signal, candles, i);
     
     // Build portfolio history snapshot

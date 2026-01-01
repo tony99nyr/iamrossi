@@ -107,7 +107,13 @@ export async function fetchBTCCandles(
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     } catch (error) {
-      console.error('[BTC Price] Fetch error:', error instanceof Error ? error.message : error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isRateLimit = errorMessage.includes('451') || errorMessage.includes('429') || errorMessage.includes('Rate limited');
+      if (isRateLimit) {
+        console.log(`ℹ️ [BTC Price] Binance rate limited (${errorMessage}), using available cached data`);
+      } else {
+        console.error('[BTC Price] Fetch error:', errorMessage);
+      }
       break;
     }
   }

@@ -69,7 +69,7 @@ function getConfigShortName(config: EnhancedAdaptiveStrategyConfig): string {
  * Get all test periods (same as backfill-test.ts)
  * This ensures ML optimization tests robustness across ALL market conditions
  */
-function getAllTestPeriods(): Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }> {
+export function getAllTestPeriods(): Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }> {
   const historicalPeriods = [
     { name: 'Bullish Period', startDate: '2025-04-01', endDate: '2025-08-23', isSynthetic: false },
     { name: 'Bearish Period', startDate: '2025-01-01', endDate: '2025-06-01', isSynthetic: false },
@@ -129,7 +129,7 @@ function getAllTestPeriods(): Array<{ startDate: string; endDate: string; isSynt
 /**
  * Get test periods filtered by year(s)
  */
-function getTestPeriodsForYears(years?: number[]): Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }> {
+export function getTestPeriodsForYears(years?: number[]): Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }> {
   const allPeriods = getAllTestPeriods();
   
   if (!years || years.length === 0) {
@@ -183,23 +183,45 @@ function configToFeatures(config: EnhancedAdaptiveStrategyConfig): number[] {
   ];
 }
 
+// Default config baseline (set during optimization)
+let DEFAULT_BASELINE_RETURN: number | null = null;
+
 /**
  * Calculate fitness score from backtest results
  * Higher score = better strategy
+ * 
+ * Updated weights (Jan 2026):
+ * - Increased return weight from 40% to 60% (prioritize profitability)
+ * - Reduced drawdown penalty from 20% to 10% (less conservative)
+ * - Added minimum return threshold to avoid overly conservative configs
+ * - Added bonus for beating default config baseline
  */
-function calculateFitnessScore(metrics: OptimizationResult['metrics']): number {
-  // Weighted combination of multiple factors
-  const returnScore = metrics.totalReturn * 0.4; // 40% weight on returns
-  const sharpeScore = metrics.sharpeRatio * 10 * 0.3; // 30% weight on risk-adjusted returns
-  const drawdownPenalty = -Math.abs(metrics.maxDrawdown) * 0.2; // 20% penalty for drawdown
-  const winRateScore = metrics.winRate * 100 * 0.1; // 10% weight on win rate
+function calculateFitnessScore(metrics: OptimizationResult['metrics'], defaultBaseline?: number): number {
+  // Use default baseline if provided, otherwise use minimum threshold
+  const baseline = defaultBaseline ?? DEFAULT_BASELINE_RETURN ?? 5.0;
+  
+  // Heavy penalty for not beating default config
+  const baselinePenalty = metrics.totalReturn < baseline
+    ? (metrics.totalReturn - baseline) * 5 // Very heavy penalty (5x) for below baseline
+    : 0;
+  
+  // Bonus for beating default config
+  const beatBaselineBonus = defaultBaseline && metrics.totalReturn > defaultBaseline
+    ? (metrics.totalReturn - defaultBaseline) * 3 // 3x bonus for each % above baseline
+    : 0;
+  
+  // Weighted combination of multiple factors (updated weights)
+  const returnScore = metrics.totalReturn * 0.7; // 70% weight on returns (increased from 60%)
+  const sharpeScore = metrics.sharpeRatio * 10 * 0.15; // 15% weight on risk-adjusted returns (reduced from 20%)
+  const drawdownPenalty = -Math.abs(metrics.maxDrawdown) * 0.1; // 10% penalty for drawdown
+  const winRateScore = metrics.winRate * 100 * 0.05; // 5% weight on win rate (reduced from 10%)
   
   // Bonus for reasonable trade frequency (not too few, not too many)
   const tradeFrequencyBonus = metrics.totalTrades > 20 && metrics.totalTrades < 200 
     ? 5 
     : -Math.abs(metrics.totalTrades - 100) * 0.05;
   
-  return returnScore + sharpeScore + drawdownPenalty + winRateScore + tradeFrequencyBonus;
+  return returnScore + sharpeScore + drawdownPenalty + winRateScore + tradeFrequencyBonus + baselinePenalty + beatBaselineBonus;
 }
 
 /**
@@ -296,7 +318,8 @@ function mutateConfig(config: EnhancedAdaptiveStrategyConfig, mutationRate: numb
 async function testConfig(
   config: EnhancedAdaptiveStrategyConfig,
   asset: TradingAsset,
-  periods: Array<{ startDate: string; endDate: string; isSynthetic: boolean }>
+  periods: Array<{ startDate: string; endDate: string; isSynthetic: boolean }>,
+  bestScoreSoFar: number = -Infinity
 ): Promise<OptimizationResult['metrics']> {
   const results: Array<{
     startDate: string;
@@ -316,7 +339,16 @@ async function testConfig(
     usdcHold: { finalValue: number; return: number; returnPct: number };
     ethHold: { finalValue: number; return: number; returnPct: number; maxDrawdown: number; maxDrawdownPct: number; sharpeRatio: number };
   }> = [];
-  for (const period of periods) {
+  
+  // OPTIMIZATION: Early termination - test a subset first, skip remaining if clearly bad
+  const earlyTerminationThreshold = Math.max(5, Math.floor(periods.length * 0.3)); // Test at least 30% of periods
+  const earlyTerminationMinScore = bestScoreSoFar * 0.5; // If score is less than 50% of best, likely won't improve
+  
+  // OPTIMIZATION: Test periods in parallel (each backtest is independent)
+  // Use a reasonable concurrency limit to avoid overwhelming the system
+  const periodConcurrency = Math.min(4, periods.length); // Test up to 4 periods in parallel
+  
+  const testPeriod = async (period: { startDate: string; endDate: string; isSynthetic: boolean }, index: number) => {
     try {
       const result = await runBacktest(
         period.startDate,
@@ -329,35 +361,103 @@ async function testConfig(
         undefined, // timeframe (use default)
         asset === 'btc' // useCorrelation
       );
-      results.push({
-        ...result,
-        finalPortfolio: {
-          usdc: result.finalPortfolio.usdcBalance,
-          eth: result.finalPortfolio.ethBalance,
-          initialCapital: result.finalPortfolio.initialCapital,
+      return {
+        index,
+        result: {
+          ...result,
+          finalPortfolio: {
+            usdc: result.finalPortfolio.usdcBalance,
+            eth: result.finalPortfolio.ethBalance,
+            initialCapital: result.finalPortfolio.initialCapital,
+          },
         },
-      });
+        error: null,
+      };
     } catch (error) {
       console.error(`Error testing period ${period.startDate}:`, error);
-      // Use default values if test fails
-      results.push({
-        startDate: period.startDate,
-        endDate: period.endDate,
-        totalTrades: 0,
-        buyTrades: 0,
-        sellTrades: 0,
-        winTrades: 0,
-        lossTrades: 0,
-        totalReturn: 0,
-        totalReturnPct: 0,
-        maxDrawdown: 0,
-        maxDrawdownPct: 0,
-        sharpeRatio: 0,
-        finalPortfolio: { usdc: 1000, eth: 0, initialCapital: 1000 },
-        periods: [],
-        usdcHold: { finalValue: 1000, return: 0, returnPct: 0 },
-        ethHold: { finalValue: 1000, return: 0, returnPct: 0, maxDrawdown: 0, maxDrawdownPct: 0, sharpeRatio: 0 },
-      });
+      return {
+        index,
+        result: {
+          startDate: period.startDate,
+          endDate: period.endDate,
+          totalTrades: 0,
+          buyTrades: 0,
+          sellTrades: 0,
+          winTrades: 0,
+          lossTrades: 0,
+          totalReturn: 0,
+          totalReturnPct: 0,
+          maxDrawdown: 0,
+          maxDrawdownPct: 0,
+          sharpeRatio: 0,
+          finalPortfolio: { usdc: 1000, eth: 0, initialCapital: 1000 },
+          periods: [],
+          usdcHold: { finalValue: 1000, return: 0, returnPct: 0 },
+          ethHold: { finalValue: 1000, return: 0, returnPct: 0, maxDrawdown: 0, maxDrawdownPct: 0, sharpeRatio: 0 },
+        },
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+  
+  // Process periods in batches for parallel execution with early termination
+  for (let i = 0; i < periods.length; i += periodConcurrency) {
+    const batch = periods.slice(i, i + periodConcurrency);
+    const batchResults = await Promise.all(
+      batch.map((period, batchIndex) => testPeriod(period, i + batchIndex))
+    );
+    
+    // Add results in order
+    for (const { result } of batchResults) {
+      results.push(result);
+    }
+    
+    // OPTIMIZATION: Early termination check after each batch
+    if (i + periodConcurrency >= earlyTerminationThreshold && i + periodConcurrency < periods.length) {
+      // Calculate intermediate score
+      const intermediateResults = results.length > 0 ? results : [];
+      const intermediateReturn = intermediateResults.reduce((sum, r) => sum + r.totalReturnPct, 0) / intermediateResults.length;
+      const intermediateSharpe = intermediateResults.reduce((sum, r) => sum + r.sharpeRatio, 0) / intermediateResults.length;
+      const intermediateDrawdown = Math.max(...intermediateResults.map(r => r.maxDrawdownPct));
+      const intermediateTrades = intermediateResults.reduce((sum, r) => sum + r.totalTrades, 0);
+      const intermediateWins = intermediateResults.reduce((sum, r) => sum + r.winTrades, 0);
+      const intermediateWinRate = intermediateTrades > 0 ? intermediateWins / intermediateTrades : 0;
+      
+      const intermediateMetrics = {
+        totalReturn: intermediateReturn,
+        sharpeRatio: intermediateSharpe,
+        maxDrawdown: intermediateDrawdown,
+        winRate: intermediateWinRate,
+        totalTrades: intermediateTrades,
+      };
+      const intermediateScore = calculateFitnessScore(intermediateMetrics, defaultReturn);
+      
+      // If intermediate score is much worse than best, skip remaining periods
+      if (bestScoreSoFar !== -Infinity && intermediateScore < earlyTerminationMinScore) {
+        // Use pessimistic estimates for remaining periods (assume same performance)
+        const remainingPeriods = periods.length - (i + periodConcurrency);
+        for (let j = 0; j < remainingPeriods; j++) {
+          results.push({
+            startDate: periods[i + periodConcurrency + j]!.startDate,
+            endDate: periods[i + periodConcurrency + j]!.endDate,
+            totalTrades: 0,
+            buyTrades: 0,
+            sellTrades: 0,
+            winTrades: 0,
+            lossTrades: 0,
+            totalReturn: 0,
+            totalReturnPct: intermediateReturn, // Use same average return
+            maxDrawdown: intermediateDrawdown,
+            maxDrawdownPct: intermediateDrawdown,
+            sharpeRatio: intermediateSharpe,
+            finalPortfolio: { usdc: 1000, eth: 0, initialCapital: 1000 },
+            periods: [],
+            usdcHold: { finalValue: 1000, return: 0, returnPct: 0 },
+            ethHold: { finalValue: 1000, return: 0, returnPct: 0, maxDrawdown: 0, maxDrawdownPct: 0, sharpeRatio: 0 },
+          });
+        }
+        break; // Skip remaining periods
+      }
     }
   }
   
@@ -526,9 +626,21 @@ async function optimizeStrategy(
     },
   };
   
+  // Test default config first to establish baseline
+  console.log(`📊 Testing default config to establish baseline...`);
+  const defaultMetrics = await testConfig(baseConfig, asset, periods);
+  const defaultScore = calculateFitnessScore(defaultMetrics);
+  const defaultReturn = defaultMetrics.totalReturn;
+  console.log(`   Default config baseline: ${defaultReturn.toFixed(2)}% return, score: ${defaultScore.toFixed(2)}`);
+  console.log(`   🎯 Target: Beat ${defaultReturn.toFixed(2)}% return\n`);
+  
   let bestConfig = baseConfig;
-  let bestScore = -Infinity;
+  let bestScore = defaultScore;
   const trainingData: TrainingData = { features: [], labels: [] };
+  
+  // Add default config to training data
+  trainingData.features.push(configToFeatures(baseConfig));
+  trainingData.labels.push(defaultScore);
   
   const startTime = Date.now();
   
@@ -563,8 +675,9 @@ async function optimizeStrategy(
           const globalIndex = batchIndex * concurrency + index;
           const configName = getConfigShortName(config);
           try {
-            const metrics = await testConfig(config, asset, periods);
-            const score = calculateFitnessScore(metrics);
+            // OPTIMIZATION: Pass bestScoreSoFar for early termination
+            const metrics = await testConfig(config, asset, periods, bestScore);
+            const score = calculateFitnessScore(metrics, defaultReturn);
             
             if ((globalIndex + 1) % 5 === 0 || globalIndex === 0) {
               console.log(`   Progress: ${globalIndex + 1}/${population.length} configs tested...`);
@@ -617,7 +730,7 @@ async function optimizeStrategy(
         console.log(`   🔮 ML suggested new config, testing...`);
         
         const suggestedMetrics = await testConfig(suggestedConfig, asset, periods);
-        const suggestedScore = calculateFitnessScore(suggestedMetrics);
+        const suggestedScore = calculateFitnessScore(suggestedMetrics, defaultReturn);
         
         if (suggestedScore > bestScore) {
           bestScore = suggestedScore;
@@ -725,5 +838,15 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(console.error);
+// Only run main() if this script is executed directly (not when imported)
+// Check if this file is being run directly by comparing the script path
+const isMainModule = process.argv[1] && (
+  process.argv[1].endsWith('ml-strategy-optimizer.ts') ||
+  process.argv[1].endsWith('ml-strategy-optimizer.js') ||
+  require.main === module
+);
+
+if (isMainModule) {
+  main().catch(console.error);
+}
 

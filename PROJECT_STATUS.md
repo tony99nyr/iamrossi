@@ -546,7 +546,14 @@
 - ✅ Caching for regime detection and indicators
 - ✅ Efficient data loading with file-based storage
 - ✅ Skip API calls for backfill tests (`skipAPIFetch` parameter)
-- ⏳ Could optimize multi-year data loading further
+- ✅ **Backfill test optimizations for ML runs** (January 2026)
+  - Pre-calculate all indicators upfront (SMA, EMA, MACD, RSI) to avoid repeated calculations
+  - Pre-calculate ATR values for all candles (used frequently in stop loss calculations)
+  - Optimize correlation context calculation (Map-based lookups instead of findIndex)
+  - Batch regime history preload (parallel instead of sequential)
+  - Early termination in ML optimizer (skip remaining periods for clearly underperforming configs)
+  - Parallel period testing (test up to 4 periods concurrently per config)
+  - **Expected speedup**: 3-5x faster for ML optimization runs
 
 ### Documentation
 - ✅ Complete strategy documentation

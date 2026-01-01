@@ -41,6 +41,7 @@
     "eth:convert-8h": "npx tsx scripts/convert-to-8h-timeframe.ts",
     "eth:audit-report": "npx tsx scripts/generate-trade-audit-report.ts",
     "eth:ml-optimize": "npx tsx scripts/ml-strategy-optimizer.ts",
+    "eth:compare-config": "npx tsx scripts/compare-optimized-config.ts",
     "validate:full": "pnpm validate && pnpm eth:verify-backtest",
     "redis:analyze": "npx tsx scripts/analyze-redis-memory.ts",
     "google-fit:exchange-token": "npx tsx scripts/exchange-google-fit-token.ts"

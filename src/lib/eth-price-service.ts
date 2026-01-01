@@ -839,10 +839,16 @@ export async function fetchPriceCandles(
         
         const intervalLabel = timeframe === '1h' ? 'hours' : timeframe === '1d' ? 'days' : 'intervals';
         
+        // Check if this is a very large historical range (more than 1 year)
+        const isLargeHistoricalRange = (endTime - startTime) > 365 * 24 * 60 * 60 * 1000;
+        
         if (!hasCompleteCoverage && (timeframe !== '5m' && timeframe !== '1h')) {
           // Only warn about incomplete coverage for daily candles (intraday partial coverage is OK)
-          if (!skipAPIFetch && endTime >= Date.now()) {
+          // For very large historical ranges, incomplete coverage is expected and we should use what we have
+          if (!skipAPIFetch && endTime >= Date.now() && !isLargeHistoricalRange) {
             console.log(`⚠️ Incomplete coverage: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} - fetching from API`);
+          } else if (isLargeHistoricalRange && !hasCompleteCoverage) {
+            console.log(`ℹ️ Incomplete coverage for large historical range: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (using available data, gaps expected for old dates)`);
           }
         }
       }
@@ -1099,24 +1105,37 @@ export async function fetchPriceCandles(
     // 1. skipAPIFetch is true (explicit flag for backfill tests)
     // 2. endDate is in the past (historical data, no need for API)
     // 3. We have synthetic data (for assets like BTC that only have synthetic data, don't try API)
+    // 4. We have enough data (>=50 candles) and it's a very large historical range (incomplete coverage expected)
     const isHistoricalPeriod = endTime < Date.now();
+    const isLargeHistoricalRange = (endTime - startTime) > 365 * 24 * 60 * 60 * 1000; // More than 1 year
+    const hasEnoughData = allCandles.length >= 50 || allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime);
     const hasSyntheticData = allCandles.length > 0 && allCandles.some(c => {
       // Check if any candle is from synthetic data (dates >= 2026-01-01 for BTC/ETH synthetic)
       const candleDate = new Date(c.timestamp);
       return candleDate >= new Date('2026-01-01');
     });
     
-    if (!skipAPIFetch && !isHistoricalPeriod && !hasSyntheticData && (allCandles.length < 50 || !allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime) || !hasCompleteCoverage)) {
+    // Don't fetch from API if we have enough data and it's a large historical range (incomplete coverage is expected)
+    const shouldSkipAPIFetchForLargeRange = isLargeHistoricalRange && hasEnoughData && !hasCompleteCoverage;
+    
+    if (!skipAPIFetch && !isHistoricalPeriod && !hasSyntheticData && !shouldSkipAPIFetchForLargeRange && (allCandles.length < 50 || !allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime) || !hasCompleteCoverage)) {
       // Try Binance first
       // Note: API might not return the most recent 08:00 candle if it's still in progress
       // We'll merge API data with file data to preserve all candles from files
       candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
     }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isRateLimit = errorMessage.includes('451') || errorMessage.includes('429') || errorMessage.includes('Rate limited');
+    
     // Skip API fallbacks if skipAPIFetch is true or this is a historical period
     const isHistoricalPeriod = endTime < Date.now();
     if (skipAPIFetch || isHistoricalPeriod) {
-      console.log(`ℹ️ Skipping API fallbacks (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod}) - using file data only`);
+      if (isRateLimit) {
+        console.log(`ℹ️ Binance rate limited (${errorMessage}), using file data only (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod})`);
+      } else {
+        console.log(`ℹ️ Skipping API fallbacks (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod}) - using file data only`);
+      }
       if (allCandles.length > 0) {
         // Deduplicate and sort allCandles to ensure we have all candles from files
         candles = Array.from(
@@ -1124,7 +1143,11 @@ export async function fetchPriceCandles(
         ).sort((a, b) => a.timestamp - b.timestamp);
       }
     } else {
-      console.error('Binance API failed, trying CryptoCompare:', error);
+      if (isRateLimit) {
+        console.log(`ℹ️ Binance rate limited (${errorMessage}), trying fallback APIs...`);
+      } else {
+        console.error('Binance API failed, trying CryptoCompare:', error);
+      }
       
       // Try CryptoCompare first (free tier, good historical data)
       try {
@@ -1496,7 +1519,7 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
     if (cached) {
       const cachedPrice = parseFloat(cached);
       if (cachedPrice > 0) {
-        console.log(`📦 Using cached price: $${cachedPrice.toFixed(2)} (APIs may be rate limited)`);
+        console.log(`📦 Using cached price: $${cachedPrice.toFixed(2)} (cache valid for 5 min, fetching fresh in background)`);
         // Still try to fetch fresh price in background, but return cached
         fetchLatestPriceFresh(symbol).catch(() => {}); // Fire and forget
         return cachedPrice;
