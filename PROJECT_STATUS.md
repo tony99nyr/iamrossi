@@ -1,6 +1,6 @@
 # Trading Strategy Project Status
 
-**Last Updated**: 2026-01-01 (Updated: Strategy history system, optimized config active, improved backfill logging)  
+**Last Updated**: 2026-01-01 (Updated: Data quality improvements, OHLC fixing, gap filling enhancements)  
 **Current Phase**: Phase 10 - Multi-Asset Trading System ✅ **COMPLETED**
 - ✅ 8h timeframe standardized for both ETH and BTC
 - ✅ Correlation integration complete (affects confidence and thresholds)
@@ -309,6 +309,92 @@
 
 ## ✅ Recently Completed
 
+### Data Quality & Gap Filling Improvements (January 2026)
+**Status**: ✅ Completed
+
+**Changes**:
+- ✅ **OHLC Relationship Fixing** - Automatic correction of invalid OHLC data
+  - Created `fixOHLCRelationships()` function in `historical-file-utils.ts`
+  - Ensures `high >= max(open, low, close)` and `low <= min(open, close)`
+  - Applied automatically when loading candles from files
+  - Auto-saves fixed data back to historical files for future use
+  - Applied at multiple stages: during file loading, after gap filling, before validation
+  - **Result**: All OHLC validation warnings eliminated (0 warnings)
+- ✅ **Enhanced Gap Filling** - Comprehensive gap detection and filling
+  - Fixed gap-filling logic to properly fill all gaps (removed overly strict tolerance check)
+  - Gap-filling happens at multiple stages:
+    - After loading candles from files
+    - After filtering to date range (fills gaps created by filtering)
+    - Before validation (final pass to ensure all gaps are filled)
+  - **API Fetching for Historical Gaps**:
+    - Automatically fetches missing historical candles from APIs
+    - Saves fetched candles to local historical data files (`.json.gz`)
+    - Merges with existing data using deduplication
+    - Falls back to interpolation for synthetic/future data
+    - Limits API calls to reasonable gaps (max 100 candles, max 30 days)
+  - **Interpolation Fallback**:
+    - Linear price interpolation for gaps in synthetic/future data
+    - Realistic OHLC relationships maintained
+    - Volume interpolation based on adjacent candles
+  - **Result**: All gap warnings eliminated (0 gaps detected in backfill tests)
+- ✅ **Validation Improvements** - Better handling of synthetic data
+  - Updated validation to be more lenient for small gaps in synthetic data
+  - Gap warnings now indicate when gaps should be filled automatically
+  - Validation happens after all gap-filling steps complete
+  - **Result**: Clean validation output with no false warnings
+
+**New Files**:
+- `src/lib/historical-file-utils.ts` - Centralized file operations and gap filling
+  - `fixOHLCRelationships()` - Fixes invalid OHLC relationships
+  - `fillGapsInCandles()` - Fills gaps with API fetching and interpolation
+  - `loadCandlesFromFile()` - Loads candles with automatic OHLC fixing
+  - `saveCandlesToFile()` - Saves candles with compression
+
+**Updated Files**:
+- `src/lib/eth-price-service.ts` - Applies OHLC fixing when loading candles, auto-saves fixed data
+- `scripts/backfill-test.ts` - Multiple gap-filling stages, OHLC fixing before validation
+- `src/lib/backfill-validation.ts` - Improved gap warning messages for synthetic data
+
+**Impact**:
+- ✅ **0 OHLC warnings** - All invalid OHLC relationships automatically fixed
+- ✅ **0 gap warnings** - All gaps automatically filled (via API or interpolation)
+- ✅ **Improved data quality** - Historical data files automatically corrected and saved
+- ✅ **Better backfill reliability** - No false warnings, clean test output
+- ✅ **API efficiency** - Fetched historical candles saved to files for future use
+
+### Strategy History System & Config Management (January 2026)
+**Status**: ✅ Completed
+
+**Changes**:
+- ✅ **Strategy History System** - Full history tracking for strategy configs
+  - Automatic archiving when switching configs (saves old config to history)
+  - Asset-agnostic (separate history for ETH and BTC)
+  - Tracks timestamps (activeFrom, activeTo), names, and sources
+  - Keeps last 50 configs in history
+  - Functions: `getStrategyHistory()`, `saveAdaptiveStrategyConfig()`, `restoreStrategyFromHistory()`
+- ✅ **Switch Config Script** - Easy config management
+  - Command: `pnpm eth:switch-config [options] [asset]`
+  - Options:
+    - `--latest` - Switch to latest optimized config
+    - `--list` - List all configs in history
+    - `--restore [index]` - Restore config from history
+    - `[config-file]` - Switch to specific config file
+  - Automatically saves current config to history before switching
+  - Shows Redis key, source, and short name for each config
+- ✅ **Optimized Config Active** - ML-optimized config now in production
+  - Switched from default config to optimized config (Jan 2026)
+  - Optimized config: `B0.26-S0.30|Be0.53-S0.21|R0.26|K0.30|A2.7`
+  - Default config saved to history for easy restoration
+  - Expected improvement: 57.59% vs 22.80% average return (+34.79%, 2.5x better)
+
+**New Files**:
+- `scripts/switch-strategy-config.ts` - Strategy config switching and history management
+
+**Updated Files**:
+- `src/lib/kv.ts` - Added strategy history functions (asset-agnostic)
+- `src/app/api/trading/paper/start/route.ts` - Updated to use asset-specific configs
+- `package.json` - Added `eth:switch-config` script
+
 ### ML Strategy Optimizer & Backfill Test Improvements (January 2026)
 **Status**: ✅ Completed
 
@@ -326,6 +412,10 @@
     - Particularly strong in bullish periods (386% vs 56% on bull runs)
     - Robust across diverse market conditions (bull, bear, crash, whipsaw)
     - Comparison script: `pnpm eth:compare-config` to compare optimized vs default
+- ✅ **Improved Backfill Test Logging** - Cleaner, more informative logs
+  - Config display: Shows Redis key `[source]` - short name (e.g., `eth:adaptive:strategy:config [default] - B0.26-S0.30|...`)
+  - Removed verbose candle loading logs (not useful for debugging)
+  - More focused output on test execution and results
 - ✅ **Config Name Logging** - Backfill tests now show which config is being tested
   - Format: `B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0`
   - Shows in backfill test logs and ML optimizer output
@@ -337,11 +427,12 @@
 
 **New Files**:
 - `scripts/ml-strategy-optimizer.ts` - ML-based strategy optimizer (fully implemented)
+- `scripts/compare-optimized-config.ts` - Compare optimized vs default config
 
 **Updated Files**:
-- `scripts/backfill-test.ts` - Added config name logging, fixed timezone issues
-- `scripts/ml-strategy-optimizer.ts` - Added config name logging, multi-core support
-- `ML_INTEGRATION_GUIDE.md` - Updated with implementation details
+- `scripts/backfill-test.ts` - Improved logging, config name display, fixed timezone issues
+- `scripts/ml-strategy-optimizer.ts` - Added config name logging, multi-core support, baseline testing
+- `ML_INTEGRATION_GUIDE.md` - Updated with implementation details and results
 
 ### Phase 9: Testing & Notifications (December 31, 2025)
 **Status**: ✅ Completed
@@ -397,26 +488,42 @@
 
 ## 📊 Current Strategy Configuration
 
-**Active Config**: Hybrid-0.41 + Recovery-0.65 with Kelly Criterion & ATR Stop Losses
+**Active Config (ETH)**: ML-Optimized Config (Active Jan 2026)
+- **Redis Key**: `eth:adaptive:strategy:config`
+- **Source**: ML Optimizer (2026-01-01)
+- **Config Short Name**: `B0.26-S0.30|Be0.53-S0.21|R0.26|K0.30|A2.7`
+- **Expected Performance**: 57.59% average return (vs 22.80% default, +34.79% improvement, 2.5x better)
 
-### Bullish Strategy (Hybrid-0.41)
+### Bullish Strategy (Optimized)
 - **Indicators**: SMA 20 (35%), EMA 12 (35%), MACD (20%), RSI (10%)
-- **Buy Threshold**: 0.41
-- **Sell Threshold**: -0.45
-- **Max Position**: 90%
+- **Buy Threshold**: 0.26 (more aggressive than default 0.41)
+- **Sell Threshold**: -0.30 (tighter than default -0.45)
+- **Max Position**: 95% (increased from 90%)
 
-### Bearish Strategy (Recovery-0.65)
+### Bearish Strategy (Optimized)
 - **Indicators**: SMA 20 (50%), EMA 12 (50%)
-- **Buy Threshold**: 0.65
-- **Sell Threshold**: -0.25
-- **Max Position**: 30%
+- **Buy Threshold**: 0.53 (less conservative than default 0.65)
+- **Sell Threshold**: -0.21 (tighter than default -0.25)
+- **Max Position**: 40% (increased from 30%)
 
-### Advanced Features
-- **Kelly Criterion**: 25% fractional Kelly (0.25 multiplier)
-- **ATR Stop Losses**: 2.0x ATR with trailing stops
-- **Regime Persistence**: 1 out of 5 periods
-- **Momentum Confirmation**: 0.26 threshold
-- **Regime Confidence**: 0.22 threshold
+### Advanced Features (Optimized)
+- **Kelly Criterion**: 30% fractional Kelly (0.30 multiplier, increased from 0.25)
+- **ATR Stop Losses**: 2.7x ATR with trailing stops (wider than default 2.0)
+- **Regime Persistence**: 1 period
+- **Momentum Confirmation**: 0.30 threshold (increased from 0.26)
+- **Regime Confidence**: 0.26 threshold (increased from 0.22)
+
+**Active Config (BTC)**: Not configured yet (no config saved)
+
+**Strategy History**: Both ETH and BTC maintain separate history (last 50 configs)
+- View history: `pnpm eth:switch-config --list [asset]`
+- Switch config: `pnpm eth:switch-config --latest [asset]`
+- Restore config: `pnpm eth:switch-config --restore [index] [asset]`
+
+**Previous Config (ETH)**: Default config saved to history
+- **Config**: `B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0`
+- **Active From**: Before 2026-01-01
+- **Active To**: 2026-01-01
 
 ### Performance Metrics (8h Timeframe)
 - **Historical 2025**: +77.04% return, 47 trades (with Kelly + ATR)
@@ -438,10 +545,12 @@
 - `src/lib/atr-stop-loss.ts` - ATR-based stop losses
 - `src/lib/asset-config.ts` - Asset configuration and constants (ETH, BTC)
 - `src/lib/correlation-analysis.ts` - ETH-BTC correlation analysis
-- `src/lib/eth-price-service.ts` - Price data fetching (asset-agnostic, supports ETH and BTC)
+- `src/lib/eth-price-service.ts` - Price data fetching (asset-agnostic, supports ETH and BTC, automatic OHLC fixing)
 - `src/lib/paper-trading-enhanced.ts` - Paper trading service (asset-agnostic, supports multiple assets)
 - `src/lib/trade-executor.ts` - Unified trade execution logic
 - `src/lib/notifications.ts` - Discord webhook notifications (asset-agnostic)
+- `src/lib/historical-file-utils.ts` - Historical data file operations (OHLC fixing, gap filling, API fetching)
+- `src/lib/backfill-validation.ts` - Data quality validation (OHLC, gaps, timestamps)
 
 ### Testing & Optimization Scripts
 - `scripts/backfill-test.ts` - Main backfill testing (supports 2025, 2026, 2027, 2028, skipAPIFetch, config name logging, timezone-safe year parsing)
@@ -509,7 +618,8 @@
    - Documentation: `ML_INTEGRATION_GUIDE.md` updated with implementation details
 4. **Cross-asset correlation dashboard** - Visualize ETH-BTC correlation over time
 5. ✅ **Correlation in backfill tests** - Correlation context integrated into backfill test script (via `useCorrelation` parameter)
-6. ✅ **Backfill test improvements** - Fixed timezone issues in year parsing, added config name logging
+6. ✅ **Backfill test improvements** - Fixed timezone issues in year parsing, improved logging (Redis key + short name), removed verbose candle logs
+7. ✅ **Strategy history system** - Full config history tracking and management (separate for ETH and BTC)
 
 ---
 
@@ -560,6 +670,12 @@
   - Early termination in ML optimizer (skip remaining periods for clearly underperforming configs)
   - Parallel period testing (test up to 4 periods concurrently per config)
   - **Expected speedup**: 3-5x faster for ML optimization runs
+- ✅ **Data Quality Improvements** (January 2026)
+  - Automatic OHLC fixing when loading candles (no manual intervention needed)
+  - Automatic gap filling with API fetching for historical data
+  - Fetched candles saved to files for future use (reduces API calls)
+  - Multiple gap-filling stages ensure complete coverage
+  - **Result**: 0 OHLC warnings, 0 gap warnings in backfill tests
 
 ### Documentation
 - ✅ Complete strategy documentation
@@ -591,6 +707,11 @@
 - **UI Dashboard** - Consolidated panels, consistent chart regimes, enhanced threshold visibility
 - **Chart default** - Now defaults to 1M view for good balance of detail and regime visibility
 - **Divergence Detection** - RSI and MACD divergence integrated into regime detection (10% signal weight)
+- **Data Quality** - Automatic OHLC fixing and gap filling (0 warnings in backfill tests)
+  - OHLC relationships automatically corrected when loading candles
+  - Gaps automatically filled via API fetching (historical) or interpolation (synthetic)
+  - Fixed data auto-saved to files for future use
+  - Multiple gap-filling stages ensure complete coverage
   - Realistic synthetic test data created with gradual reversal patterns (3 higher highs/lower lows over 80+ days)
   - Divergence correctly detected at market tops/bottoms, reduces confidence during warning periods
   - Test data includes 2028 scenarios with bearish divergence (top formation) and bullish divergence (bottom formation)
