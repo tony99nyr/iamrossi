@@ -329,7 +329,14 @@ async function testConfig(
         undefined, // timeframe (use default)
         asset === 'btc' // useCorrelation
       );
-      results.push(result);
+      results.push({
+        ...result,
+        finalPortfolio: {
+          usdc: result.finalPortfolio.usdcBalance,
+          eth: result.finalPortfolio.ethBalance,
+          initialCapital: result.finalPortfolio.initialCapital,
+        },
+      });
     } catch (error) {
       console.error(`Error testing period ${period.startDate}:`, error);
       // Use default values if test fails

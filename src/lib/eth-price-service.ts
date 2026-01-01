@@ -255,15 +255,11 @@ async function fetchCoinGeckoCandles(
   let currentStart = startDate;
   let chunkNumber = 0;
   
-  const totalDays = Math.floor((endDate - startDate) / 86400);
-  const expectedChunks = Math.ceil((endDate - startDate) / MAX_SECONDS_PER_REQUEST);
-  
   while (currentStart < endDate) {
     chunkNumber++;
     await rateLimitCoinGecko();
     
     const currentEnd = Math.min(currentStart + MAX_SECONDS_PER_REQUEST, endDate);
-    const chunkDays = Math.floor((currentEnd - currentStart) / 86400);
     
     const url = new URL(`${COINGECKO_API_URL}/coins/${coinId}/market_chart/range`);
     url.searchParams.set('vs_currency', 'usd');
@@ -527,8 +523,6 @@ export async function fetchPriceCandles(
         
         if (filtered.length > 0) {
           allCandles.push(...filtered);
-          const first = filtered[0]!;
-          const last = filtered[filtered.length - 1]!;
           // Loaded synthetic data - no need to log routine operation
         } else {
           console.warn(`⚠️ No candles matched filter criteria for ${file}`);
@@ -1241,7 +1235,6 @@ export async function fetchPriceCandles(
   // This ensures we preserve all candles from files, even if API doesn't return them
   if (allCandles.length > 0) {
     const existingMap = new Map(allCandles.map(c => [c.timestamp, c]));
-    const fileCandleCount = existingMap.size;
     // Merge in API data (API data overwrites file data for same timestamps)
     if (candles.length > 0) {
       candles.forEach(c => {
@@ -1409,11 +1402,7 @@ async function updateTodayCandle(symbol: string, price: number, timeframe: strin
     // Sort by timestamp and update cache (CRITICAL: This must succeed)
     candles.sort((a, b) => a.timestamp - b.timestamp);
     await redis.setEx(cacheKey, 86400, JSON.stringify(candles));
-    const periodLabel = interval === '1h' ? 'hour' 
-      : interval === '8h' ? '8-hour' 
-      : interval === '12h' ? '12-hour'
-      : interval === '5m' ? '5-minute' 
-      : 'day';
+    
     // Note: File writes are handled by GitHub Actions workflow (migrate-redis-candles.yml)
     // This keeps Vercel serverless deployments clean (no EROFS errors)
   } catch (error) {
