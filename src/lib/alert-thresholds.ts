@@ -182,6 +182,12 @@ export async function checkAllThresholds(
   session: EnhancedPaperTradingSession,
   thresholds: AlertThresholds = DEFAULT_THRESHOLDS
 ): Promise<void> {
+  // Skip threshold checks for inactive or emergency-stopped sessions
+  // This prevents false alerts for sessions that are intentionally stopped
+  if (!session.isActive || session.isEmergencyStopped) {
+    return;
+  }
+  
   await Promise.all([
     checkDrawdownThreshold(session, thresholds),
     checkWinRateThreshold(session, thresholds),

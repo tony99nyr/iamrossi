@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PaperTradingService, type EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
+import { PaperTradingService } from '@/lib/paper-trading-enhanced';
 import { fetchLatestPrice } from '@/lib/eth-price-service';
 import { ASSET_CONFIGS, type TradingAsset } from '@/lib/asset-config';
 import { isNotificationsEnabled, sendErrorAlert } from '@/lib/notifications';
