@@ -57,11 +57,12 @@ export async function checkDrawdownThreshold(
   if (currentDrawdown > thresholds.drawdownThreshold) {
     const alertKey = `drawdown-${session.id}`;
     if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
+      const assetName = session.asset || 'unknown';
       await sendErrorAlert({
         type: 'system_error',
         severity: 'high',
         message: `Drawdown threshold exceeded: ${currentDrawdown.toFixed(2)}% (threshold: ${thresholds.drawdownThreshold}%)`,
-        context: `Session: ${session.name || session.id}, Asset: ${session.asset}`,
+        context: `Session: ${session.name || session.id}, Asset: ${assetName}`,
         timestamp: Date.now(),
       });
     }
@@ -89,11 +90,12 @@ export async function checkWinRateThreshold(
   if (winRate < thresholds.winRateThreshold) {
     const alertKey = `winrate-${session.id}`;
     if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
+      const assetName = session.asset || 'unknown';
       await sendErrorAlert({
         type: 'system_error',
         severity: 'medium',
         message: `Win rate below threshold: ${winRate.toFixed(2)}% (threshold: ${thresholds.winRateThreshold}%, last ${sellTrades.length} trades)`,
-        context: `Session: ${session.name || session.id}, Asset: ${session.asset}`,
+        context: `Session: ${session.name || session.id}, Asset: ${assetName}`,
         timestamp: Date.now(),
       });
     }
@@ -107,11 +109,15 @@ export async function checkNoTradeThreshold(
   session: EnhancedPaperTradingSession,
   thresholds: AlertThresholds = DEFAULT_THRESHOLDS
 ): Promise<void> {
-  if (!session.isActive) return;
+  // Don't alert for inactive or emergency-stopped sessions
+  if (!session.isActive || session.isEmergencyStopped) return;
   
   const lastTrade = session.trades.length > 0 
     ? session.trades[session.trades.length - 1] 
     : null;
+  
+  // Get asset name safely (handle undefined)
+  const assetName = session.asset || 'unknown';
   
   if (!lastTrade) {
     // No trades at all - check session age
@@ -123,7 +129,7 @@ export async function checkNoTradeThreshold(
           type: 'system_error',
           severity: 'medium',
           message: `No trades in ${sessionAgeHours.toFixed(1)} hours (threshold: ${thresholds.noTradeHours}h)`,
-          context: `Session: ${session.name || session.id}, Asset: ${session.asset}, Started: ${new Date(session.startedAt).toISOString()}`,
+          context: `Session: ${session.name || session.id}, Asset: ${assetName}, Started: ${new Date(session.startedAt).toISOString()}`,
           timestamp: Date.now(),
         });
       }
@@ -140,7 +146,7 @@ export async function checkNoTradeThreshold(
         type: 'system_error',
         severity: 'medium',
         message: `No trades in ${hoursSinceLastTrade.toFixed(1)} hours (threshold: ${thresholds.noTradeHours}h)`,
-        context: `Session: ${session.name || session.id}, Asset: ${session.asset}, Last trade: ${new Date(lastTrade.timestamp).toISOString()}`,
+        context: `Session: ${session.name || session.id}, Asset: ${assetName}, Last trade: ${new Date(lastTrade.timestamp).toISOString()}`,
         timestamp: Date.now(),
       });
     }

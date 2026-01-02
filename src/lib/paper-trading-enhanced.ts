@@ -592,6 +592,10 @@ export class PaperTradingService {
 
     // Execute trades based on signal
     const updatedSession = { ...session };
+    // Ensure asset field is preserved (for backward compatibility with old sessions)
+    if (!updatedSession.asset) {
+      updatedSession.asset = sessionAsset;
+    }
     const { portfolio } = updatedSession;
 
     // Initialize open positions array if not present
@@ -878,7 +882,16 @@ export class PaperTradingService {
   static async getActiveSession(asset: TradingAsset = 'eth'): Promise<EnhancedPaperTradingSession | null> {
     await ensureConnected();
     const data = await redis.get(getActiveSessionKey(asset));
-    return data ? JSON.parse(data) as EnhancedPaperTradingSession : null;
+    if (!data) return null;
+    
+    const session = JSON.parse(data) as EnhancedPaperTradingSession;
+    
+    // Ensure asset field is set (for backward compatibility with old sessions)
+    if (!session.asset) {
+      session.asset = asset;
+    }
+    
+    return session;
   }
 
   /**

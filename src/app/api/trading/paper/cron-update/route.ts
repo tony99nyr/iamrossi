@@ -117,9 +117,9 @@ export async function GET(request: NextRequest) {
 
     // Check for active sessions for ALL assets and update them
     // Both TRADING_UPDATE_TOKEN and CRON_SECRET can update sessions (execute trades)
-    const sessionUpdates: Record<TradingAsset, { success: boolean; error?: string; session?: EnhancedPaperTradingSession }> = {
-      eth: { success: false },
-      btc: { success: false },
+    const sessionUpdates: Record<TradingAsset, { success: boolean; active: boolean; error?: string; summary?: { tradeCount: number; totalReturn: number; portfolioValue: number } }> = {
+      eth: { success: false, active: false },
+      btc: { success: false, active: false },
     };
 
     // Update sessions for all assets in parallel
@@ -131,14 +131,23 @@ export async function GET(request: NextRequest) {
         if (session && session.isActive) {
           // Update session (fetch price, calculate regime, execute trades)
           const updatedSession = await PaperTradingService.updateSession(undefined, asset);
-          sessionUpdates[asset] = { success: true, session: updatedSession };
+          sessionUpdates[asset] = { 
+            success: true, 
+            active: true,
+            summary: {
+              tradeCount: updatedSession.trades.length,
+              totalReturn: updatedSession.portfolio.totalReturn,
+              portfolioValue: updatedSession.portfolio.totalValue,
+            }
+          };
           console.log(`✅ ${ASSET_CONFIGS[asset].displayName} paper trading session updated successfully`);
         } else {
+          sessionUpdates[asset] = { success: true, active: false };
           console.log(`ℹ️ No active ${ASSET_CONFIGS[asset].displayName} paper trading session`);
         }
       } catch (updateError) {
         const errorMessage = updateError instanceof Error ? updateError.message : String(updateError);
-        sessionUpdates[asset] = { success: false, error: errorMessage };
+        sessionUpdates[asset] = { success: false, active: false, error: errorMessage };
         console.warn(`⚠️ Failed to update ${ASSET_CONFIGS[asset].displayName} paper trading session:`, errorMessage);
         
         // Session update failure is not critical - candles were already updated above
@@ -147,10 +156,10 @@ export async function GET(request: NextRequest) {
 
     await Promise.allSettled(sessionPromises);
 
-    // Build response
+    // Build minimal response (for cron services that have output size limits)
     const allPriceFetchesSucceeded = Object.values(priceFetches).every(p => p.success);
-    const anySessionUpdated = Object.values(sessionUpdates).some(s => s.success);
-    const anySessionActive = Object.values(sessionUpdates).some(s => s.session);
+    const anySessionUpdated = Object.values(sessionUpdates).some(s => s.success && s.active);
+    const anySessionActive = Object.values(sessionUpdates).some(s => s.active);
 
     const response: {
       message: string;
