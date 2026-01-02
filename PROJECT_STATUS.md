@@ -722,6 +722,22 @@
   - Divergence correctly detected at market tops/bottoms, reduces confidence during warning periods
   - Test data includes 2028 scenarios with bearish divergence (top formation) and bullish divergence (bottom formation)
 - **Discord Alerts** - Ready to use - set `DISCORD_WEBHOOK_URL` environment variable to enable
+
+### Automated Updates (Cron Jobs)
+
+- **External Cron Service (cron-job.org)** - 5-minute automated updates
+  - **Endpoint**: `/api/trading/paper/cron-update`
+  - **Environment Variable**: `TRADING_UPDATE_TOKEN` (isolated token for paper trading only)
+  - **Frequency**: Every 5 minutes
+  - **Purpose**: 
+    - Updates price candles for ETH and BTC (1d, 1h, 8h, 12h, 5m timeframes)
+    - Updates active paper trading sessions (can trigger trades)
+    - Isolated access: Only grants access to this endpoint (no admin access)
+  - **Setup**: 
+    - Generate token: `pnpm generate-token --length 32`
+    - Set `TRADING_UPDATE_TOKEN` in Vercel environment variables
+    - Configure cron-job.org to call endpoint with `Authorization: Bearer {TRADING_UPDATE_TOKEN}` header
+  - **Alternative**: GitHub Actions workflow also available (`.github/workflows/trading-bot-cron.yml`) using `CRON_SECRET`
 - **BTC Correlation** - Rolling correlation module integrated into regime detection and position sizing
   - Correlation affects confidence: +15% boost (high correlation) to -40% reduction (contradicts regime)
   - Dynamic confidence threshold: adjusts based on correlation risk level

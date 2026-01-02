@@ -819,8 +819,9 @@ export class PaperTradingService {
         updatedSession.regimeHistory.shift();
       }
       
-      // Send regime change notification
-      if (isNotificationsEnabled()) {
+      // Send regime change notification (rate limited to avoid spam in choppy markets)
+      // Only alert if confidence is reasonably high (>= 0.3) to avoid noise from low-confidence changes
+      if (isNotificationsEnabled() && signal.regime.confidence >= 0.3) {
         sendRegimeChangeAlert({
           previousRegime: previousRegime.regime,
           newRegime: signal.regime.regime,

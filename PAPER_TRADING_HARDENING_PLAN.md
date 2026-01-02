@@ -273,7 +273,7 @@ See `TRADING_TESTING.md` for complete testing guidelines.
 - Send Discord alerts for:
   - Drawdown >15%
   - Win rate <20% (last 20 trades)
-  - No trades in 24 hours (possible system failure)
+  - No trades in 72 hours (3 days) - Normal to wait for good market conditions, only alert if very long period suggests system issue
   - API failures >3 in 1 hour
   - Cron job failures (missed updates)
 - Add to notifications module

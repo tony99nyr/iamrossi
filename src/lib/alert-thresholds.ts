@@ -17,10 +17,10 @@ export interface AlertThresholds {
 }
 
 const DEFAULT_THRESHOLDS: AlertThresholds = {
-  drawdownThreshold: 15, // 15%
-  winRateThreshold: 20, // 20%
-  winRateLookback: 20, // Last 20 trades
-  noTradeHours: 24, // 24 hours
+  drawdownThreshold: 18, // 18% - Alert before circuit breaker (20%) kicks in, gives early warning
+  winRateThreshold: 18, // 18% - Match circuit breaker threshold for consistency
+  winRateLookback: 10, // Last 10 trades - Match circuit breaker lookback for consistency
+  noTradeHours: 72, // 72 hours (3 days) - Normal to wait for good market conditions
   apiFailureThreshold: 3, // 3 failures per hour
 };
 
@@ -58,11 +58,17 @@ export async function checkDrawdownThreshold(
     const alertKey = `drawdown-${session.id}`;
     if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
       const assetName = session.asset || 'unknown';
+      // Check if drawdown protection is already active
+      const isPaused = session.drawdownInfo.isPaused;
+      const maxDrawdownThreshold = session.config.maxDrawdownThreshold ?? 0.20; // Default 20%
+      
       await sendErrorAlert({
         type: 'system_error',
-        severity: 'high',
-        message: `Drawdown threshold exceeded: ${currentDrawdown.toFixed(2)}% (threshold: ${thresholds.drawdownThreshold}%)`,
-        context: `Session: ${session.name || session.id}, Asset: ${assetName}`,
+        severity: isPaused ? 'high' : 'medium', // High if already paused, medium if approaching
+        message: isPaused 
+          ? `Drawdown protection ACTIVE: ${currentDrawdown.toFixed(2)}% (max threshold: ${(maxDrawdownThreshold * 100).toFixed(0)}%). Trading is paused.`
+          : `Drawdown approaching threshold: ${currentDrawdown.toFixed(2)}% (alert: ${thresholds.drawdownThreshold}%, max: ${(maxDrawdownThreshold * 100).toFixed(0)}%). Trading will pause at ${(maxDrawdownThreshold * 100).toFixed(0)}%.`,
+        context: `Session: ${session.name || session.id}, Asset: ${assetName}, Peak: $${session.drawdownInfo.peakValue.toFixed(2)}`,
         timestamp: Date.now(),
       });
     }
@@ -91,11 +97,17 @@ export async function checkWinRateThreshold(
     const alertKey = `winrate-${session.id}`;
     if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
       const assetName = session.asset || 'unknown';
+      // Check circuit breaker config to see if it's already active
+      const circuitBreakerWinRate = session.config.circuitBreakerWinRate ?? 0.20;
+      const circuitBreakerLookback = session.config.circuitBreakerLookback ?? 10;
+      
+      // Note: We can't directly check if circuit breaker is active, but we can infer
+      // If win rate is below threshold, circuit breaker may be blocking trades
       await sendErrorAlert({
         type: 'system_error',
         severity: 'medium',
-        message: `Win rate below threshold: ${winRate.toFixed(2)}% (threshold: ${thresholds.winRateThreshold}%, last ${sellTrades.length} trades)`,
-        context: `Session: ${session.name || session.id}, Asset: ${assetName}`,
+        message: `Win rate below threshold: ${winRate.toFixed(2)}% (threshold: ${thresholds.winRateThreshold}%, last ${sellTrades.length} trades). Circuit breaker may be active (${(circuitBreakerWinRate * 100).toFixed(0)}% for last ${circuitBreakerLookback} trades).`,
+        context: `Session: ${session.name || session.id}, Asset: ${assetName}. Low win rate may cause circuit breaker to block new trades.`,
         timestamp: Date.now(),
       });
     }
@@ -121,15 +133,16 @@ export async function checkNoTradeThreshold(
   
   if (!lastTrade) {
     // No trades at all - check session age
+    // Only alert if session is very old (suggests system issue, not just waiting for conditions)
     const sessionAgeHours = (Date.now() - session.startedAt) / (1000 * 60 * 60);
     if (sessionAgeHours > thresholds.noTradeHours) {
       const alertKey = `notrade-${session.id}`;
       if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
         await sendErrorAlert({
           type: 'system_error',
-          severity: 'medium',
-          message: `No trades in ${sessionAgeHours.toFixed(1)} hours (threshold: ${thresholds.noTradeHours}h)`,
-          context: `Session: ${session.name || session.id}, Asset: ${assetName}, Started: ${new Date(session.startedAt).toISOString()}`,
+          severity: 'low', // Lower severity - could be normal waiting for conditions
+          message: `No trades since session start (${sessionAgeHours.toFixed(1)} hours). This may be normal if waiting for good market conditions.`,
+          context: `Session: ${session.name || session.id}, Asset: ${assetName}, Started: ${new Date(session.startedAt).toISOString()}. Check if signals are being generated but filtered by risk management.`,
           timestamp: Date.now(),
         });
       }
@@ -139,14 +152,16 @@ export async function checkNoTradeThreshold(
   
   const hoursSinceLastTrade = (Date.now() - lastTrade.timestamp) / (1000 * 60 * 60);
   
+  // Only alert if it's been a very long time since last trade
+  // This suggests a potential system issue, not just normal waiting
   if (hoursSinceLastTrade > thresholds.noTradeHours) {
     const alertKey = `notrade-${session.id}`;
     if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
       await sendErrorAlert({
         type: 'system_error',
-        severity: 'medium',
-        message: `No trades in ${hoursSinceLastTrade.toFixed(1)} hours (threshold: ${thresholds.noTradeHours}h)`,
-        context: `Session: ${session.name || session.id}, Asset: ${assetName}, Last trade: ${new Date(lastTrade.timestamp).toISOString()}`,
+        severity: 'low', // Lower severity - could be normal waiting for conditions
+        message: `No trades in ${hoursSinceLastTrade.toFixed(1)} hours (threshold: ${thresholds.noTradeHours}h). This may be normal if waiting for good market conditions.`,
+        context: `Session: ${session.name || session.id}, Asset: ${assetName}, Last trade: ${new Date(lastTrade.timestamp).toISOString()}. Check if signals are being generated but filtered by risk management.`,
         timestamp: Date.now(),
       });
     }
