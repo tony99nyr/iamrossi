@@ -10,6 +10,7 @@ import type { PriceCandle, TradingConfig, TradingSignal } from '@/types';
 import { detectMarketRegimeCached as detectMarketRegime, type MarketRegimeSignal } from './market-regime-detector-cached';
 import { generateSignal } from './trading-signals';
 import { calculateMACD, calculateRSI, getLatestIndicatorValue } from './indicators';
+// Config validation is used in paper-trading-enhanced.ts, not here
 
 export interface EnhancedAdaptiveStrategyConfig {
   bullishStrategy: TradingConfig;
@@ -43,12 +44,22 @@ export interface EnhancedAdaptiveStrategyConfig {
     useEMA: boolean; // Use EMA for ATR calculation (default: true)
     atrPeriod: number; // ATR calculation period (default: 14)
   };
+  // Maximum drawdown protection
+  maxDrawdownThreshold?: number; // Maximum drawdown before pausing trading (default: 0.20 = 20%)
+  // Position size limits
+  minPositionSize?: number; // Minimum trade size in USDC (default: 10)
+  maxPositionSize?: number; // Maximum trade size in USDC (default: unlimited, uses maxPositionPct instead)
+  maxPositionConcentration?: number; // Maximum position concentration in single asset (default: 0.95 = 95%)
+  // Price validation
+  priceValidationThreshold?: number; // Maximum price movement since signal to allow trade (default: 0.02 = 2%)
 }
 
 // Track regime history for persistence
 const regimeHistory: Map<string, Array<'bullish' | 'bearish' | 'neutral'>> = new Map();
 // Track recent trades for circuit breaker (sessionId -> recent trade results)
 const recentTradeResults: Map<string, Array<{ profitable: boolean }>> = new Map();
+// Track peak portfolio values for drawdown calculation (sessionId -> peak value)
+const peakPortfolioValues: Map<string, number> = new Map();
 
 /**
  * Calculate daily volatility (standard deviation of returns)
@@ -116,6 +127,67 @@ function checkCircuitBreaker(
   const winRate = wins / recent.length;
   
   return winRate < minWinRate;
+}
+
+/**
+ * Calculate current drawdown percentage
+ * Returns drawdown as positive percentage (e.g., 0.15 = 15% drawdown)
+ */
+export function calculateDrawdown(
+  currentValue: number,
+  peakValue: number
+): number {
+  if (peakValue <= 0) return 0;
+  if (currentValue >= peakValue) return 0;
+  
+  return (peakValue - currentValue) / peakValue;
+}
+
+/**
+ * Update peak portfolio value for drawdown tracking
+ */
+export function updatePeakPortfolioValue(
+  sessionId: string,
+  currentValue: number
+): void {
+  const currentPeak = peakPortfolioValues.get(sessionId) || 0;
+  if (currentValue > currentPeak) {
+    peakPortfolioValues.set(sessionId, currentValue);
+  }
+}
+
+/**
+ * Get current peak portfolio value
+ */
+export function getPeakPortfolioValue(sessionId: string): number {
+  return peakPortfolioValues.get(sessionId) || 0;
+}
+
+/**
+ * Check if drawdown exceeds threshold (circuit breaker)
+ * Returns true if trading should be paused due to excessive drawdown
+ */
+export function checkDrawdownCircuitBreaker(
+  sessionId: string,
+  currentValue: number,
+  threshold: number = 0.20
+): { shouldPause: boolean; drawdown: number; peakValue: number } {
+  updatePeakPortfolioValue(sessionId, currentValue);
+  const peakValue = getPeakPortfolioValue(sessionId);
+  const drawdown = calculateDrawdown(currentValue, peakValue);
+  
+  return {
+    shouldPause: drawdown >= threshold,
+    drawdown,
+    peakValue,
+  };
+}
+
+/**
+ * Reset drawdown tracking (useful when starting new session or manually resetting)
+ */
+export function resetDrawdownTracking(sessionId: string, initialValue: number): void {
+  peakPortfolioValues.set(sessionId, initialValue);
 }
 
 /**
@@ -462,5 +534,6 @@ export function clearRegimeHistory(): void {
 export function clearRegimeHistoryForSession(sessionId: string): void {
   regimeHistory.delete(sessionId);
   recentTradeResults.delete(sessionId);
+  peakPortfolioValues.delete(sessionId);
 }
 

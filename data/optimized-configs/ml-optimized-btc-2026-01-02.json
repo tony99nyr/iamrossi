@@ -1,0 +1,84 @@
+{
+  "bullishStrategy": {
+    "name": "Bullish-Hybrid",
+    "timeframe": "8h",
+    "indicators": [
+      {
+        "type": "sma",
+        "weight": 0.35,
+        "params": {
+          "period": 20
+        }
+      },
+      {
+        "type": "ema",
+        "weight": 0.35,
+        "params": {
+          "period": 12
+        }
+      },
+      {
+        "type": "macd",
+        "weight": 0.2,
+        "params": {
+          "fastPeriod": 9,
+          "slowPeriod": 19,
+          "signalPeriod": 9
+        }
+      },
+      {
+        "type": "rsi",
+        "weight": 0.1,
+        "params": {
+          "period": 14
+        }
+      }
+    ],
+    "buyThreshold": 0.3275704694366842,
+    "sellThreshold": -0.48853650696184775,
+    "maxPositionPct": 0.8680837178533504,
+    "initialCapital": 1000
+  },
+  "bearishStrategy": {
+    "name": "Bearish-Recovery",
+    "timeframe": "8h",
+    "indicators": [
+      {
+        "type": "sma",
+        "weight": 0.5,
+        "params": {
+          "period": 20
+        }
+      },
+      {
+        "type": "ema",
+        "weight": 0.5,
+        "params": {
+          "period": 12
+        }
+      }
+    ],
+    "buyThreshold": 0.7071517847936735,
+    "sellThreshold": -0.4,
+    "maxPositionPct": 0.15,
+    "initialCapital": 1000
+  },
+  "regimeConfidenceThreshold": 0.2162672486428919,
+  "momentumConfirmationThreshold": 0.25312075298444203,
+  "regimePersistencePeriods": 1,
+  "bullishPositionMultiplier": 1.2,
+  "maxBullishPosition": 0.877606456971713,
+  "kellyCriterion": {
+    "enabled": true,
+    "fractionalMultiplier": 0.19529415697547062,
+    "minTrades": 10,
+    "lookbackPeriod": 50
+  },
+  "stopLoss": {
+    "enabled": true,
+    "atrMultiplier": 1.9660742840698238,
+    "trailing": true,
+    "useEMA": true,
+    "atrPeriod": 14
+  }
+}

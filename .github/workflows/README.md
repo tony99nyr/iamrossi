@@ -21,6 +21,7 @@ The `trading-bot-cron.yml` workflow automatically updates the ETH trading bot ev
 - Runs every 5 minutes via GitHub Actions scheduled workflow
 - Calls `/api/trading/paper/cron-update` endpoint
 - Sends `Authorization: Bearer {CRON_SECRET}` header for authentication
+  - **Note**: The endpoint also accepts `TRADING_UPDATE_TOKEN` (for third-party cron services), but GitHub Actions continues using `CRON_SECRET` for backward compatibility
 - Includes retry logic (3 attempts with exponential backoff) for network failures
 - Logs response status and body for debugging
 

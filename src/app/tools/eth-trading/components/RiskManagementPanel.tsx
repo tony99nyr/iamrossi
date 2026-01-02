@@ -109,8 +109,22 @@ export default function RiskManagementPanel({ session }: RiskManagementPanelProp
     const riskPerTrade = totalValue * confidence * (adjustedPositionPct / 100);
     const portfolioHeat = currentPositionPct;
 
-    const isBlocked = volatilityStatus === 'blocked' || whipsawStatus === 'blocked' || circuitBreakerStatus === 'blocked';
-    const hasWarning = volatilityStatus === 'warning' || whipsawStatus === 'warning' || circuitBreakerStatus === 'warning';
+    // Check drawdown status
+    let drawdownStatus: 'safe' | 'warning' | 'blocked' = 'safe';
+    const drawdownInfo = session.drawdownInfo;
+    const maxDrawdownThreshold = config.maxDrawdownThreshold ?? 0.20;
+    
+    if (drawdownInfo) {
+      const { currentDrawdown, isPaused } = drawdownInfo;
+      if (isPaused) {
+        drawdownStatus = 'blocked';
+      } else if (currentDrawdown >= maxDrawdownThreshold * 0.8) {
+        drawdownStatus = 'warning';
+      }
+    }
+
+    const isBlocked = volatilityStatus === 'blocked' || whipsawStatus === 'blocked' || circuitBreakerStatus === 'blocked' || drawdownStatus === 'blocked';
+    const hasWarning = volatilityStatus === 'warning' || whipsawStatus === 'warning' || circuitBreakerStatus === 'warning' || drawdownStatus === 'warning';
 
     return {
       currentVolatility,
@@ -118,6 +132,8 @@ export default function RiskManagementPanel({ session }: RiskManagementPanelProp
       volatilityStatus,
       whipsawStatus,
       circuitBreakerStatus,
+      drawdownStatus,
+      drawdownInfo,
       isBlocked,
       hasWarning,
       currentPositionPct,
@@ -129,7 +145,7 @@ export default function RiskManagementPanel({ session }: RiskManagementPanelProp
       ethValue,
       usdcValue,
     };
-  }, [lastSignal, regimeHistory, config, portfolioHistory, session.trades, portfolio, lastPrice]);
+  }, [lastSignal, regimeHistory, config, portfolioHistory, session.trades, portfolio, lastPrice, session.drawdownInfo]);
 
   const getStatusColor = (status: 'safe' | 'warning' | 'blocked'): string => {
     switch (status) {
@@ -217,6 +233,39 @@ export default function RiskManagementPanel({ session }: RiskManagementPanelProp
             })}>
               {riskMetrics.circuitBreakerStatus === 'safe' ? 'Active' : riskMetrics.circuitBreakerStatus === 'warning' ? 'Warning' : 'Triggered'}
             </span>
+          </div>
+        </div>
+
+        <div className={css({
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        })}>
+          <div className={css({ display: 'flex', alignItems: 'center', gap: '8px' })}>
+            <span>{getStatusIcon(riskMetrics.drawdownStatus)}</span>
+            <span className={css({ color: '#7d8590', fontSize: 'sm' })}>Max Drawdown</span>
+          </div>
+          <div className={css({ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' })}>
+            {riskMetrics.drawdownInfo ? (
+              <>
+                <span className={css({
+                  color: getStatusColor(riskMetrics.drawdownStatus),
+                  fontWeight: 'semibold',
+                  fontSize: 'sm',
+                })}>
+                  {(riskMetrics.drawdownInfo.currentDrawdown * 100).toFixed(2)}% / {(riskMetrics.drawdownInfo.threshold * 100).toFixed(0)}%
+                </span>
+                {riskMetrics.drawdownInfo.isPaused && (
+                  <span className={css({ color: '#f85149', fontSize: 'xs', marginTop: '2px' })}>
+                    Trading Paused
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className={css({ color: '#7d8590', fontSize: 'sm' })}>
+                N/A
+              </span>
+            )}
           </div>
         </div>
 

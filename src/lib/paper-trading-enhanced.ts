@@ -8,7 +8,7 @@ import type { Trade, PortfolioSnapshot, Portfolio, PriceCandle, TradingSignal, T
 import type { MarketRegimeSignal } from './market-regime-detector-cached';
 import type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
 import { fetchLatestPrice, fetchPriceCandles } from './eth-price-service';
-import { generateEnhancedAdaptiveSignal, clearRegimeHistory, clearRegimeHistoryForSession, recordTradeResult } from './adaptive-strategy-enhanced';
+import { generateEnhancedAdaptiveSignal, clearRegimeHistory, clearRegimeHistoryForSession, recordTradeResult, resetDrawdownTracking, checkDrawdownCircuitBreaker, getPeakPortfolioValue } from './adaptive-strategy-enhanced';
 import { calculateConfidence } from './confidence-calculator';
 import { redis, ensureConnected } from './kv';
 import { validateDataQuality, type DataQualityReport } from './data-quality-validator';
@@ -17,9 +17,11 @@ import { type StopLossConfig, type OpenPosition } from './atr-stop-loss';
 import { executeTrade, type TradeExecutionOptions } from './trade-executor';
 import { calculateKellyCriterion, getKellyMultiplier } from './kelly-criterion';
 import { sendTradeAlert, sendRegimeChangeAlert, sendSessionAlert, createTradeNotification, isNotificationsEnabled } from './notifications';
+// Error tracking imports removed - not currently used in paper trading (can be added when needed)
 import { getAssetConfig, getPaperSessionKey, type TradingAsset } from './asset-config';
 import { analyzeCorrelation, getCorrelationContext } from './correlation-analysis';
 import { fetchAlignedCandles } from './btc-price-service';
+import { checkAllThresholds } from './alert-thresholds';
 // Circuit breaker imports removed - not currently used in paper trading
 
 // Maximum number of portfolio history snapshots to keep (rolling window)
@@ -57,6 +59,15 @@ export interface EnhancedPaperTradingSession {
   openPositions?: OpenPosition[]; // Track open positions with stop losses
   currentATR?: number; // Current ATR value for display
   kellyMultiplier?: number; // Current Kelly multiplier for display
+  drawdownInfo?: {
+    currentDrawdown: number; // Current drawdown percentage (0-1)
+    peakValue: number; // Peak portfolio value
+    threshold: number; // Drawdown threshold
+    isPaused: boolean; // Whether trading is paused due to drawdown
+  };
+  // Emergency stop
+  isEmergencyStopped?: boolean; // Whether trading is manually stopped
+  emergencyStoppedAt?: number; // Timestamp when emergency stop was activated
   // Session management
   expiresAt?: number; // Timestamp when session expires (if inactive)
 }
@@ -246,11 +257,14 @@ export class PaperTradingService {
       console.warn('Data quality issues detected at session start:', dataQuality.issues);
     }
     
+    // Initialize drawdown tracking with initial capital
+    const initialCapital = config.bullishStrategy.initialCapital;
+    resetDrawdownTracking(sessionId, initialCapital);
+    
     const initialSignal = generateEnhancedAdaptiveSignal(candles, config, currentIndex, sessionId);
 
     // Populate portfolioHistory with historical price data from candles
     // This gives the chart historical context even before the session has many updates
-    const initialCapital = config.bullishStrategy.initialCapital;
     
     // Get today's date for comparison
     const today = new Date();
@@ -614,6 +628,9 @@ export class PaperTradingService {
       config: session.config,
       trades: updatedSession.trades,
       openPositions: updatedSession.openPositions,
+      sessionId: session.id, // Pass session ID for drawdown tracking
+      isEmergencyStopped: session.isEmergencyStopped ?? false, // Pass emergency stop status
+      signalPrice: currentPrice, // Store price at signal generation for validation
       useKellyCriterion: useKelly,
       useStopLoss,
       kellyFractionalMultiplier,
@@ -676,6 +693,22 @@ export class PaperTradingService {
     const newTotalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
     portfolio.totalValue = newTotalValue;
     portfolio.totalReturn = ((newTotalValue - portfolio.initialCapital) / portfolio.initialCapital) * 100;
+    
+    // Check alert thresholds
+    await checkAllThresholds(updatedSession);
+    
+    // Update drawdown tracking and check circuit breaker
+    const maxDrawdownThreshold = session.config.maxDrawdownThreshold ?? 0.20;
+    const drawdownCheck = checkDrawdownCircuitBreaker(session.id, newTotalValue, maxDrawdownThreshold);
+    const peakValue = getPeakPortfolioValue(session.id);
+    
+    // Store drawdown info in session for UI display
+    updatedSession.drawdownInfo = {
+      currentDrawdown: drawdownCheck.drawdown,
+      peakValue,
+      threshold: maxDrawdownThreshold,
+      isPaused: drawdownCheck.shouldPause,
+    };
 
     // Update last signal with Kelly multiplier (cast to include kellyMultiplier)
     updatedSession.lastSignal = { 

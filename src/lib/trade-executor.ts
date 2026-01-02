@@ -24,6 +24,7 @@ import {
 } from './atr-stop-loss';
 import { generateTradeAudit } from './trade-audit';
 import { calculateVolatilityMultiplier, type VolatilityPositionSizingConfig } from './volatility-position-sizing';
+import { checkDrawdownCircuitBreaker } from './adaptive-strategy-enhanced';
 
 export interface TransactionCostConfig {
   enabled: boolean;
@@ -49,6 +50,11 @@ export interface TradeExecutionOptions {
   // Trade tracking
   trades: Trade[];
   openPositions: OpenPosition[];
+  
+  // Session tracking (for drawdown and circuit breakers)
+  sessionId?: string; // Session ID for tracking drawdown, circuit breakers, etc.
+  isEmergencyStopped?: boolean; // Whether trading is manually stopped
+  signalPrice?: number; // Price at signal generation time (for price validation)
   
   // Features
   useKellyCriterion?: boolean;
@@ -206,6 +212,40 @@ export function executeTrade(
   
   const effectiveStopLossConfig = stopLossConfig || DEFAULT_STOP_LOSS_CONFIG;
   
+  // Check emergency stop (before all trades, including stop losses)
+  const isEmergencyStopped = options.isEmergencyStopped ?? false;
+  if (isEmergencyStopped && signal.action !== 'hold') {
+    // Emergency stop is active - block all new trades (but allow stop loss exits for safety)
+    // Only block if it's a new trade, not a stop loss exit
+    if (signal.action === 'buy' || (signal.action === 'sell' && openPositions.length === 0)) {
+      return null; // Block the trade
+    }
+  }
+  
+  // Check price validation (before new trades)
+  const priceValidationThreshold = config.priceValidationThreshold ?? 0.02; // Default 2%
+  const signalPrice = options.signalPrice;
+  if (signalPrice && signalPrice > 0 && signal.action !== 'hold') {
+    const priceMovement = Math.abs((currentPrice - signalPrice) / signalPrice);
+    if (priceMovement > priceValidationThreshold) {
+      // Price moved too much since signal - reject trade
+      return null;
+    }
+  }
+  
+  // Check maximum drawdown circuit breaker (before new trades)
+  const maxDrawdownThreshold = config.maxDrawdownThreshold ?? 0.20; // Default 20%
+  const sessionId = options.sessionId || 'default'; // Get sessionId from options if available
+  const drawdownCheck = checkDrawdownCircuitBreaker(sessionId, portfolio.totalValue, maxDrawdownThreshold);
+  
+  if (drawdownCheck.shouldPause && signal.action !== 'hold') {
+    // Drawdown exceeds threshold - block new trades (but allow stop loss exits)
+    // Only block if it's a new trade, not a stop loss exit
+    if (signal.action === 'buy' || (signal.action === 'sell' && openPositions.length === 0)) {
+      return null; // Block the trade
+    }
+  }
+  
   // Check stop losses first (before new trades)
   if (useStopLoss && openPositions.length > 0) {
     const currentATR = getATRValue(candles, candleIndex, effectiveStopLossConfig.atrPeriod, effectiveStopLossConfig.useEMA);
@@ -343,6 +383,25 @@ export function executeTrade(
     const positionSize = portfolio.usdcBalance * confidence * adjustedPositionPct;
     const ethAmount = positionSize / currentPrice;
     
+    // Validate position size limits
+    const minPositionSize = config.minPositionSize ?? 10; // Default $10 minimum
+    const maxPositionConcentration = config.maxPositionConcentration ?? 0.95; // Default 95% max
+    
+    // Check minimum position size
+    if (positionSize < minPositionSize) {
+      return null; // Trade too small, reject
+    }
+    
+    // Check maximum position concentration (current position + new position)
+    const currentEthValue = portfolio.ethBalance * currentPrice;
+    const projectedEthValue = currentEthValue + positionSize;
+    const projectedTotalValue = portfolio.usdcBalance - positionSize + projectedEthValue;
+    const projectedConcentration = projectedTotalValue > 0 ? projectedEthValue / projectedTotalValue : 0;
+    
+    if (projectedConcentration > maxPositionConcentration) {
+      return null; // Would exceed maximum concentration, reject
+    }
+    
     if (ethAmount > 0 && positionSize <= portfolio.usdcBalance) {
       const costBasis = positionSize;
       const costs = applyTransactionCosts(positionSize, transactionCostConfig, candles, candleIndex);
@@ -366,6 +425,8 @@ export function executeTrade(
           confidence,
           portfolioValue: portfolio.totalValue,
           costBasis, // Store cost basis for P&L calculation
+          executionState: 'filled', // Paper trading executes immediately
+          executionAttempts: 1,
         };
         
         // Generate audit if requested

@@ -7,6 +7,7 @@ import { stack, flex } from '@styled-system/patterns';
 import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 import { getAssetConfig } from '@/lib/asset-config';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
+import PerformanceMetricsPanel from './components/PerformanceMetricsPanel';
 
 interface OverviewData {
   eth: EnhancedPaperTradingSession | null;
@@ -399,6 +400,14 @@ export default function TradingOverviewClient() {
             )}
           </div>
         </div>
+
+        {/* Performance Metrics Panel */}
+        {(overview.eth || overview.btc) && (
+          <PerformanceMetricsPanel 
+            ethSession={overview.eth} 
+            btcSession={overview.btc} 
+          />
+        )}
 
         {/* Quick Navigation */}
         <div className={css({

@@ -537,9 +537,9 @@ async function trainModel(trainingData: TrainingData): Promise<tf.LayersModel> {
     loss: 'meanSquaredError',
   });
   
-  // Train
+  // Train with more epochs for extended runs (better model learning)
   await model.fit(normalizedFeatures, labels, {
-    epochs: 100,
+    epochs: 200, // Increased from 100 to 200 for extended runs
     batchSize: 32,
     validationSplit: 0.2,
     verbose: 0,
@@ -834,10 +834,13 @@ async function main() {
     process.exit(1);
   }
   
-  // AGGRESSIVE: Increased iterations and population for better exploration
+  // EXTENDED RUN: 2-3x longer for deeper optimization and better profit dialing
   // More iterations = more chances to find better configs
   // Larger population = more diversity, less likely to get stuck in local optima
-  const optimizedConfig = await optimizeStrategy(asset, periods, 15, 30); // Increased from 10,20 to 15,30
+  // 
+  // Current settings: 30 iterations, 60 population (2x the previous 15,30)
+  // This allows much more thorough exploration of parameter space
+  const optimizedConfig = await optimizeStrategy(asset, periods, 30, 60); // Extended: 2x iterations (30) and 2x population (60)
   
   // Save result
   saveConfig(optimizedConfig, asset);
@@ -862,8 +865,8 @@ async function main() {
   console.log(`${'='.repeat(60)}`);
   console.log(`   Completed at: ${new Date().toLocaleString()}`);
   console.log(`   Total periods tested: ${periods.length}`);
-  console.log(`   Total iterations: 10`);
-  console.log(`   Total configurations tested: ~200+`);
+  console.log(`   Total iterations: 30 (extended run for deeper optimization)`);
+  console.log(`   Total configurations tested: ~600+ (extended run)`);
   console.log(`   Optimized config saved to: data/optimized-configs/`);
   console.log(`${'='.repeat(60)}\n`);
   

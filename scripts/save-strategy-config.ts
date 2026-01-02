@@ -9,6 +9,7 @@ import path from 'path';
 import type { EnhancedAdaptiveStrategyConfig } from '@/lib/adaptive-strategy-enhanced';
 import type { TradingConfig } from '@/types';
 import { saveAdaptiveStrategyConfig, disconnectRedis } from '@/lib/kv';
+import { validateStrategyConfig } from '@/lib/config-validator';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
@@ -90,6 +91,23 @@ async function main() {
   };
 
   try {
+    // Validate config before saving
+    const validation = validateStrategyConfig(enhancedConfig);
+    if (!validation.isValid) {
+      console.error('❌ Config validation failed:');
+      for (const error of validation.errors) {
+        console.error(`   • ${error}`);
+      }
+      process.exit(1);
+    }
+    
+    if (validation.warnings.length > 0) {
+      console.warn('⚠️  Config validation warnings:');
+      for (const warning of validation.warnings) {
+        console.warn(`   • ${warning}`);
+      }
+    }
+    
     await saveAdaptiveStrategyConfig(enhancedConfig);
     console.log('✅ Successfully saved optimized enhanced adaptive strategy config to Redis\n');
     console.log('📊 Configuration Summary:');

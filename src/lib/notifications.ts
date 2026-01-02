@@ -38,6 +38,15 @@ export interface StopLossNotification {
   timestamp: number;
 }
 
+export interface ErrorNotification {
+  type: 'api_failure' | 'execution_failure' | 'data_quality' | 'system_error';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  message: string;
+  context?: string;
+  error?: string;
+  timestamp: number;
+}
+
 interface DiscordEmbed {
   title: string;
   description?: string;
@@ -319,6 +328,67 @@ export function createTradeNotification(
     pnl: trade.pnl,
     timestamp: trade.timestamp,
   };
+}
+
+/**
+ * Send error alert to Discord
+ */
+export async function sendErrorAlert(notification: ErrorNotification): Promise<boolean> {
+  const severityEmojis: Record<ErrorNotification['severity'], string> = {
+    low: 'ℹ️',
+    medium: '⚠️',
+    high: '🔴',
+    critical: '🚨',
+  };
+
+  const typeLabels: Record<ErrorNotification['type'], string> = {
+    api_failure: 'API Failure',
+    execution_failure: 'Execution Failure',
+    data_quality: 'Data Quality Issue',
+    system_error: 'System Error',
+  };
+
+  const severityColors: Record<ErrorNotification['severity'], number> = {
+    low: COLORS.blue,
+    medium: COLORS.yellow,
+    high: COLORS.yellow, // Use yellow for high (orange not available)
+    critical: COLORS.red,
+  };
+
+  const emoji = severityEmojis[notification.severity];
+  const title = `${emoji} ${typeLabels[notification.type]}`;
+
+  const fields: DiscordEmbed['fields'] = [
+    { name: '⚠️ Severity', value: notification.severity.toUpperCase(), inline: true },
+    { name: '📝 Message', value: notification.message, inline: false },
+  ];
+
+  if (notification.context) {
+    fields.push({ name: '🔍 Context', value: notification.context, inline: false });
+  }
+
+  if (notification.error) {
+    // Truncate long error messages
+    const errorMsg = notification.error.length > 500 
+      ? notification.error.substring(0, 500) + '...'
+      : notification.error;
+    fields.push({ name: '❌ Error', value: `\`\`\`${errorMsg}\`\`\``, inline: false });
+  }
+
+  const embed: DiscordEmbed = {
+    title,
+    color: severityColors[notification.severity],
+    fields,
+    footer: {
+      text: 'Trading Bot • Error Tracking',
+    },
+    timestamp: new Date(notification.timestamp).toISOString(),
+  };
+
+  return sendDiscordWebhook({
+    username: 'ETH Trading Bot',
+    embeds: [embed],
+  });
 }
 
 /**

@@ -215,7 +215,16 @@ async function main() {
   }
   
   const command = args[0];
-  const asset = (args[args.length - 1] as TradingAsset) || 'eth';
+  
+  // Parse asset: if last arg is a valid TradingAsset and not a command, use it; otherwise default to 'eth'
+  let asset: TradingAsset = 'eth';
+  if (args.length > 1) {
+    const lastArg = args[args.length - 1]!;
+    // Only use last arg as asset if it's not a command flag
+    if (lastArg !== '--list' && lastArg !== '--restore' && lastArg !== '--latest' && !lastArg.startsWith('--')) {
+      asset = lastArg as TradingAsset;
+    }
+  }
   
   try {
     if (command === '--list') {
@@ -231,7 +240,7 @@ async function main() {
       const latest = findLatestOptimizedConfig(asset);
       if (!latest) {
         console.error(`❌ No optimized config found for ${asset}. Run ML optimizer first:`);
-        console.error(`   pnpm eth:ml-optimize ${asset}`);
+        console.error(`   pnpm eth:ml-optimize`);
         process.exit(1);
       }
       await switchConfig(latest, asset);

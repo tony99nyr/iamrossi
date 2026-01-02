@@ -226,6 +226,7 @@ export default function EthTradingBotClient() {
     }
   };
 
+
   // Auto-refresh every 5 minutes if session is active (only when tab is visible)
   useEffect(() => {
     if (!session?.isActive || !isAuthenticated) return;

@@ -542,3 +542,46 @@ export function validateDataQuality(
   };
 }
 
+/**
+ * Detect price anomalies (unusual price moves)
+ * Returns true if price move is anomalous (>10% in single period)
+ */
+export function detectPriceAnomaly(
+  candles: PriceCandle[],
+  currentIndex: number,
+  threshold: number = 0.10 // Default 10% threshold
+): { isAnomaly: boolean; priceChange: number; previousPrice: number; currentPrice: number } {
+  if (currentIndex < 1 || currentIndex >= candles.length) {
+    return {
+      isAnomaly: false,
+      priceChange: 0,
+      previousPrice: 0,
+      currentPrice: 0,
+    };
+  }
+
+  const currentCandle = candles[currentIndex]!;
+  const previousCandle = candles[currentIndex - 1]!;
+  
+  const previousPrice = previousCandle.close;
+  const currentPrice = currentCandle.close;
+  
+  if (previousPrice <= 0) {
+    return {
+      isAnomaly: false,
+      priceChange: 0,
+      previousPrice,
+      currentPrice,
+    };
+  }
+
+  const priceChange = Math.abs((currentPrice - previousPrice) / previousPrice);
+  
+  return {
+    isAnomaly: priceChange > threshold,
+    priceChange,
+    previousPrice,
+    currentPrice,
+  };
+}
+

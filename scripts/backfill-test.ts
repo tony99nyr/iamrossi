@@ -6,9 +6,8 @@
  */
 
 import { fetchPriceCandles } from '../src/lib/eth-price-service';
-import { generateEnhancedAdaptiveSignal } from '../src/lib/adaptive-strategy-enhanced';
+import { generateEnhancedAdaptiveSignal, clearRegimeHistory, resetDrawdownTracking } from '../src/lib/adaptive-strategy-enhanced';
 import { calculateConfidence } from '../src/lib/confidence-calculator';
-import { clearRegimeHistory } from '../src/lib/adaptive-strategy-enhanced';
 import { clearIndicatorCache, detectMarketRegimeCached } from '../src/lib/market-regime-detector-cached';
 import { executeTrade } from '../src/lib/trade-executor';
 import { updateStopLoss } from '../src/lib/atr-stop-loss';
@@ -308,7 +307,7 @@ async function runBacktestInternal(
       candles = await fillGapsInCandles(candles, effectiveTimeframe, symbol, false);
       const afterFill = candles.length;
       if (afterFill > beforeFill) {
-        console.log(`🔧 Filled ${afterFill - beforeFill} missing candles to eliminate gaps`);
+        // Removed verbose gap-filling log (gaps are filled automatically, no need to log every time)
       }
     }
     
@@ -406,7 +405,7 @@ async function runBacktestInternal(
       candles = await fillGapsInCandles(candles, effectiveTimeframe, symbol, isHistoricalData && !isSynthetic);
       const afterFill = candles.length;
       if (afterFill > beforeFill) {
-        console.log(`🔧 Filled ${afterFill - beforeFill} missing candles to eliminate gaps`);
+        // Removed verbose gap-filling log (gaps are filled automatically, no need to log every time)
       }
       
       // Filter to requested date range (use UTC to match checkDataAvailability)
@@ -420,7 +419,7 @@ async function runBacktestInternal(
       candles = await fillGapsInCandles(candles, effectiveTimeframe, symbol, isHistoricalData && !isSynthetic);
       const afterRefill = candles.length;
       if (afterRefill > beforeRefill) {
-        console.log(`🔧 Filled ${afterRefill - beforeRefill} additional missing candles after filtering`);
+        // Removed verbose gap-filling log (gaps are filled automatically, no need to log every time)
       }
       
       // Removed verbose candle loading log - not useful for debugging
@@ -656,6 +655,9 @@ async function runBacktestInternal(
   const historyPreloadStartIndex = Math.max(0, startIndex - 10);
   const sessionId = `backtest-${startDate}`;
   
+  // Initialize drawdown tracking with initial capital
+  resetDrawdownTracking(sessionId, portfolio.initialCapital);
+  
   // OPTIMIZATION: Batch preload regime history instead of sequential calls
   const regimePreloadPromises: Promise<void>[] = [];
   for (let i = historyPreloadStartIndex; i < startIndex; i++) {
@@ -753,6 +755,7 @@ async function runBacktestInternal(
         config,
         trades,
         openPositions,
+        sessionId, // Pass session ID for drawdown tracking
         useKellyCriterion: effectiveKellyMultiplier > 0,
         useStopLoss: effectiveStopLossConfig.enabled,
         kellyFractionalMultiplier: effectiveKellyMultiplier,

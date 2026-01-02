@@ -46,7 +46,8 @@
     "eth:switch-config": "npx tsx scripts/switch-strategy-config.ts",
     "validate:full": "pnpm validate && pnpm eth:verify-backtest",
     "redis:analyze": "npx tsx scripts/analyze-redis-memory.ts",
-    "google-fit:exchange-token": "npx tsx scripts/exchange-google-fit-token.ts"
+    "google-fit:exchange-token": "npx tsx scripts/exchange-google-fit-token.ts",
+    "generate-token": "npx tsx scripts/generate-token.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

@@ -1,6 +1,6 @@
 # Trading Strategy Project Status
 
-**Last Updated**: 2026-01-01 (Updated: Data quality improvements, OHLC fixing, gap filling enhancements)  
+**Last Updated**: 2026-01-01 (Updated: Data quality improvements, ML optimizer asset support, compare config BTC support, correlation alignment fixes)  
 **Current Phase**: Phase 10 - Multi-Asset Trading System ✅ **COMPLETED**
 - ✅ 8h timeframe standardized for both ETH and BTC
 - ✅ Correlation integration complete (affects confidence and thresholds)
@@ -309,7 +309,7 @@
 
 ## ✅ Recently Completed
 
-### Data Quality & Gap Filling Improvements (January 2026)
+### Data Quality & ML Optimizer Improvements (January 2026)
 **Status**: ✅ Completed
 
 **Changes**:
@@ -341,7 +341,23 @@
   - Updated validation to be more lenient for small gaps in synthetic data
   - Gap warnings now indicate when gaps should be filled automatically
   - Validation happens after all gap-filling steps complete
+  - Fixed timezone consistency (UTC) for date range filtering and validation
   - **Result**: Clean validation output with no false warnings
+- ✅ **Correlation Alignment Fixes** - Improved timestamp alignment for correlation analysis
+  - Added tolerance window for timestamp alignment (within half the timeframe interval)
+  - Handles slight timestamp differences between BTC divergence data and ETH regular data
+  - Improved warning messages showing aligned candle counts for each asset
+  - **Result**: Better correlation calculation reliability, clearer error messages
+- ✅ **ML Optimizer Asset Support** - Asset-aware period filtering
+  - Updated `getTestPeriodsForYears()` to filter periods by asset availability
+  - Automatically skips 2025 historical periods for BTC (BTC has no 2025 data)
+  - Logs how many periods were skipped for each asset
+  - **Result**: ML optimizer works correctly for both ETH and BTC
+- ✅ **Compare Config Script BTC Support** - Full BTC support added
+  - Smart argument parsing (detects 'eth'/'btc' as asset parameter)
+  - Asset-aware period filtering (skips periods without data)
+  - Added `btc:compare-config` package.json script
+  - **Result**: Compare config script works for both ETH and BTC
 
 **Impact**:
 - ✅ **0 OHLC warnings** - All invalid OHLC relationships automatically fixed
@@ -349,6 +365,8 @@
 - ✅ **Improved data quality** - Historical data files automatically corrected and saved
 - ✅ **Better backfill reliability** - No false warnings, clean test output
 - ✅ **API efficiency** - Fetched historical candles saved to files for future use
+- ✅ **ML optimizer works for BTC** - Automatically filters out periods without data
+- ✅ **Compare config works for BTC** - Full support for comparing BTC optimized configs
 
 ### Strategy History System & Config Management (January 2026)
 **Status**: ✅ Completed
@@ -518,8 +536,9 @@
 - `src/lib/backfill-validation.ts` - Data quality validation (OHLC, gaps, timestamps)
 
 ### Testing & Optimization Scripts
-- `scripts/backfill-test.ts` - Main backfill testing (supports 2025, 2026, 2027, 2028, skipAPIFetch, config name logging, timezone-safe year parsing)
-- `scripts/ml-strategy-optimizer.ts` - ML-based strategy optimizer using TensorFlow.js (multi-core support, config name logging)
+- `scripts/backfill-test.ts` - Main backfill testing (supports 2025, 2026, 2027, 2028, skipAPIFetch, config name logging, timezone-safe year parsing, asset-aware period filtering, correlation alignment with tolerance)
+- `scripts/ml-strategy-optimizer.ts` - ML-based strategy optimizer using TensorFlow.js (multi-core support, config name logging, asset-aware period filtering)
+- `scripts/compare-optimized-config.ts` - Compare optimized vs default config (supports both ETH and BTC, asset-aware period filtering)
 - `scripts/compare-top-strategies.ts` - Strategy comparison script (uses backfill-test.ts)
 - `scripts/comprehensive-optimization-kelly-atr.ts` - Comprehensive optimization (192 combinations)
 - `scripts/verify-historical-backtest.ts` - Historical verification
@@ -566,8 +585,11 @@
 ### Short Term
 1. ✅ **Analyze test results** - Comprehensive backfill test results analyzed (8h standardized, correlation integrated)
 2. ✅ **Strategy refinement** - Correlation integration complete, divergence detection integrated
-3. **Historical trade replay** - Visualize past trades on chart
-4. **Cross-asset correlation UI** - Display correlation indicator on overview dashboard
+3. ✅ **Data quality improvements** - OHLC fixing, gap filling, validation improvements complete
+4. ✅ **ML optimizer asset support** - Works for both ETH and BTC with asset-aware period filtering
+5. ✅ **Compare config BTC support** - Full BTC support added to comparison script
+6. **Historical trade replay** - Visualize past trades on chart
+7. **Cross-asset correlation UI** - Display correlation indicator on overview dashboard
 
 ### Medium Term
 1. ✅ **Mobile-friendly dashboard** - Already responsive and mobile-friendly
@@ -616,6 +638,21 @@
 ---
 
 ## 🔧 Technical Debt & Improvements
+
+### Trading Strategy Health Scorecard
+- 📊 **Health Scorecard Created** - Comprehensive evaluation across 10 dimensions
+- 📄 See `TRADING_HEALTH_SCORECARD.md` for detailed analysis
+- 🎯 **Current Focus**: Paper Trading Hardening (Phase 1)
+- ⏭️ **Future Phase**: Real Exchange Integration (Phase 2)
+- **Overall Score**: 7.2/10 - Strong foundation with critical gaps to address
+- **Key Priorities**:
+  - Maximum drawdown protection
+  - Emergency stop mechanism
+  - Monitoring & alerting improvements
+  - Execution reliability enhancements
+  - Data quality monitoring
+- 📋 **Hardening Plan**: See `PAPER_TRADING_HARDENING_PLAN.md` for implementation roadmap
+- ⚠️ **CRITICAL**: All algorithm changes must run backfill tests to compare before/after - see `TRADING_TESTING.md` for details
 
 ### Code Quality
 - ✅ Comprehensive test coverage (unit + integration)
@@ -692,9 +729,11 @@
 - **Test Coverage** - 374+ tests passing, including 20 paper trading integration tests and 15 divergence detection tests
 - **Comparison Scripts** - Comprehensive tests comparing all asset/timeframe combinations (all periods 2025-2028)
 - **Divergence Data** - Generated BTC divergence data (39.2% correlation) for realistic correlation testing
-- **ML Strategy Optimizer** - Fully implemented using TensorFlow.js, multi-core support, config name logging
-- **Backfill Test Improvements** - Fixed timezone issues (year parsing), added config name logging for better visibility
+- **ML Strategy Optimizer** - Fully implemented using TensorFlow.js, multi-core support, config name logging, asset-aware period filtering
+- **Backfill Test Improvements** - Fixed timezone issues (year parsing), added config name logging, asset-aware period filtering, correlation alignment with tolerance
 - **Config Name Format** - Short config names in logs: `B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0` (Bullish/Bearish thresholds, Regime, Kelly, ATR)
+- **Compare Config Script** - Full BTC support, asset-aware period filtering, smart argument parsing
+- **Correlation Alignment** - Tolerance window for timestamp alignment, improved error messages
 
 ---
 

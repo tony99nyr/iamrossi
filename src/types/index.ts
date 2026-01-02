@@ -370,6 +370,10 @@ export interface Trade {
   costBasis?: number; // Cost basis for P&L calculation (buy: usdcAmount, sell: matched buy cost)
   pnl?: number; // Profit/Loss for sell trades (usdcAmount - costBasis)
   fullySold?: boolean; // For buy trades: whether this position has been fully sold
+  // Execution state tracking
+  executionState?: 'pending' | 'executing' | 'filled' | 'failed';
+  executionAttempts?: number; // Number of execution attempts
+  executionError?: string; // Error message if execution failed
   // Audit information (optional, populated by trade audit generator)
   audit?: TradeAudit;
 }

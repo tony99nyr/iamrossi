@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PaperTradingService, type EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 import { fetchLatestPrice } from '@/lib/eth-price-service';
 import { ASSET_CONFIGS, type TradingAsset } from '@/lib/asset-config';
+import { isNotificationsEnabled, sendErrorAlert } from '@/lib/notifications';
+import crypto from 'crypto';
 
 /**
  * GET /api/trading/paper/cron-update
@@ -20,14 +22,63 @@ import { ASSET_CONFIGS, type TradingAsset } from '@/lib/asset-config';
  * - External cron service (e.g., cron-job.org) calling this endpoint
  * - GitHub Actions workflow (trading-bot-cron.yml) calling this endpoint every 5 minutes
  * - Upgrade to Vercel Pro for scheduled cron jobs
+ * 
+ * Authentication:
+ * - Accepts TRADING_UPDATE_TOKEN (recommended for third-party cron services)
+ *   - Updates price candles AND trading sessions (can trigger trades in active sessions)
+ *   - Isolated: Only grants access to this endpoint (no admin access)
+ *   - Safe to store in third-party services (paper trading only, no real money)
+ * - Also accepts CRON_SECRET (for backward compatibility with GitHub Actions)
+ *   - Same functionality as TRADING_UPDATE_TOKEN
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret to prevent unauthorized access
+    // Verify authentication - accept either TRADING_UPDATE_TOKEN or CRON_SECRET
+    // TRADING_UPDATE_TOKEN is recommended for third-party services (isolated, low-risk)
+    // CRON_SECRET is kept for backward compatibility with GitHub Actions
     const authHeader = request.headers.get('authorization');
-    const isValidCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
     
-    if (!isValidCron) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
+    const token = authHeader.substring(7); // Remove "Bearer " prefix
+    
+    // Use timing-safe comparison to prevent timing attacks
+    const tradingUpdateToken = process.env.TRADING_UPDATE_TOKEN;
+    const cronSecret = process.env.CRON_SECRET;
+    
+    let isValid = false;
+    
+    // Check TRADING_UPDATE_TOKEN first (recommended for third-party services)
+    if (tradingUpdateToken) {
+      try {
+        const tokenBuffer = Buffer.from(token, 'utf8');
+        const correctBuffer = Buffer.from(tradingUpdateToken, 'utf8');
+        
+        if (tokenBuffer.length === correctBuffer.length) {
+          isValid = crypto.timingSafeEqual(tokenBuffer, correctBuffer);
+        }
+      } catch {
+        // Invalid token format, continue to check CRON_SECRET
+      }
+    }
+    
+    // Fall back to CRON_SECRET for backward compatibility (GitHub Actions)
+    if (!isValid && cronSecret) {
+      try {
+        const tokenBuffer = Buffer.from(token, 'utf8');
+        const correctBuffer = Buffer.from(cronSecret, 'utf8');
+        
+        if (tokenBuffer.length === correctBuffer.length) {
+          isValid = crypto.timingSafeEqual(tokenBuffer, correctBuffer);
+        }
+      } catch {
+        // Invalid token format
+      }
+    }
+    
+    if (!isValid) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -65,6 +116,7 @@ export async function GET(request: NextRequest) {
     await Promise.allSettled(pricePromises);
 
     // Check for active sessions for ALL assets and update them
+    // Both TRADING_UPDATE_TOKEN and CRON_SECRET can update sessions (execute trades)
     const sessionUpdates: Record<TradingAsset, { success: boolean; error?: string; session?: EnhancedPaperTradingSession }> = {
       eth: { success: false },
       btc: { success: false },
@@ -122,6 +174,21 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error in cron update endpoint:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to process cron update';
+    
+    // Send Discord alert on cron failure
+    if (isNotificationsEnabled()) {
+      await sendErrorAlert({
+        type: 'system_error',
+        severity: 'high',
+        message: 'Cron update failed',
+        context: `Error: ${errorMessage}`,
+        error: error instanceof Error ? error.stack : String(error),
+        timestamp: Date.now(),
+      }).catch((err: unknown) => {
+        console.warn('[Cron Update] Failed to send error alert:', err);
+      });
+    }
+    
     return NextResponse.json(
       { error: errorMessage },
       { status: 500 }
