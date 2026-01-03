@@ -28,6 +28,7 @@ import { runBacktest } from './backfill-test';
 import type { EnhancedAdaptiveStrategyConfig } from '@/lib/adaptive-strategy-enhanced';
 import type { TradingAsset } from '@/lib/asset-config';
 import { getAssetConfig } from '@/lib/asset-config';
+import { disconnectRedis } from '@/lib/kv';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -39,6 +40,7 @@ interface OptimizationResult {
     maxDrawdown: number;
     winRate: number;
     totalTrades: number;
+    ethHoldReturn?: number; // Asset hold return for comparison (works for ETH/BTC)
   };
   score: number; // Combined fitness score
 }
@@ -50,8 +52,8 @@ interface TrainingData {
 
 /**
  * Generate a short config name from strategy parameters
- * Format: B{buyThresh}-S{sellThresh}|Be{buyThresh}-S{sellThresh}|R{regimeConf}|K{kelly}|A{atr}
- * Example: B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0
+ * Format: B{buyThresh}-S{sellThresh}|Be{buyThresh}-S{sellThresh}|R{regimeConf}|K{kelly}|A{atr}|HF{hfMultiplier}|VS{volSqueezeMultiplier}|SS{signalStrengthMultiplier}
+ * Example: B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0|HF0.5|VS0.5|SS1.5
  */
 function getConfigShortName(config: EnhancedAdaptiveStrategyConfig): string {
   const bullBuy = config.bullishStrategy.buyThreshold.toFixed(2);
@@ -61,8 +63,11 @@ function getConfigShortName(config: EnhancedAdaptiveStrategyConfig): string {
   const regime = (config.regimeConfidenceThreshold ?? 0.22).toFixed(2);
   const kelly = config.kellyCriterion?.fractionalMultiplier?.toFixed(2) ?? '0.25';
   const atr = config.stopLoss?.atrMultiplier?.toFixed(1) ?? '2.0';
+  const hfMultiplier = config.adaptivePositionSizing?.highFrequencySwitchPositionMultiplier?.toFixed(2) ?? '0.5';
+  const volSqueezeMultiplier = config.lowVolatilityFilter?.volatilitySqueezePositionMultiplier?.toFixed(2) ?? '0.5';
+  const signalStrengthMultiplier = config.lowVolatilityFilter?.signalStrengthMultiplier?.toFixed(2) ?? '1.5';
   
-  return `B${bullBuy}-S${bullSell}|Be${bearBuy}-S${bearSell}|R${regime}|K${kelly}|A${atr}`;
+  return `B${bullBuy}-S${bullSell}|Be${bearBuy}-S${bearSell}|R${regime}|K${kelly}|A${atr}|HF${hfMultiplier}|VS${volSqueezeMultiplier}|SS${signalStrengthMultiplier}`;
 }
 
 /**
@@ -70,6 +75,10 @@ function getConfigShortName(config: EnhancedAdaptiveStrategyConfig): string {
  * This ensures ML optimization tests robustness across ALL market conditions
  */
 export function getAllTestPeriods(): Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }> {
+  return getAllTestPeriodsInternal();
+}
+
+function getAllTestPeriodsInternal(): Array<{ startDate: string; endDate: string; isSynthetic: boolean; name: string }> {
   const historicalPeriods = [
     { name: 'Bullish Period', startDate: '2025-04-01', endDate: '2025-08-23', isSynthetic: false },
     { name: 'Bearish Period', startDate: '2025-01-01', endDate: '2025-06-01', isSynthetic: false },
@@ -117,12 +126,51 @@ export function getAllTestPeriods(): Array<{ startDate: string; endDate: string;
     { name: '2028 Full Divergence Test', startDate: '2028-01-01', endDate: '2028-03-17', isSynthetic: true },
   ];
   
+  const synthetic2029Periods = [
+    { name: '2029 Full Year', startDate: '2029-01-01', endDate: '2029-12-31', isSynthetic: true },
+    { name: '2029 Q1 (Hyper-Volatility→Sideways)', startDate: '2029-01-01', endDate: '2029-03-31', isSynthetic: true },
+    { name: '2029 Q2 (Bull Run→Flash Crash→Recovery)', startDate: '2029-04-01', endDate: '2029-06-30', isSynthetic: true },
+    { name: '2029 Q3 (Recovery→Bear Market)', startDate: '2029-07-01', endDate: '2029-09-30', isSynthetic: true },
+    { name: '2029 Q4 (False Breakout→Volatility Squeeze)', startDate: '2029-10-01', endDate: '2029-12-31', isSynthetic: true },
+    { name: '2029 Hyper-Volatility Period', startDate: '2029-01-01', endDate: '2029-01-31', isSynthetic: true },
+    { name: '2029 Extended Sideways', startDate: '2029-02-01', endDate: '2029-03-31', isSynthetic: true },
+    { name: '2029 Flash Crash', startDate: '2029-06-01', endDate: '2029-06-15', isSynthetic: true },
+    { name: '2029 False Bull Breakout', startDate: '2029-10-01', endDate: '2029-10-31', isSynthetic: true },
+  ];
+  
+  const synthetic2030Periods = [
+    { name: '2030 Full Year', startDate: '2030-01-01', endDate: '2030-12-31', isSynthetic: true },
+    { name: '2030 Q1 (High-Frequency Switches→Bull)', startDate: '2030-01-01', endDate: '2030-03-31', isSynthetic: true },
+    { name: '2030 Q2 (Consolidation→Bear Market)', startDate: '2030-04-01', endDate: '2030-06-30', isSynthetic: true },
+    { name: '2030 Q3 (Bear Market→False Breakout)', startDate: '2030-07-01', endDate: '2030-09-30', isSynthetic: true },
+    { name: '2030 Q4 (Recovery→Volatility Squeeze→Explosion)', startDate: '2030-10-01', endDate: '2030-12-31', isSynthetic: true },
+    { name: '2030 High-Frequency Switches', startDate: '2030-01-01', endDate: '2030-02-28', isSynthetic: true },
+    { name: '2030 Extended Consolidation', startDate: '2030-04-01', endDate: '2030-05-31', isSynthetic: true },
+    { name: '2030 False Bear Breakout', startDate: '2030-08-01', endDate: '2030-08-31', isSynthetic: true },
+    { name: '2030 Volatility Squeeze', startDate: '2030-11-01', endDate: '2030-11-30', isSynthetic: true },
+  ];
+  
+  const synthetic2031Periods = [
+    { name: '2031 Full Year', startDate: '2031-01-01', endDate: '2031-12-31', isSynthetic: true },
+    { name: '2031 Q1 (Bull Run→Flash Crash→Recovery)', startDate: '2031-01-01', endDate: '2031-03-31', isSynthetic: true },
+    { name: '2031 Q2 (Recovery→Sideways)', startDate: '2031-04-01', endDate: '2031-06-30', isSynthetic: true },
+    { name: '2031 Q3 (Sideways→Extended Bear Market)', startDate: '2031-07-01', endDate: '2031-09-30', isSynthetic: true },
+    { name: '2031 Q4 (False Breakout→Volatility Squeeze)', startDate: '2031-10-01', endDate: '2031-12-31', isSynthetic: true },
+    { name: '2031 Flash Crash', startDate: '2031-03-01', endDate: '2031-03-15', isSynthetic: true },
+    { name: '2031 Extended Sideways', startDate: '2031-05-01', endDate: '2031-06-30', isSynthetic: true },
+    { name: '2031 Extended Bear Market', startDate: '2031-07-01', endDate: '2031-09-30', isSynthetic: true },
+    { name: '2031 False Bull Breakout', startDate: '2031-10-01', endDate: '2031-10-31', isSynthetic: true },
+  ];
+  
   return [
     ...historicalPeriods,
     ...synthetic2026Periods,
     ...synthetic2027Periods,
     ...multiYearPeriods,
     ...divergenceTestPeriods,
+    ...synthetic2029Periods,
+    ...synthetic2030Periods,
+    ...synthetic2031Periods,
   ];
 }
 
@@ -134,13 +182,20 @@ export function getTestPeriodsForYears(years?: number[], asset: TradingAsset = '
   
   // Filter out periods that don't have data for the asset
   // BTC doesn't have 2025 historical data (only ETH does)
+  // BTC doesn't have synthetic data for 2029-2031 (only ETH does)
   let filteredPeriods = allPeriods.filter(period => {
     if (asset === 'btc') {
-      // BTC doesn't have 2025 historical data - skip non-synthetic 2025 periods
       const periodStartYear = parseInt(period.startDate.split('-')[0]!, 10);
+      
+      // BTC doesn't have 2025 historical data - skip non-synthetic 2025 periods
       if (periodStartYear === 2025 && !period.isSynthetic) {
         return false; // Skip 2025 historical periods for BTC
       }
+      
+      // Note: BTC synthetic data for 2029-2031 can be generated using:
+      // pnpm tsx scripts/generate-btc-synthetic-data.ts 2029 8h
+      // pnpm tsx scripts/generate-btc-synthetic-data.ts 2030 8h
+      // pnpm tsx scripts/generate-btc-synthetic-data.ts 2031 8h
     }
     return true;
   });
@@ -193,6 +248,67 @@ function configToFeatures(config: EnhancedAdaptiveStrategyConfig): number[] {
     
     // Stop Loss
     config.stopLoss?.atrMultiplier ?? 2.0,
+    
+    // Entry threshold multiplier
+    config.entryThresholdMultiplier ?? 1.0,
+    
+    // Bull market participation
+    config.bullMarketParticipation?.enabled ? 1 : 0,
+    config.bullMarketParticipation?.exitThresholdMultiplier ?? 1.0,
+    config.bullMarketParticipation?.positionSizeMultiplier ?? 1.0,
+    config.bullMarketParticipation?.trendStrengthThreshold ?? 0.6,
+    config.bullMarketParticipation?.useTrailingStops ? 1 : 0,
+    config.bullMarketParticipation?.trailingStopATRMultiplier ?? 2.0,
+    
+    // Regime transition filter
+    config.regimeTransitionFilter?.enabled ? 1 : 0,
+    config.regimeTransitionFilter?.transitionPeriods ?? 3,
+    config.regimeTransitionFilter?.positionSizeReduction ?? 0.5,
+    config.regimeTransitionFilter?.minConfidenceDuringTransition ?? 0.3,
+    config.regimeTransitionFilter?.stayOutDuringTransition ? 1 : 0,
+    
+    // Adaptive position sizing
+    config.adaptivePositionSizing?.enabled ? 1 : 0,
+    config.adaptivePositionSizing?.highFrequencySwitchDetection ? 1 : 0,
+    config.adaptivePositionSizing?.switchFrequencyPeriods ?? 5,
+    config.adaptivePositionSizing?.maxSwitchesAllowed ?? 3,
+    config.adaptivePositionSizing?.uncertainPeriodMultiplier ?? 0.5,
+    config.adaptivePositionSizing?.lowConfidenceMultiplier ?? 0.7,
+    config.adaptivePositionSizing?.confidenceThreshold ?? 0.4,
+    config.adaptivePositionSizing?.highFrequencySwitchPositionMultiplier ?? 0.5,
+    
+    // Low volatility filter
+    config.lowVolatilityFilter?.enabled ? 1 : 0,
+    config.lowVolatilityFilter?.minVolatilityThreshold ?? 0.01,
+    config.lowVolatilityFilter?.lookbackPeriods ?? 20,
+    config.lowVolatilityFilter?.signalStrengthMultiplier ?? 1.5,
+    config.lowVolatilityFilter?.volatilitySqueezePositionMultiplier ?? 0.5,
+    
+    // Correlation adjustments
+    config.correlationAdjustments?.enabled !== false ? 1 : 0,
+    config.correlationAdjustments?.lowRiskThresholdMultiplier ?? 0.9,
+    config.correlationAdjustments?.highRiskThresholdMultiplier ?? 1.3,
+    config.correlationAdjustments?.lowRiskPositionMultiplier ?? 1.1,
+    config.correlationAdjustments?.highRiskPositionMultiplier ?? 0.8,
+    config.correlationAdjustments?.contradictingAlignmentMultiplier ?? 0.85,
+    config.correlationAdjustments?.contradictingAlignmentThreshold ?? -0.3,
+    
+    // Dynamic position sizing config
+    config.dynamicPositionSizingConfig?.minPositionMultiplier ?? 0.7,
+    config.dynamicPositionSizingConfig?.maxPositionMultiplier ?? 1.0,
+    
+    // Volatility config
+    config.volatilityConfig?.lookbackPeriod ?? 20,
+    
+    // Momentum config
+    config.momentumConfig?.macdFastPeriod ?? 12,
+    config.momentumConfig?.macdSlowPeriod ?? 26,
+    config.momentumConfig?.macdSignalPeriod ?? 9,
+    config.momentumConfig?.rsiPeriod ?? 14,
+    config.momentumConfig?.priceMomentumLookback ?? 20,
+    
+    // Circuit breaker config
+    config.circuitBreakerConfig?.minTradesRequired ?? 5,
   ];
 }
 
@@ -203,38 +319,108 @@ let DEFAULT_BASELINE_RETURN: number | null = null;
  * Calculate fitness score from backtest results
  * Higher score = better strategy
  * 
- * Updated weights (Jan 2026):
- * - Increased return weight from 40% to 60% (prioritize profitability)
- * - Reduced drawdown penalty from 20% to 10% (less conservative)
- * - Added minimum return threshold to avoid overly conservative configs
- * - Added bonus for beating default config baseline
+ * Updated scoring (Jan 2026) - ETH-Relative Performance Focus:
+ * 
+ * Core Objective: Beat ETH hold by:
+ * 1. Avoiding bear markets (ETH down) - HIGH PRIORITY
+ * 2. Capturing volatility in volatile markets - MEDIUM PRIORITY
+ * 3. Participating in bull markets (ETH up) - MEDIUM PRIORITY
+ * 
+ * Scoring Framework:
+ * - ETH-Relative Performance: 50% weight (primary goal)
+ *   - Bear markets (ETH < 0): Heavy reward for beating ETH, heavy penalty for losing more
+ *   - Bull markets (ETH > 0): Medium reward for beating ETH, medium penalty for missing
+ * - Absolute Returns: 20% weight (secondary goal)
+ * - Risk-Adjusted Returns (Sharpe): 15% weight
+ * - Drawdown Control: 10% weight
+ * - Win Rate: 5% weight
  */
 function calculateFitnessScore(metrics: OptimizationResult['metrics'], defaultBaseline?: number): number {
   // Use default baseline if provided, otherwise use minimum threshold
   const baseline = defaultBaseline ?? DEFAULT_BASELINE_RETURN ?? 5.0;
   
-  // AGGRESSIVE: Heavy penalty for not beating baseline - we MUST beat the default
+  // Calculate asset-relative performance (ETH or BTC hold)
+  const assetHoldReturn = metrics.ethHoldReturn ?? 0; // Note: named ethHoldReturn but works for any asset
+  const vsAssetHold = metrics.totalReturn - assetHoldReturn;
+  
+  // Asset-Relative Performance Score (50% weight) - Primary goal: Beat asset hold
+  let ethRelativeScore = 0;
+  
+  if (assetHoldReturn < 0) {
+    // BEAR MARKET (Asset is down) - HIGH PRIORITY: Avoid losses
+    if (metrics.totalReturn > assetHoldReturn) {
+      // Strategy beats asset (good - avoided bear market)
+      const outperformance = vsAssetHold;
+      ethRelativeScore = outperformance * 2.0; // Heavy reward (2x) for beating asset in bear markets
+    } else if (metrics.totalReturn < 0) {
+      // Strategy also lost, but how much?
+      if (metrics.totalReturn < assetHoldReturn) {
+        // Strategy lost MORE than asset (very bad)
+        const underperformance = Math.abs(vsAssetHold);
+        ethRelativeScore = -underperformance * 3.0; // Very heavy penalty (3x) for losing more than asset
+      } else {
+        // Strategy lost less than asset (acceptable - capital preservation)
+        const outperformance = vsAssetHold;
+        ethRelativeScore = outperformance * 1.5; // Medium reward for losing less
+      }
+    } else {
+      // Strategy is positive while asset is negative (excellent)
+      ethRelativeScore = vsAssetHold * 2.5; // Very heavy reward (2.5x) for positive returns in bear markets
+    }
+  } else if (assetHoldReturn > 0) {
+    // BULL MARKET (Asset is up) - MEDIUM PRIORITY: Participate
+    if (metrics.totalReturn > assetHoldReturn) {
+      // Strategy beats asset (excellent - captured more gains)
+      const outperformance = vsAssetHold;
+      ethRelativeScore = outperformance * 1.5; // Medium reward (1.5x) for beating asset in bull markets
+    } else if (metrics.totalReturn > 0) {
+      // Strategy is up but less than asset (acceptable but not ideal)
+      const underperformance = Math.abs(vsAssetHold);
+      ethRelativeScore = -underperformance * 0.8; // Light penalty (0.8x) for missing bull market gains
+    } else {
+      // Strategy is negative while asset is positive (bad - missed bull market)
+      const underperformance = Math.abs(vsAssetHold);
+      ethRelativeScore = -underperformance * 2.0; // Heavy penalty (2x) for losing in bull markets
+    }
+  } else {
+    // Asset is flat (0% return)
+    if (metrics.totalReturn > 0) {
+      ethRelativeScore = metrics.totalReturn * 1.0; // Reward positive returns
+    } else if (metrics.totalReturn < 0) {
+      ethRelativeScore = metrics.totalReturn * 1.5; // Penalize losses when asset is flat
+    }
+  }
+  
+  // Normalize ETH-relative score (50% weight)
+  const ethRelativeComponent = ethRelativeScore * 0.5;
+  
+  // Absolute Returns Score (20% weight)
+  const returnScore = metrics.totalReturn * 0.2;
+  
+  // Risk-Adjusted Returns (Sharpe) - 15% weight
+  const sharpeScore = metrics.sharpeRatio * 10 * 0.15;
+  
+  // Drawdown Penalty (10% weight) - Penalize excessive drawdowns
+  const drawdownPenalty = -Math.abs(metrics.maxDrawdown) * 100 * 0.10;
+  
+  // Win Rate Score (5% weight)
+  const winRateScore = metrics.winRate * 100 * 0.05;
+  
+  // Baseline comparison (bonus/penalty)
   const baselinePenalty = metrics.totalReturn < baseline
-    ? (metrics.totalReturn - baseline) * 10 // Very heavy penalty (10x) - strongly discourage underperforming
+    ? (metrics.totalReturn - baseline) * 2 // Moderate penalty for not beating baseline
     : 0;
   
-  // AGGRESSIVE: Large bonus for beating baseline - reward improvements heavily
   const beatBaselineBonus = defaultBaseline && metrics.totalReturn > defaultBaseline
-    ? (metrics.totalReturn - defaultBaseline) * 5 // Large bonus (5x) - strongly reward beating baseline
+    ? (metrics.totalReturn - defaultBaseline) * 1 // Moderate bonus for beating baseline
     : 0;
-  
-  // AGGRESSIVE: Prioritize returns heavily - we want to beat the default's 22.80% average
-  const returnScore = metrics.totalReturn * 0.6; // 60% weight on returns (prioritize profitability)
-  const sharpeScore = metrics.sharpeRatio * 10 * 0.20; // 20% weight on risk-adjusted returns
-  const drawdownPenalty = -Math.abs(metrics.maxDrawdown) * 0.10; // 10% penalty for drawdown
-  const winRateScore = metrics.winRate * 100 * 0.10; // 10% weight on win rate
   
   // Encourage reasonable trade frequency
   const tradeFrequencyBonus = metrics.totalTrades > 15 && metrics.totalTrades < 250 
-    ? 5 
-    : -Math.abs(metrics.totalTrades - 100) * 0.03;
+    ? 2 
+    : -Math.abs(metrics.totalTrades - 100) * 0.01;
   
-  return returnScore + sharpeScore + drawdownPenalty + winRateScore + tradeFrequencyBonus + baselinePenalty + beatBaselineBonus;
+  return ethRelativeComponent + returnScore + sharpeScore + drawdownPenalty + winRateScore + tradeFrequencyBonus + baselinePenalty + beatBaselineBonus;
 }
 
 /**
@@ -280,6 +466,66 @@ function generateRandomConfig(baseConfig: EnhancedAdaptiveStrategyConfig): Enhan
       useEMA: true,
       atrPeriod: 14,
     },
+    // New ML-optimizable parameters (randomly enable/disable and set values)
+    entryThresholdMultiplier: randomRange(1.0, 1.1), // 0% to 10% increase
+    bullMarketParticipation: Math.random() > 0.5 ? {
+      enabled: true,
+      exitThresholdMultiplier: randomRange(0.5, 1.0), // Stay in longer
+      positionSizeMultiplier: randomRange(1.0, 1.5), // Larger positions
+      trendStrengthThreshold: randomRange(0.4, 0.8),
+      useTrailingStops: Math.random() > 0.5,
+      trailingStopATRMultiplier: randomRange(1.5, 3.0),
+    } : undefined,
+    regimeTransitionFilter: Math.random() > 0.5 ? {
+      enabled: true,
+      transitionPeriods: Math.floor(randomRange(2, 5)),
+      positionSizeReduction: randomRange(0.0, 0.8),
+      minConfidenceDuringTransition: randomRange(0.2, 0.5),
+      stayOutDuringTransition: Math.random() > 0.7, // 30% chance to stay out
+    } : undefined,
+    adaptivePositionSizing: Math.random() > 0.5 ? {
+      enabled: true,
+      highFrequencySwitchDetection: Math.random() > 0.3,
+      switchFrequencyPeriods: Math.floor(randomRange(3, 8)),
+      maxSwitchesAllowed: Math.floor(randomRange(2, 5)),
+      uncertainPeriodMultiplier: randomRange(0.3, 0.8),
+      lowConfidenceMultiplier: randomRange(0.5, 0.9),
+      confidenceThreshold: randomRange(0.3, 0.5),
+      highFrequencySwitchPositionMultiplier: randomRange(0.0, 1.0), // 0.0 = stay out, 1.0 = no reduction
+    } : undefined,
+    lowVolatilityFilter: Math.random() > 0.5 ? {
+      enabled: true,
+      minVolatilityThreshold: randomRange(0.005, 0.02), // 0.5% to 2% daily volatility
+      lookbackPeriods: Math.floor(randomRange(15, 25)),
+      signalStrengthMultiplier: randomRange(1.0, 2.5), // 1.0 = no change, 2.5 = 2.5x stronger signals
+      volatilitySqueezePositionMultiplier: randomRange(0.0, 1.0), // 0.0 = stay out, 1.0 = no reduction
+    } : undefined,
+    correlationAdjustments: Math.random() > 0.3 ? {
+      enabled: true,
+      lowRiskThresholdMultiplier: randomRange(0.8, 1.0),
+      highRiskThresholdMultiplier: randomRange(1.1, 1.5),
+      lowRiskPositionMultiplier: randomRange(1.0, 1.3),
+      highRiskPositionMultiplier: randomRange(0.6, 0.9),
+      contradictingAlignmentMultiplier: randomRange(0.7, 0.95),
+      contradictingAlignmentThreshold: randomRange(-0.5, -0.1),
+    } : undefined,
+    dynamicPositionSizingConfig: Math.random() > 0.5 ? {
+      minPositionMultiplier: randomRange(0.5, 0.8),
+      maxPositionMultiplier: randomRange(0.9, 1.1),
+    } : undefined,
+    volatilityConfig: Math.random() > 0.7 ? {
+      lookbackPeriod: Math.floor(randomRange(10, 30)),
+    } : undefined,
+    momentumConfig: Math.random() > 0.7 ? {
+      macdFastPeriod: Math.floor(randomRange(9, 15)),
+      macdSlowPeriod: Math.floor(randomRange(20, 30)),
+      macdSignalPeriod: Math.floor(randomRange(7, 11)),
+      rsiPeriod: Math.floor(randomRange(10, 18)),
+      priceMomentumLookback: Math.floor(randomRange(15, 25)),
+    } : undefined,
+    circuitBreakerConfig: Math.random() > 0.8 ? {
+      minTradesRequired: Math.floor(randomRange(3, 8)),
+    } : undefined,
   };
 }
 
@@ -295,6 +541,8 @@ function mutateConfig(config: EnhancedAdaptiveStrategyConfig, mutationRate: numb
     }
     return value;
   };
+  
+  const randomRange = (min: number, max: number) => min + Math.random() * (max - min);
   
   return {
     ...config,
@@ -328,6 +576,115 @@ function mutateConfig(config: EnhancedAdaptiveStrategyConfig, mutationRate: numb
       useEMA: true,
       atrPeriod: 14,
     },
+    // Mutate new ML-optimizable parameters
+    entryThresholdMultiplier: mutate(config.entryThresholdMultiplier ?? 1.0, 1.0, 1.1),
+    bullMarketParticipation: config.bullMarketParticipation ? {
+      enabled: config.bullMarketParticipation.enabled,
+      exitThresholdMultiplier: mutate(config.bullMarketParticipation.exitThresholdMultiplier ?? 1.0, 0.5, 1.0),
+      positionSizeMultiplier: mutate(config.bullMarketParticipation.positionSizeMultiplier ?? 1.0, 1.0, 1.5),
+      trendStrengthThreshold: mutate(config.bullMarketParticipation.trendStrengthThreshold ?? 0.6, 0.4, 0.8),
+      useTrailingStops: Math.random() < mutationRate ? !config.bullMarketParticipation.useTrailingStops : config.bullMarketParticipation.useTrailingStops,
+      trailingStopATRMultiplier: mutate(config.bullMarketParticipation.trailingStopATRMultiplier ?? 2.0, 1.5, 3.0),
+    } : (Math.random() < mutationRate ? {
+      enabled: true,
+      exitThresholdMultiplier: randomRange(0.5, 1.0),
+      positionSizeMultiplier: randomRange(1.0, 1.5),
+      trendStrengthThreshold: randomRange(0.4, 0.8),
+      useTrailingStops: Math.random() > 0.5,
+      trailingStopATRMultiplier: randomRange(1.5, 3.0),
+    } : undefined),
+    regimeTransitionFilter: config.regimeTransitionFilter ? {
+      enabled: config.regimeTransitionFilter.enabled,
+      transitionPeriods: Math.floor(mutate(config.regimeTransitionFilter.transitionPeriods ?? 3, 2, 5)),
+      positionSizeReduction: mutate(config.regimeTransitionFilter.positionSizeReduction ?? 0.5, 0.0, 0.8),
+      minConfidenceDuringTransition: mutate(config.regimeTransitionFilter.minConfidenceDuringTransition ?? 0.3, 0.2, 0.5),
+      stayOutDuringTransition: Math.random() < mutationRate ? !config.regimeTransitionFilter.stayOutDuringTransition : config.regimeTransitionFilter.stayOutDuringTransition,
+    } : (Math.random() < mutationRate ? {
+      enabled: true,
+      transitionPeriods: Math.floor(randomRange(2, 5)),
+      positionSizeReduction: randomRange(0.0, 0.8),
+      minConfidenceDuringTransition: randomRange(0.2, 0.5),
+      stayOutDuringTransition: Math.random() > 0.7,
+    } : undefined),
+    adaptivePositionSizing: config.adaptivePositionSizing ? {
+      enabled: config.adaptivePositionSizing.enabled,
+      highFrequencySwitchDetection: Math.random() < mutationRate ? !config.adaptivePositionSizing.highFrequencySwitchDetection : config.adaptivePositionSizing.highFrequencySwitchDetection,
+      switchFrequencyPeriods: Math.floor(mutate(config.adaptivePositionSizing.switchFrequencyPeriods ?? 5, 3, 8)),
+      maxSwitchesAllowed: Math.floor(mutate(config.adaptivePositionSizing.maxSwitchesAllowed ?? 3, 2, 5)),
+      uncertainPeriodMultiplier: mutate(config.adaptivePositionSizing.uncertainPeriodMultiplier ?? 0.5, 0.3, 0.8),
+      lowConfidenceMultiplier: mutate(config.adaptivePositionSizing.lowConfidenceMultiplier ?? 0.7, 0.5, 0.9),
+      confidenceThreshold: mutate(config.adaptivePositionSizing.confidenceThreshold ?? 0.4, 0.3, 0.5),
+      highFrequencySwitchPositionMultiplier: mutate(config.adaptivePositionSizing.highFrequencySwitchPositionMultiplier ?? 0.5, 0.0, 1.0),
+    } : (Math.random() < mutationRate ? {
+      enabled: true,
+      highFrequencySwitchDetection: Math.random() > 0.3,
+      switchFrequencyPeriods: Math.floor(randomRange(3, 8)),
+      maxSwitchesAllowed: Math.floor(randomRange(2, 5)),
+      uncertainPeriodMultiplier: randomRange(0.3, 0.8),
+      lowConfidenceMultiplier: randomRange(0.5, 0.9),
+      confidenceThreshold: randomRange(0.3, 0.5),
+      highFrequencySwitchPositionMultiplier: randomRange(0.0, 1.0),
+    } : undefined),
+    lowVolatilityFilter: config.lowVolatilityFilter ? {
+      enabled: config.lowVolatilityFilter.enabled,
+      minVolatilityThreshold: mutate(config.lowVolatilityFilter.minVolatilityThreshold ?? 0.01, 0.005, 0.02),
+      lookbackPeriods: Math.floor(mutate(config.lowVolatilityFilter.lookbackPeriods ?? 20, 15, 25)),
+      signalStrengthMultiplier: mutate(config.lowVolatilityFilter.signalStrengthMultiplier ?? 1.5, 1.0, 2.5),
+      volatilitySqueezePositionMultiplier: mutate(config.lowVolatilityFilter.volatilitySqueezePositionMultiplier ?? 0.5, 0.0, 1.0),
+    } : (Math.random() < mutationRate ? {
+      enabled: true,
+      minVolatilityThreshold: randomRange(0.005, 0.02),
+      lookbackPeriods: Math.floor(randomRange(15, 25)),
+      signalStrengthMultiplier: randomRange(1.0, 2.5),
+      volatilitySqueezePositionMultiplier: randomRange(0.0, 1.0),
+    } : undefined),
+    correlationAdjustments: config.correlationAdjustments ? {
+      enabled: config.correlationAdjustments.enabled !== false,
+      lowRiskThresholdMultiplier: mutate(config.correlationAdjustments.lowRiskThresholdMultiplier ?? 0.9, 0.8, 1.0),
+      highRiskThresholdMultiplier: mutate(config.correlationAdjustments.highRiskThresholdMultiplier ?? 1.3, 1.1, 1.5),
+      lowRiskPositionMultiplier: mutate(config.correlationAdjustments.lowRiskPositionMultiplier ?? 1.1, 1.0, 1.3),
+      highRiskPositionMultiplier: mutate(config.correlationAdjustments.highRiskPositionMultiplier ?? 0.8, 0.6, 0.9),
+      contradictingAlignmentMultiplier: mutate(config.correlationAdjustments.contradictingAlignmentMultiplier ?? 0.85, 0.7, 0.95),
+      contradictingAlignmentThreshold: mutate(config.correlationAdjustments.contradictingAlignmentThreshold ?? -0.3, -0.5, -0.1),
+    } : (Math.random() < mutationRate ? {
+      enabled: true,
+      lowRiskThresholdMultiplier: randomRange(0.8, 1.0),
+      highRiskThresholdMultiplier: randomRange(1.1, 1.5),
+      lowRiskPositionMultiplier: randomRange(1.0, 1.3),
+      highRiskPositionMultiplier: randomRange(0.6, 0.9),
+      contradictingAlignmentMultiplier: randomRange(0.7, 0.95),
+      contradictingAlignmentThreshold: randomRange(-0.5, -0.1),
+    } : undefined),
+    dynamicPositionSizingConfig: config.dynamicPositionSizingConfig ? {
+      minPositionMultiplier: mutate(config.dynamicPositionSizingConfig.minPositionMultiplier ?? 0.7, 0.5, 0.8),
+      maxPositionMultiplier: mutate(config.dynamicPositionSizingConfig.maxPositionMultiplier ?? 1.0, 0.9, 1.1),
+    } : (Math.random() < mutationRate * 0.5 ? {
+      minPositionMultiplier: randomRange(0.5, 0.8),
+      maxPositionMultiplier: randomRange(0.9, 1.1),
+    } : undefined),
+    volatilityConfig: config.volatilityConfig ? {
+      lookbackPeriod: Math.floor(mutate(config.volatilityConfig.lookbackPeriod ?? 20, 10, 30)),
+    } : (Math.random() < mutationRate * 0.3 ? {
+      lookbackPeriod: Math.floor(randomRange(10, 30)),
+    } : undefined),
+    momentumConfig: config.momentumConfig ? {
+      macdFastPeriod: Math.floor(mutate(config.momentumConfig.macdFastPeriod ?? 12, 9, 15)),
+      macdSlowPeriod: Math.floor(mutate(config.momentumConfig.macdSlowPeriod ?? 26, 20, 30)),
+      macdSignalPeriod: Math.floor(mutate(config.momentumConfig.macdSignalPeriod ?? 9, 7, 11)),
+      rsiPeriod: Math.floor(mutate(config.momentumConfig.rsiPeriod ?? 14, 10, 18)),
+      priceMomentumLookback: Math.floor(mutate(config.momentumConfig.priceMomentumLookback ?? 20, 15, 25)),
+    } : (Math.random() < mutationRate * 0.3 ? {
+      macdFastPeriod: Math.floor(randomRange(9, 15)),
+      macdSlowPeriod: Math.floor(randomRange(20, 30)),
+      macdSignalPeriod: Math.floor(randomRange(7, 11)),
+      rsiPeriod: Math.floor(randomRange(10, 18)),
+      priceMomentumLookback: Math.floor(randomRange(15, 25)),
+    } : undefined),
+    circuitBreakerConfig: config.circuitBreakerConfig ? {
+      minTradesRequired: Math.floor(mutate(config.circuitBreakerConfig.minTradesRequired ?? 5, 3, 8)),
+    } : (Math.random() < mutationRate * 0.2 ? {
+      minTradesRequired: Math.floor(randomRange(3, 8)),
+    } : undefined),
   };
 }
 
@@ -398,7 +755,17 @@ async function testConfig(
         error: null,
       };
     } catch (error) {
-      console.error(`Error testing period ${period.startDate}:`, error);
+      // Check if error is about missing synthetic data - this should have been filtered out
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Synthetic') && errorMessage.includes('not found')) {
+        // This period should have been filtered out - log a warning but don't spam
+        if (index % 10 === 0) { // Only log every 10th occurrence to reduce spam
+          console.warn(`⚠️  Period ${period.startDate} to ${period.endDate} skipped: ${errorMessage.split('\n')[0]}`);
+        }
+      } else {
+        // Other errors should be logged
+        console.error(`Error testing period ${period.startDate}:`, error);
+      }
       return {
         index,
         result: {
@@ -419,7 +786,7 @@ async function testConfig(
           usdcHold: { finalValue: 1000, return: 0, returnPct: 0 },
           ethHold: { finalValue: 1000, return: 0, returnPct: 0, maxDrawdown: 0, maxDrawdownPct: 0, sharpeRatio: 0 },
         },
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
       };
     }
   };
@@ -490,10 +857,11 @@ async function testConfig(
   // Aggregate results across periods
   const totalReturn = results.reduce((sum, r) => sum + r.totalReturnPct, 0) / results.length;
   const sharpeRatio = results.reduce((sum, r) => sum + r.sharpeRatio, 0) / results.length;
-  const maxDrawdown = Math.max(...results.map(r => r.maxDrawdownPct));
+  const maxDrawdown = Math.max(...results.map(r => r.maxDrawdownPct)) / 100; // Convert to decimal
   const totalTrades = results.reduce((sum, r) => sum + r.totalTrades, 0);
   const winTrades = results.reduce((sum, r) => sum + r.winTrades, 0);
   const winRate = totalTrades > 0 ? winTrades / totalTrades : 0;
+  const ethHoldReturn = results.reduce((sum, r) => sum + r.ethHold.returnPct, 0) / results.length;
   
   return {
     totalReturn,
@@ -501,6 +869,7 @@ async function testConfig(
     maxDrawdown,
     winRate,
     totalTrades,
+    ethHoldReturn,
   };
 }
 
@@ -545,6 +914,11 @@ async function trainModel(trainingData: TrainingData): Promise<tf.LayersModel> {
     verbose: 0,
   });
   
+  // Clean up intermediate tensors to prevent memory leaks
+  mean.dispose();
+  std.dispose();
+  normalizedFeatures.dispose();
+  
   return model;
 }
 
@@ -577,6 +951,12 @@ function predictBestConfig(
   
   const predictions = model.predict(normalizedFeatures) as tf.Tensor;
   const scores = Array.from(predictions.dataSync());
+  
+  // Clean up tensors to prevent memory leaks
+  mean.dispose();
+  std.dispose();
+  normalizedFeatures.dispose();
+  predictions.dispose();
   
   // Return config with highest predicted score
   const bestIndex = scores.indexOf(Math.max(...scores));
@@ -795,7 +1175,7 @@ async function optimizeStrategy(
 /**
  * Save optimized config
  */
-function saveConfig(config: EnhancedAdaptiveStrategyConfig, asset: TradingAsset): void {
+function saveConfig(config: EnhancedAdaptiveStrategyConfig, asset: TradingAsset): string {
   const outputDir = path.join(process.cwd(), 'data', 'optimized-configs');
   fs.mkdirSync(outputDir, { recursive: true });
   
@@ -804,6 +1184,8 @@ function saveConfig(config: EnhancedAdaptiveStrategyConfig, asset: TradingAsset)
   
   fs.writeFileSync(filepath, JSON.stringify(config, null, 2));
   console.log(`💾 Saved optimized config to: ${filepath}`);
+  
+  return filepath;
 }
 
 async function main() {
@@ -843,7 +1225,7 @@ async function main() {
   const optimizedConfig = await optimizeStrategy(asset, periods, 30, 60); // Extended: 2x iterations (30) and 2x population (60)
   
   // Save result
-  saveConfig(optimizedConfig, asset);
+  const configPath = saveConfig(optimizedConfig, asset);
   
   // Print final config summary
   console.log('\n📋 Optimized Configuration Summary:');
@@ -867,11 +1249,19 @@ async function main() {
   console.log(`   Total periods tested: ${periods.length}`);
   console.log(`   Total iterations: 30 (extended run for deeper optimization)`);
   console.log(`   Total configurations tested: ~600+ (extended run)`);
-  console.log(`   Optimized config saved to: data/optimized-configs/`);
-  console.log(`${'='.repeat(60)}\n`);
+  console.log(`   Optimized config saved to: ${configPath}`);
+  console.log(`${'='.repeat(60)}`);
+  console.log(`\n📋 Next Steps:`);
+  console.log(`   Compare optimized config vs baseline:`);
+  console.log(`   ${asset === 'eth' ? 'pnpm eth:compare-config' : 'pnpm btc:compare-config'}`);
+  console.log(`\n   Or compare the specific config that was just created:`);
+  console.log(`   ${asset === 'eth' ? 'pnpm eth:compare-config' : 'pnpm btc:compare-config'} ${configPath}\n`);
+  
+  // Disconnect Redis before exiting
+  await disconnectRedis();
   
   // Explicitly exit to ensure script completes
-  process.exit(0);
+  setImmediate(() => process.exit(0));
 }
 
 // Only run main() if this script is executed directly (not when imported)
@@ -883,6 +1273,38 @@ const isMainModule = process.argv[1] && (
 );
 
 if (isMainModule) {
-  main().catch(console.error);
+  // Set a maximum execution time (2 hours) to prevent infinite hangs
+  const MAX_EXECUTION_TIME = 2 * 60 * 60 * 1000; // 2 hours
+  const startTime = Date.now();
+  
+  const timeout = setTimeout(() => {
+    console.error('\n❌ Script exceeded maximum execution time (2 hours). Forcing exit...');
+    disconnectRedis().catch(() => {}).finally(() => {
+      process.exit(1);
+    });
+  }, MAX_EXECUTION_TIME);
+  
+  main()
+    .then(async () => {
+      clearTimeout(timeout);
+      // Close Redis connection to allow script to exit
+      try {
+        await disconnectRedis();
+      } catch (error) {
+        // Ignore disconnect errors
+      }
+      // Force exit immediately - don't wait for any async operations
+      setImmediate(() => process.exit(0));
+    })
+    .catch(async (error) => {
+      clearTimeout(timeout);
+      console.error('Error:', error);
+      try {
+        await disconnectRedis();
+      } catch {
+        // Ignore disconnect errors
+      }
+      setImmediate(() => process.exit(1));
+    });
 }
 

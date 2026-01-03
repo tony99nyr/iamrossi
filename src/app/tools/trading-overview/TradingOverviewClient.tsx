@@ -8,6 +8,9 @@ import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 import { getAssetConfig } from '@/lib/asset-config';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
 import PerformanceMetricsPanel from './components/PerformanceMetricsPanel';
+import CorrelationIndicator from './components/CorrelationIndicator';
+import PerformanceAttributionPanel from './components/PerformanceAttributionPanel';
+import TradeAnalysisPanel from './components/TradeAnalysisPanel';
 
 interface OverviewData {
   eth: EnhancedPaperTradingSession | null;
@@ -401,6 +404,9 @@ export default function TradingOverviewClient() {
           </div>
         </div>
 
+        {/* Correlation Indicator */}
+        <CorrelationIndicator />
+
         {/* Performance Metrics Panel */}
         {(overview.eth || overview.btc) && (
           <PerformanceMetricsPanel 
@@ -408,6 +414,26 @@ export default function TradingOverviewClient() {
             btcSession={overview.btc} 
           />
         )}
+
+        {/* Analytics Panels */}
+        <div className={css({
+          display: 'grid',
+          gridTemplateColumns: { base: '1fr', md: 'repeat(2, 1fr)' },
+          gap: '16px',
+        })}>
+          {overview.eth && (
+            <>
+              <PerformanceAttributionPanel asset="eth" />
+              <TradeAnalysisPanel asset="eth" />
+            </>
+          )}
+          {overview.btc && (
+            <>
+              <PerformanceAttributionPanel asset="btc" />
+              <TradeAnalysisPanel asset="btc" />
+            </>
+          )}
+        </div>
 
         {/* Quick Navigation */}
         <div className={css({

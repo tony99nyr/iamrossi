@@ -7,6 +7,7 @@
 
 import type { PriceCandle } from '@/types';
 import { redis, ensureConnected } from './kv';
+import { getHistoricalDataPath, loadCandlesFromFile, fixOHLCRelationships } from './historical-file-utils';
 
 const BINANCE_API_BASE = 'https://api.binance.com/api/v3';
 
@@ -50,24 +51,49 @@ export async function fetchBTCCandles(
   const startTime = new Date(startDate).getTime();
   const endTime = new Date(endDate).setHours(23, 59, 59, 999);
   
-  // Try to get from cache first
+  // First, try to load from historical files (like ETH does)
+  const historicalFilePath = getHistoricalDataPath(symbol, timeframe);
+  const historicalData = await loadCandlesFromFile(historicalFilePath);
+  let allCandles: PriceCandle[] = [];
+  
+  if (historicalData && historicalData.length > 0) {
+    // Fix OHLC relationships
+    const fixedData = fixOHLCRelationships(historicalData);
+    
+    // Filter to requested date range
+    const filtered = fixedData.filter(c => 
+      c.timestamp >= startTime && c.timestamp <= endTime
+    );
+    allCandles.push(...filtered);
+  }
+  
+  // Try to get from cache
   const cacheKey = `${CACHE_PREFIX}${symbol}:${timeframe}:${startDate}:${endDate}`;
   
   try {
     await ensureConnected();
     const cached = await redis.get(cacheKey);
     if (cached) {
-      const candles = JSON.parse(cached) as PriceCandle[];
-      if (candles.length > 0) {
-        return candles;
+      const cachedCandles = JSON.parse(cached) as PriceCandle[];
+      if (cachedCandles.length > 0) {
+        // Merge with file data (cache overwrites file for same timestamps)
+        const candleMap = new Map<number, PriceCandle>();
+        allCandles.forEach(c => candleMap.set(c.timestamp, c));
+        cachedCandles.forEach(c => candleMap.set(c.timestamp, c));
+        allCandles = Array.from(candleMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+        
+        // If we have enough data from files + cache, return early
+        if (allCandles.length >= 30) {
+          return allCandles;
+        }
       }
     }
   } catch (error) {
     console.warn('[BTC Price] Cache read failed:', error instanceof Error ? error.message : error);
   }
 
-  // Fetch from Binance API
-  const allCandles: PriceCandle[] = [];
+  // Fetch from Binance API (only if we don't have enough data from files/cache)
+  const apiCandles: PriceCandle[] = [];
   let currentStart = startTime;
   const maxCandles = 1000; // Binance limit per request
 
@@ -88,7 +114,7 @@ export async function fetchBTCCandles(
       }
 
       for (const kline of data) {
-        allCandles.push({
+        apiCandles.push({
           timestamp: kline[0],
           open: parseFloat(kline[1]),
           high: parseFloat(kline[2]),
@@ -99,8 +125,12 @@ export async function fetchBTCCandles(
       }
 
       // Move to next batch
-      const lastTimestamp = data[data.length - 1][0];
-      currentStart = lastTimestamp + intervalMs;
+      const lastTimestamp = data[data.length - 1]?.[0];
+      if (lastTimestamp) {
+        currentStart = lastTimestamp + intervalMs;
+      } else {
+        break;
+      }
 
       // Rate limiting
       if (currentStart < endTime) {
@@ -118,15 +148,20 @@ export async function fetchBTCCandles(
     }
   }
 
-  // Sort by timestamp
-  allCandles.sort((a, b) => a.timestamp - b.timestamp);
-
-  // Cache the results
-  try {
-    await ensureConnected();
-    await redis.setEx(cacheKey, CACHE_TTL, JSON.stringify(allCandles));
-  } catch (error) {
-    console.warn('[BTC Price] Cache write failed:', error instanceof Error ? error.message : error);
+  // Merge API candles with file/cache data
+  if (apiCandles.length > 0) {
+    const candleMap = new Map<number, PriceCandle>();
+    allCandles.forEach(c => candleMap.set(c.timestamp, c));
+    apiCandles.forEach(c => candleMap.set(c.timestamp, c)); // API data overwrites
+    allCandles = Array.from(candleMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Cache the API results
+    try {
+      await ensureConnected();
+      await redis.setEx(cacheKey, CACHE_TTL, JSON.stringify(apiCandles));
+    } catch (error) {
+      console.warn('[BTC Price] Cache write failed:', error instanceof Error ? error.message : error);
+    }
   }
 
   return allCandles;

@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useState, useMemo, useEffect } from 'react';
+import { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import { css } from '@styled-system/css';
+import { stack, flex } from '@styled-system/patterns';
 import type { Trade, PriceCandle } from '@/types';
 import { calculateSMA, calculateEMA, calculateRSI, calculateMACD } from '@/lib/indicators';
 import { detectMarketRegimeCached, clearIndicatorCache } from '@/lib/market-regime-detector-cached';
@@ -15,6 +16,7 @@ interface PriceChartProps {
 
 export default function PriceChart({ trades, timeRange = 'all', session }: PriceChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [hoveredTrade, setHoveredTrade] = useState<Trade | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
   const [actualCandles, setActualCandles] = useState<PriceCandle[] | null>(null);
@@ -521,12 +523,12 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
     return session.currentRegime;
   }, [session, hoveredIndex, filteredCandles, actualCandles]);
 
-  const project = (value: number, index: number): { x: number; y: number } => {
+  const project = useCallback((value: number, index: number): { x: number; y: number } => {
     const x = (index / Math.max(filteredCandles.length - 1, 1)) * chartWidth + padding.left;
     const ratio = (value - yMin) / (yMax - yMin || 1);
     const y = padding.top + chartHeight - ratio * chartHeight;
     return { x, y };
-  };
+  }, [filteredCandles.length, chartWidth, padding.left, padding.top, chartHeight, yMin, yMax]);
 
   // Build price line path using candle close prices
   const pricePath = filteredCandles
@@ -555,19 +557,21 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
   const ema26Path = buildMAPath(ema26);
 
   // Map trades to chart positions (align with nearest candle)
-  const tradeMarkers = trades
-    .filter(t => {
-      const tradeTime = t.timestamp;
-      return filteredCandles.some(c => Math.abs(c.timestamp - tradeTime) < 60 * 60 * 1000); // Within 1 hour
-    })
-    .map(trade => {
-      const closestCandle = filteredCandles.reduce((closest, c) => {
-        return Math.abs(c.timestamp - trade.timestamp) < Math.abs(closest.timestamp - trade.timestamp) ? c : closest;
-      }, filteredCandles[0]!);
-      const index = filteredCandles.indexOf(closestCandle);
-      const { x, y } = project(closestCandle.close, index);
-      return { ...trade, x, y };
-    });
+  const tradeMarkers = useMemo(() => {
+    return trades
+      .filter(t => {
+        const tradeTime = t.timestamp;
+        return filteredCandles.some(c => Math.abs(c.timestamp - tradeTime) < 60 * 60 * 1000); // Within 1 hour
+      })
+      .map(trade => {
+        const closestCandle = filteredCandles.reduce((closest, c) => {
+          return Math.abs(c.timestamp - trade.timestamp) < Math.abs(closest.timestamp - trade.timestamp) ? c : closest;
+        }, filteredCandles[0]!);
+        const index = filteredCandles.indexOf(closestCandle);
+        const { x, y } = project(closestCandle.close, index);
+        return { ...trade, x, y, index };
+      });
+  }, [trades, filteredCandles, project]);
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current || !containerRef.current) return;
@@ -822,17 +826,48 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
           )}
 
           {/* Trade markers */}
-          {tradeMarkers.map(trade => (
-            <circle
-              key={trade.id}
-              cx={trade.x}
-              cy={trade.y}
-              r="6"
-              fill={trade.type === 'buy' ? '#3fb950' : '#f85149'}
-              stroke="#161b22"
-              strokeWidth="2"
-            />
-          ))}
+          {tradeMarkers.map(trade => {
+            const isHovered = hoveredTrade?.id === trade.id;
+            return (
+              <g key={trade.id}>
+                <circle
+                  cx={trade.x}
+                  cy={trade.y}
+                  r={isHovered ? "8" : "6"}
+                  fill={trade.type === 'buy' ? '#3fb950' : '#f85149'}
+                  stroke="#161b22"
+                  strokeWidth={isHovered ? "3" : "2"}
+                  opacity={isHovered ? 1 : 0.9}
+                  style={{ cursor: 'pointer' }}
+                  onMouseEnter={(e) => {
+                    setHoveredTrade(trade);
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
+                    setTooltipStyle({
+                      transform: 'translate(-50%, -100%)',
+                      marginTop: '-8px',
+                    });
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredTrade(null);
+                    setTooltipPosition(null);
+                  }}
+                />
+                {/* Trade type indicator */}
+                <text
+                  x={trade.x}
+                  y={trade.y - 12}
+                  textAnchor="middle"
+                  fill={trade.type === 'buy' ? '#3fb950' : '#f85149'}
+                  fontSize="10"
+                  fontWeight="bold"
+                  opacity={isHovered ? 1 : 0.7}
+                >
+                  {trade.type === 'buy' ? '▲' : '▼'}
+                </text>
+              </g>
+            );
+          })}
 
           {/* Hover indicator */}
           {hoveredCandle && hoveredIndex !== null && (
@@ -1099,6 +1134,73 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
                   </span>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Trade tooltip */}
+        {hoveredTrade && tooltipPosition && (
+          <div
+            style={{
+              position: 'fixed',
+              left: tooltipPosition.x,
+              top: tooltipPosition.y,
+              ...tooltipStyle,
+              pointerEvents: 'none',
+              zIndex: 1000,
+            }}
+            className={css({
+              bg: '#161b22',
+              border: '1px solid #30363d',
+              borderRadius: '6px',
+              padding: '8px 12px',
+              fontSize: 'sm',
+              color: '#e6edf3',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              minWidth: '200px',
+            })}
+          >
+            <div className={css({ fontWeight: 'semibold', marginBottom: '4px', color: hoveredTrade.type === 'buy' ? '#3fb950' : '#f85149' })}>
+              {hoveredTrade.type === 'buy' ? 'Buy' : 'Sell'} Trade
+            </div>
+            <div className={stack({ gap: '4px', fontSize: 'xs' })}>
+              <div className={flex({ justifyContent: 'space-between', gap: '12px' })}>
+                <span className={css({ color: '#7d8590' })}>Price:</span>
+                <span className={css({ color: '#e6edf3' })}>${hoveredTrade.ethPrice.toFixed(2)}</span>
+              </div>
+              <div className={flex({ justifyContent: 'space-between', gap: '12px' })}>
+                <span className={css({ color: '#7d8590' })}>Amount:</span>
+                <span className={css({ color: '#e6edf3' })}>
+                  {hoveredTrade.type === 'buy' 
+                    ? `${hoveredTrade.usdcAmount.toFixed(2)} USDC`
+                    : `${hoveredTrade.ethAmount.toFixed(4)} ETH`}
+                </span>
+              </div>
+              {hoveredTrade.pnl !== undefined && (
+                <div className={flex({ justifyContent: 'space-between', gap: '12px' })}>
+                  <span className={css({ color: '#7d8590' })}>P&L:</span>
+                  <span className={css({ 
+                    color: hoveredTrade.pnl >= 0 ? '#3fb950' : '#f85149',
+                    fontWeight: 'semibold'
+                  })}>
+                    {hoveredTrade.pnl >= 0 ? '+' : ''}${hoveredTrade.pnl.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {hoveredTrade.confidence !== undefined && (
+                <div className={flex({ justifyContent: 'space-between', gap: '12px' })}>
+                  <span className={css({ color: '#7d8590' })}>Confidence:</span>
+                  <span className={css({ color: '#e6edf3' })}>
+                    {(hoveredTrade.confidence * 100).toFixed(0)}%
+                  </span>
+                </div>
+              )}
+              <div className={flex({ justifyContent: 'space-between', gap: '12px' })}>
+                <span className={css({ color: '#7d8590' })}>Time:</span>
+                <span className={css({ color: '#e6edf3' })}>
+                  {new Date(hoveredTrade.timestamp).toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
         )}

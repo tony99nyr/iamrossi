@@ -501,23 +501,90 @@ export class PaperTradingService {
       }
     }
     
-    // Note: updateTodayCandle is called asynchronously in fetchLatestPrice
-    // The merge logic in fetchPriceCandles will pick up today's candle from Redis
-    // We add a small delay to give updateTodayCandle time to complete its Redis update
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    // Fetch ALL available candles for regime detection
-    // Load from earliest available date to ensure we have complete historical context
-    // Pass currentPrice so fetchPriceCandles can create today's candle if Redis doesn't have it yet
-    const endDate = new Date().toISOString().split('T')[0];
-    // Use a very early start date - fetchPriceCandles will load all available data from files
-    const startDate = '2020-01-01'; // Early enough to capture all available historical data
-    // Use timeframe from config (default to asset's default timeframe if not specified)
+    // CRITICAL: Ensure today's candle is updated in Redis before loading candles
+    // updateTodayCandle is called asynchronously in fetchLatestPrice, but we need to wait for it
+    // Retry loading candles if the latest candle is missing (up to 3 attempts)
     const timeframe = session.config.bullishStrategy.timeframe || assetConfig.defaultTimeframe;
-    const candles = await fetchPriceCandles(symbol, timeframe, startDate, endDate, currentPrice, false, false); // NEVER synthetic data in paper trading
+    let candles: PriceCandle[] = [];
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    // Define date range outside loop for use in gap detection
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = '2020-01-01'; // Early enough to capture all available historical data
+    
+    while (retryCount < maxRetries) {
+      // Wait for updateTodayCandle to complete (increased delay for reliability)
+      await new Promise(resolve => setTimeout(resolve, 500 + retryCount * 200));
+      
+      // Fetch ALL available candles for regime detection
+      // Load from earliest available date to ensure we have complete historical context
+      // Pass currentPrice so fetchPriceCandles can create today's candle if Redis doesn't have it yet
+      candles = await fetchPriceCandles(symbol, timeframe, startDate, endDate, currentPrice, false, false); // NEVER synthetic data in paper trading
 
-    if (candles.length < 50) {
-      throw new Error('Not enough historical data to update session');
+      if (candles.length < 50) {
+        throw new Error('Not enough historical data to update session');
+      }
+
+      // Check if the latest candle is recent enough (within expected timeframe)
+      const lastCandle = candles[candles.length - 1]!;
+      const now = Date.now();
+      const expectedInterval = timeframe === '8h' ? 8 * 60 * 60 * 1000 :
+                               timeframe === '12h' ? 12 * 60 * 60 * 1000 :
+                               timeframe === '1d' ? 24 * 60 * 60 * 1000 :
+                               8 * 60 * 60 * 1000; // Default to 8h
+      const candleAge = now - lastCandle.timestamp;
+      
+      // If the latest candle is too old (more than 1.5x the expected interval), retry
+      if (candleAge > expectedInterval * 1.5 && retryCount < maxRetries - 1) {
+        retryCount++;
+        console.warn(`[Paper Trading] Latest candle is ${(candleAge / (60 * 60 * 1000)).toFixed(1)}h old (expected ${(expectedInterval / (60 * 60 * 1000)).toFixed(1)}h). Retrying (${retryCount}/${maxRetries})...`);
+        continue;
+      }
+      
+      // Candle is fresh enough, break out of retry loop
+      break;
+    }
+
+    // CRITICAL: Detect and fill gaps automatically to prevent missing candles
+    // This ensures data quality without manual intervention
+    const { detectGaps } = await import('./data-quality-validator');
+    const { fillGapsInCandles } = await import('./historical-file-utils');
+    
+    const gapStartTime = new Date(startDate).getTime();
+    const gapEndTime = new Date(endDate + 'T23:59:59.999Z').getTime();
+    const gapInfo = detectGaps(candles, timeframe, gapStartTime, gapEndTime);
+    
+    if (gapInfo.missingCandles.length > 0) {
+      console.warn(`[Paper Trading] Detected ${gapInfo.missingCandles.length} missing candles. Attempting to fill gaps...`);
+      
+      // Try to fill gaps from API (for recent gaps only)
+      // Only fill gaps that are in the past and reasonable size
+      const now = Date.now();
+      const recentGaps = gapInfo.missingCandles.filter(m => {
+        const gapAge = now - m.expected;
+        const maxGapAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+        return gapAge > 0 && gapAge < maxGapAge; // Only fill recent gaps
+      });
+      
+      if (recentGaps.length > 0) {
+        try {
+          const filledCandles = await fillGapsInCandles(candles, timeframe, symbol, true); // fetchFromAPI = true
+          if (filledCandles.length > candles.length) {
+            console.log(`[Paper Trading] Filled ${filledCandles.length - candles.length} missing candles from API`);
+            candles = filledCandles;
+          }
+        } catch (fillError) {
+          console.warn(`[Paper Trading] Failed to fill gaps from API: ${fillError instanceof Error ? fillError.message : fillError}`);
+          // Continue with existing candles - better than failing completely
+        }
+      }
+      
+      // If gaps still exist after API fill attempt, log warning but continue
+      const remainingGaps = detectGaps(candles, timeframe, gapStartTime, gapEndTime);
+      if (remainingGaps.missingCandles.length > 0) {
+        console.warn(`[Paper Trading] ${remainingGaps.missingCandles.length} gaps remain after fill attempt. This may affect regime detection accuracy.`);
+      }
     }
 
     // Log candle info for debugging
@@ -534,10 +601,8 @@ export class PaperTradingService {
     // Use the actual timeframe from config for validation
     // For 8h candles, use 8 hours (480 minutes) as max age
     // For daily candles, use 24 hours (1440 minutes) as max age
-    const startTime = new Date(startDate).getTime();
-    const endTime = new Date(endDate).getTime();
     const maxAgeMinutes = timeframe === '8h' ? 480 : timeframe === '12h' ? 720 : 1440;
-    const dataQuality = validateDataQuality(candles, timeframe, startTime, endTime, currentIndex, maxAgeMinutes);
+    const dataQuality = validateDataQuality(candles, timeframe, gapStartTime, gapEndTime, currentIndex, maxAgeMinutes);
     
     // Log data quality for debugging
     if (dataQuality.issues && dataQuality.issues.length > 0) {
@@ -827,6 +892,7 @@ export class PaperTradingService {
           newRegime: signal.regime.regime,
           confidence: signal.regime.confidence,
           timestamp: Date.now(),
+          asset: asset, // Include asset identifier
         }).catch(err => {
           console.warn('[Paper Trading] Failed to send regime change notification:', err);
         });

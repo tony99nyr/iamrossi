@@ -6,6 +6,8 @@ import { getAssetFromSymbol, getPriceCachePrefix } from './asset-config';
 import { canMakeRequest, recordSuccess, recordFailure } from './api-circuit-breaker';
 import { getCachedRequest, cacheRequest } from './request-deduplication';
 import { getHistoricalDataPath, loadCandlesFromFile, fixOHLCRelationships, saveCandlesToFile } from './historical-file-utils';
+import { recordApiRequest } from './rate-limit-monitoring';
+import { quickPriceVerification } from './multi-source-price-verification';
 
 const BINANCE_API_URL = process.env.BINANCE_API_URL || 'https://api.binance.com/api/v3';
 const COINGECKO_API_URL = process.env.COINGECKO_API_URL || 'https://api.coingecko.com/api/v3';
@@ -86,6 +88,12 @@ async function fetchBinanceCandles(
   
   try {
     await rateLimitBinance();
+
+    // Record API request for rate limit monitoring
+    await recordApiRequest('binance_klines').catch((err) => {
+      // Don't fail if monitoring fails - just log
+      console.warn('[Price Service] Rate limit monitoring failed:', err);
+    });
 
     const url = new URL(`${BINANCE_API_URL}/klines`);
     url.searchParams.set('symbol', symbol);
@@ -474,7 +482,29 @@ export async function fetchPriceCandles(
       !f.includes('rolling')
     );
     
-    for (const file of syntheticFiles) {
+    // Pre-filter files by date range in filename to avoid unnecessary loads and warnings
+    // Filename format: ethusdt_8h_YYYY-MM-DD_YYYY-MM-DD.json.gz
+    const syntheticEndTime = Math.max(actualEndTime, Date.now() + 2 * 365 * 24 * 60 * 60 * 1000);
+    const relevantFiles = syntheticFiles.filter(file => {
+      // Try to extract date range from filename
+      // Pattern: {symbol}_{interval}_{startDate}_{endDate}.json.gz
+      const dateMatch = file.match(/_(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.json\.gz$/);
+      if (dateMatch) {
+        const fileStartDate = new Date(dateMatch[1]!);
+        const fileEndDate = new Date(dateMatch[2]!);
+        fileEndDate.setUTCHours(23, 59, 59, 999); // End of day
+        const fileStartTime = fileStartDate.getTime();
+        const fileEndTime = fileEndDate.getTime();
+        
+        // Check if file date range overlaps with requested range
+        // File overlaps if: fileStart <= requestEnd AND fileEnd >= requestStart
+        return fileStartTime <= syntheticEndTime && fileEndTime >= startTime;
+      }
+      // If we can't parse the date, include it (might be a different format)
+      return true;
+    });
+    
+    for (const file of relevantFiles) {
       const filePath = path.join(syntheticDir, file);
       try {
         // Remove .gz extension if present for loadCandlesFromFile
@@ -488,7 +518,6 @@ export async function fetchPriceCandles(
         // Don't filter by endTime too strictly - synthetic data may extend into the future
         // This is especially important for BTC which only has synthetic data
         // Use a very lenient endTime filter for synthetic data (allow up to 2 years in future)
-        const syntheticEndTime = Math.max(actualEndTime, Date.now() + 2 * 365 * 24 * 60 * 60 * 1000);
         const filtered = candles.filter(c => 
           c.timestamp >= startTime && c.timestamp <= syntheticEndTime
         );
@@ -496,15 +525,9 @@ export async function fetchPriceCandles(
         if (filtered.length > 0) {
           allCandles.push(...filtered);
           // Loaded synthetic data - no need to log routine operation
-        } else {
-          console.warn(`⚠️ No candles matched filter criteria for ${file}`);
-          if (candles.length > 0) {
-            const firstCandle = candles[0]!;
-            const lastCandle = candles[candles.length - 1]!;
-            console.warn(`   File has candles from ${new Date(firstCandle.timestamp).toISOString()} to ${new Date(lastCandle.timestamp).toISOString()}`);
-            console.warn(`   But filter requires: ${new Date(startTime).toISOString()} to ${new Date(syntheticEndTime).toISOString()}`);
-          }
         }
+        // Suppress warnings for files that don't match - this is expected when files are outside date range
+        // We already pre-filtered by filename, so if it still doesn't match, it's likely a minor mismatch
       } catch (error) {
         console.error(`❌ Error loading synthetic file ${file}:`, error instanceof Error ? error.message : error);
         continue;
@@ -1620,6 +1643,12 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
       throw new Error('Binance API circuit breaker is open');
     }
     
+    // Record API request for rate limit monitoring
+    await recordApiRequest('binance_ticker').catch((err) => {
+      // Don't fail if monitoring fails - just log
+      console.warn('[Price Service] Rate limit monitoring failed:', err);
+    });
+
     const url = `${BINANCE_API_URL}/ticker/price?symbol=${symbol}`;
     const price = await fetchPriceWithRetry(url, {}, 3, 1000, undefined, 'Binance');
     
@@ -1627,6 +1656,12 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
     if (price > 0) {
       cacheRequest(endpoint, cacheKey, price);
       recordSuccess('binance_ticker');
+      
+      // Verify price across multiple sources (non-blocking)
+      quickPriceVerification(symbol, price).catch((err) => {
+        // Don't fail if verification fails - just log
+        console.warn('[Price Service] Price verification failed:', err);
+      });
     }
     
     return price;

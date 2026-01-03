@@ -105,12 +105,45 @@ const DEFAULT_CONFIG: EnhancedAdaptiveStrategyConfig = {
   circuitBreakerLookback: 12,
   whipsawDetectionPeriods: 5,
   whipsawMaxChanges: 3,
+  // New ML-optimizable parameters (disabled by default to maintain baseline)
+  bullMarketParticipation: {
+    enabled: false, // Disabled by default - maintain baseline
+    exitThresholdMultiplier: 1.0, // 1.0 = no change, <1.0 = stay in longer
+    positionSizeMultiplier: 1.0, // 1.0 = no change, >1.0 = larger positions
+    trendStrengthThreshold: 0.6, // Minimum confidence to apply bull market settings
+    useTrailingStops: false, // Use trailing stops in bull markets
+    trailingStopATRMultiplier: 2.0, // ATR multiplier for trailing stops
+  },
+  regimeTransitionFilter: {
+    enabled: false, // Disabled by default - maintain baseline
+    transitionPeriods: 3, // Periods to be cautious during transitions
+    positionSizeReduction: 0.5, // Reduce to 50% of normal during transitions
+    minConfidenceDuringTransition: 0.3, // Minimum confidence required
+    stayOutDuringTransition: false, // Completely stay out during transitions
+  },
+  adaptivePositionSizing: {
+    enabled: false, // Disabled by default - maintain baseline
+    highFrequencySwitchDetection: true, // Detect high-frequency switches
+    switchFrequencyPeriods: 5, // Periods to check for switches
+    maxSwitchesAllowed: 3, // Max switches before reducing position size
+    uncertainPeriodMultiplier: 0.5, // Reduce to 50% during uncertain periods
+    lowConfidenceMultiplier: 0.7, // Reduce to 70% when confidence is low
+    confidenceThreshold: 0.4, // Confidence threshold below which to reduce sizing
+    highFrequencySwitchPositionMultiplier: 0.5, // 0.0 = stay out, 1.0 = no reduction (default: 0.5 = 50% reduction)
+  },
+  lowVolatilityFilter: {
+    enabled: false, // Disabled by default - maintain baseline
+    minVolatilityThreshold: 0.01, // Minimum 1% daily volatility to allow trading
+    lookbackPeriods: 20, // Periods to calculate volatility
+    signalStrengthMultiplier: 1.5, // 1.0 = no change, >1.0 = stronger signals required (default: 1.5)
+    volatilitySqueezePositionMultiplier: 0.5, // 0.0 = stay out, 1.0 = no reduction (default: 0.5 = 50% reduction)
+  },
 };
 
 /**
  * Generate a short config name from strategy parameters
- * Format: B{buyThresh}-S{sellThresh}|Be{buyThresh}-S{sellThresh}|R{regimeConf}|K{kelly}|A{atr}
- * Example: B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0
+ * Format: B{buyThresh}-S{sellThresh}|Be{buyThresh}-S{sellThresh}|R{regimeConf}|K{kelly}|A{atr}|HF{hfMultiplier}|VS{volSqueezeMultiplier}|SS{signalStrengthMultiplier}
+ * Example: B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0|HF0.5|VS0.5|SS1.5
  */
 function getConfigShortName(config: EnhancedAdaptiveStrategyConfig): string {
   const bullBuy = config.bullishStrategy.buyThreshold.toFixed(2);
@@ -120,8 +153,11 @@ function getConfigShortName(config: EnhancedAdaptiveStrategyConfig): string {
   const regime = (config.regimeConfidenceThreshold ?? 0.22).toFixed(2);
   const kelly = config.kellyCriterion?.fractionalMultiplier?.toFixed(2) ?? '0.25';
   const atr = config.stopLoss?.atrMultiplier?.toFixed(1) ?? '2.0';
+  const hfMultiplier = config.adaptivePositionSizing?.highFrequencySwitchPositionMultiplier?.toFixed(2) ?? '0.5';
+  const volSqueezeMultiplier = config.lowVolatilityFilter?.volatilitySqueezePositionMultiplier?.toFixed(2) ?? '0.5';
+  const signalStrengthMultiplier = config.lowVolatilityFilter?.signalStrengthMultiplier?.toFixed(2) ?? '1.5';
   
-  return `B${bullBuy}-S${bullSell}|Be${bearBuy}-S${bearSell}|R${regime}|K${kelly}|A${atr}`;
+  return `B${bullBuy}-S${bullSell}|Be${bearBuy}-S${bearSell}|R${regime}|K${kelly}|A${atr}|HF${hfMultiplier}|VS${volSqueezeMultiplier}|SS${signalStrengthMultiplier}`;
 }
 
 // Trade execution is now handled by unified executor in src/lib/trade-executor.ts
@@ -281,7 +317,16 @@ async function runBacktestInternal(
     
     if (startYear === endYear) {
       // Single year
-      candles = loadSyntheticData(startYear, asset, effectiveTimeframe);
+      try {
+        candles = loadSyntheticData(startYear, asset, effectiveTimeframe);
+      } catch (error) {
+        // If synthetic data doesn't exist for this asset/year, throw a more helpful error
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('Synthetic') && errorMessage.includes('not found')) {
+          throw new Error(`Synthetic data not available for ${asset.toUpperCase()} ${startYear}. This period should be filtered out before testing.`);
+        }
+        throw error;
+      }
     } else {
       // Multi-year: load and combine
       candles = [];
@@ -290,6 +335,12 @@ async function runBacktestInternal(
           const yearCandles = loadSyntheticData(year, asset, effectiveTimeframe);
           candles.push(...yearCandles);
         } catch (error) {
+          // If synthetic data doesn't exist, skip this year (might be expected for some assets)
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (errorMessage.includes('Synthetic') && errorMessage.includes('not found')) {
+            // This is expected for some assets/years - skip silently
+            continue;
+          }
           console.warn(`⚠️  Could not load synthetic data for ${year}: ${error}`);
         }
       }
@@ -616,9 +667,9 @@ async function runBacktestInternal(
   const openPositions: OpenPosition[] = [];
   const periods: PeriodAnalysis[] = [];
   
-  // Use provided multipliers or defaults
+  // Use provided multipliers or defaults (baseline configuration)
   const effectiveKellyMultiplier = kellyMultiplier ?? 0.25;
-  const effectiveATRMultiplier = atrMultiplier ?? 2.0;
+  const effectiveATRMultiplier = atrMultiplier ?? 2.0; // Baseline (2.0x ATR)
   
   // Create stop loss config with provided multiplier
   const effectiveStopLossConfig: StopLossConfig = {
@@ -672,21 +723,43 @@ async function runBacktestInternal(
   await Promise.all(regimePreloadPromises);
   
   // Calculate buy-and-hold baselines
+  // CRITICAL: candles array contains data for the asset being tested (ETH or BTC)
+  // startPrice and endPrice are from the asset's candles, so this is the correct asset hold comparison
   const startPrice = candles[startIndex]!.close;
   const endPrice = candles[candles.length - 1]!.close;
   const initialCapital = config.bullishStrategy.initialCapital;
+  
+  // Validate we're using the correct asset's price data
+  // Note: assetConfig is already declared at the start of runBacktestInternal (line 277)
+  if (candles.length > 0) {
+    const samplePrice = candles[Math.floor(candles.length / 2)]!.close;
+    // BTC prices are typically 15-20x ETH prices, so validate we have the right asset
+    // Using wider ranges to account for historical highs and future price movements
+    const expectedPriceRange = asset === 'btc' 
+      ? { min: 20000, max: 300000 } // BTC price range (historical: ~$3k-$69k, allowing for future growth)
+      : { min: 500, max: 50000 }; // ETH price range (historical: ~$100-$4.8k, allowing for future growth)
+    
+    // Only warn if price is significantly outside expected range (more than 2x outside)
+    const isSignificantlyOutside = samplePrice < expectedPriceRange.min * 0.5 || samplePrice > expectedPriceRange.max * 2;
+    if (isSignificantlyOutside) {
+      console.warn(`⚠️  WARNING: Price ${samplePrice.toFixed(2)} seems unusual for ${assetConfig.displayName}. Expected range: ${expectedPriceRange.min}-${expectedPriceRange.max}`);
+      console.warn(`   This might indicate wrong asset data is being used.`);
+    }
+  }
   
   // USDC hold (just keep cash)
   const usdcHoldValue = initialCapital;
   const usdcHoldReturn = 0;
   
-  // ETH hold (buy at start, hold until end)
-  const ethAmount = initialCapital / startPrice;
-  const ethHoldFinalValue = ethAmount * endPrice;
-  const ethHoldReturn = ethHoldFinalValue - initialCapital;
+  // Asset hold (buy at start, hold until end) - this is ETH hold when asset='eth', BTC hold when asset='btc'
+  const assetAmount = initialCapital / startPrice;
+  const assetHoldFinalValue = assetAmount * endPrice;
+  const assetHoldReturn = assetHoldFinalValue - initialCapital;
   
-  // Track ETH hold drawdown and returns for risk metrics
-  let ethHoldMaxValue = ethHoldFinalValue;
+  // Track asset hold drawdown and returns for risk metrics
+  // Note: Variable names use "ethHold" for backward compatibility with BacktestResult interface
+  // but the values are calculated from the asset being tested (ETH or BTC)
+  let ethHoldMaxValue = assetHoldFinalValue;
   let ethHoldMaxDrawdown = 0;
   const ethHoldReturns: number[] = [];
   
@@ -784,16 +857,16 @@ async function runBacktestInternal(
       returns.push(periodReturn);
     }
     
-    // Track ETH hold value and drawdown
-    const ethHoldCurrentValue = ethAmount * currentPrice;
-    if (ethHoldCurrentValue > ethHoldMaxValue) ethHoldMaxValue = ethHoldCurrentValue;
-    const ethHoldDrawdown = ethHoldMaxValue - ethHoldCurrentValue;
-    if (ethHoldDrawdown > ethHoldMaxDrawdown) ethHoldMaxDrawdown = ethHoldDrawdown;
+    // Track asset hold value and drawdown (ETH when asset='eth', BTC when asset='btc')
+    const assetHoldCurrentValue = assetAmount * currentPrice;
+    if (assetHoldCurrentValue > ethHoldMaxValue) ethHoldMaxValue = assetHoldCurrentValue;
+    const assetHoldDrawdown = ethHoldMaxValue - assetHoldCurrentValue;
+    if (assetHoldDrawdown > ethHoldMaxDrawdown) ethHoldMaxDrawdown = assetHoldDrawdown;
     
     if (i > startIndex) {
-      const prevEthValue = ethAmount * candles[i - 1]!.close;
-      const ethPeriodReturn = (ethHoldCurrentValue - prevEthValue) / prevEthValue;
-      ethHoldReturns.push(ethPeriodReturn);
+      const prevAssetValue = assetAmount * candles[i - 1]!.close;
+      const assetPeriodReturn = (assetHoldCurrentValue - prevAssetValue) / prevAssetValue;
+      ethHoldReturns.push(assetPeriodReturn);
     }
     
     periods.push({
@@ -865,9 +938,11 @@ async function runBacktestInternal(
       returnPct: 0,
     },
     ethHold: {
-      finalValue: ethHoldFinalValue,
-      return: ethHoldReturn,
-      returnPct: (ethHoldReturn / initialCapital) * 100,
+      // Note: Despite the name "ethHold", this contains hold comparison for the asset being tested
+      // When asset='eth', this is ETH hold. When asset='btc', this is BTC hold.
+      finalValue: assetHoldFinalValue,
+      return: assetHoldReturn,
+      returnPct: (assetHoldReturn / initialCapital) * 100,
       maxDrawdown: ethHoldMaxDrawdown,
       maxDrawdownPct: (ethHoldMaxDrawdown / initialCapital) * 100,
       sharpeRatio: ethHoldSharpeRatio,
@@ -877,8 +952,12 @@ async function runBacktestInternal(
 
 function generateReport(
   result: BacktestResult,
-  periodName: string
+  periodName: string,
+  asset: TradingAsset = 'eth'
 ): string {
+  const assetConfig = getAssetConfig(asset);
+  const assetHoldLabel = `${assetConfig.displayName} Hold`; // "ETH Hold" or "Bitcoin Hold"
+  
   const regimeCounts = {
     bullish: result.periods.filter(p => p.regime === 'bullish').length,
     bearish: result.periods.filter(p => p.regime === 'bearish').length,
@@ -890,7 +969,7 @@ function generateReport(
   // Determine best strategy
   const strategies = [
     { name: 'Trading Strategy', return: result.totalReturnPct, value: result.finalPortfolio.totalValue },
-    { name: 'ETH Hold', return: result.ethHold.returnPct, value: result.ethHold.finalValue },
+    { name: assetHoldLabel, return: result.ethHold.returnPct, value: result.ethHold.finalValue },
     { name: 'USDC Hold', return: result.usdcHold.returnPct, value: result.usdcHold.finalValue },
   ];
   const bestStrategy = strategies.reduce((best, current) => 
@@ -907,7 +986,7 @@ function generateReport(
 | Strategy | Final Value | Return | Return % | Max Drawdown | Sharpe Ratio | Risk-Adjusted Return |
 |----------|-----------|--------|----------|--------------|--------------|---------------------|
 | **Trading Strategy** | $${result.finalPortfolio.totalValue.toFixed(2)} | $${result.totalReturn.toFixed(2)} | ${result.totalReturnPct >= 0 ? '+' : ''}${result.totalReturnPct.toFixed(2)}% | ${result.maxDrawdownPct.toFixed(2)}% | ${result.sharpeRatio.toFixed(3)} | ${(result.totalReturnPct / Math.max(result.maxDrawdownPct, 1)).toFixed(2)} |
-| **ETH Hold** | $${result.ethHold.finalValue.toFixed(2)} | $${result.ethHold.return.toFixed(2)} | ${result.ethHold.returnPct >= 0 ? '+' : ''}${result.ethHold.returnPct.toFixed(2)}% | ${result.ethHold.maxDrawdownPct.toFixed(2)}% | ${result.ethHold.sharpeRatio.toFixed(3)} | ${(result.ethHold.returnPct / Math.max(result.ethHold.maxDrawdownPct, 1)).toFixed(2)} |
+| **${assetHoldLabel}** | $${result.ethHold.finalValue.toFixed(2)} | $${result.ethHold.return.toFixed(2)} | ${result.ethHold.returnPct >= 0 ? '+' : ''}${result.ethHold.returnPct.toFixed(2)}% | ${result.ethHold.maxDrawdownPct.toFixed(2)}% | ${result.ethHold.sharpeRatio.toFixed(3)} | ${(result.ethHold.returnPct / Math.max(result.ethHold.maxDrawdownPct, 1)).toFixed(2)} |
 | **USDC Hold** | $${result.usdcHold.finalValue.toFixed(2)} | $${result.usdcHold.return.toFixed(2)} | ${result.usdcHold.returnPct.toFixed(2)}% | 0.00% | N/A | N/A |
 
 **Best Strategy**: ${bestStrategy.name} (${bestStrategy.return >= 0 ? '+' : ''}${bestStrategy.return.toFixed(2)}%)
@@ -933,7 +1012,7 @@ function generateReport(
 - **Volatility**: ${result.maxDrawdownPct.toFixed(2)}% max drawdown
 - **Sharpe Ratio**: ${result.sharpeRatio.toFixed(3)} ${result.sharpeRatio > 1 ? '(Good)' : result.sharpeRatio > 0 ? '(Acceptable)' : '(Poor)'}
 
-### ETH Hold
+### ${assetHoldLabel}
 - **Risk-Adjusted Return**: ${(result.ethHold.returnPct / Math.max(result.ethHold.maxDrawdownPct, 1)).toFixed(2)}
 - **Volatility**: ${result.ethHold.maxDrawdownPct.toFixed(2)}% max drawdown
 - **Sharpe Ratio**: ${result.ethHold.sharpeRatio.toFixed(3)} ${result.ethHold.sharpeRatio > 1 ? '(Good)' : result.ethHold.sharpeRatio > 0 ? '(Acceptable)' : '(Poor)'}
@@ -951,12 +1030,12 @@ function generateReport(
 ## Final Portfolio (Trading Strategy)
 
 - **USDC**: $${result.finalPortfolio.usdcBalance.toFixed(2)}
-- **ETH**: ${result.finalPortfolio.ethBalance.toFixed(6)}
+- **${assetConfig.displayName}**: ${result.finalPortfolio.ethBalance.toFixed(6)}
 - **Total Value**: $${result.finalPortfolio.totalValue.toFixed(2)}
 
 ## Performance vs Buy-and-Hold
 
-- **vs ETH Hold**: ${result.totalReturnPct - result.ethHold.returnPct >= 0 ? '+' : ''}${(result.totalReturnPct - result.ethHold.returnPct).toFixed(2)}% ${result.totalReturnPct > result.ethHold.returnPct ? '(Outperformed)' : '(Underperformed)'}
+- **vs ${assetHoldLabel}**: ${result.totalReturnPct - result.ethHold.returnPct >= 0 ? '+' : ''}${(result.totalReturnPct - result.ethHold.returnPct).toFixed(2)}% ${result.totalReturnPct > result.ethHold.returnPct ? '(Outperformed)' : '(Underperformed)'}
 - **vs USDC Hold**: ${result.totalReturnPct >= 0 ? '+' : ''}${result.totalReturnPct.toFixed(2)}% ${result.totalReturnPct > 0 ? '(Outperformed)' : '(Underperformed)'}
 
 ---
@@ -965,7 +1044,12 @@ function generateReport(
 }
 
 async function main() {
-  console.log('🔄 Running backfill tests for specific periods...\n');
+  // Get asset from command line args or environment, default to 'eth'
+  const assetArg = process.argv[2];
+  const asset = (assetArg === 'eth' || assetArg === 'btc' ? assetArg : (process.env.ASSET as TradingAsset)) || 'eth';
+  const assetConfig = getAssetConfig(asset);
+  
+  console.log(`🔄 Running backfill tests for ${assetConfig.displayName} (${asset.toUpperCase()})...\n`);
   
   const historicalPeriods = [
     { name: 'Bullish Period', start: '2025-04-01', end: '2025-08-23', synthetic: false },
@@ -1017,12 +1101,52 @@ async function main() {
     { name: '2028 Full Divergence Test', start: '2028-01-01', end: '2028-03-17', synthetic: true },
   ];
   
+  // New synthetic periods (2029-2031) for expanded validation
+  const synthetic2029Periods = [
+    { name: '2029 Full Year', start: '2029-01-01', end: '2029-12-31', synthetic: true },
+    { name: '2029 Q1 (Hyper-Volatility→Sideways)', start: '2029-01-01', end: '2029-03-31', synthetic: true },
+    { name: '2029 Q2 (Bull Run→Flash Crash→Recovery)', start: '2029-04-01', end: '2029-06-30', synthetic: true },
+    { name: '2029 Q3 (Recovery→Bear Market)', start: '2029-07-01', end: '2029-09-30', synthetic: true },
+    { name: '2029 Q4 (False Breakout→Volatility Squeeze)', start: '2029-10-01', end: '2029-12-31', synthetic: true },
+    { name: '2029 Hyper-Volatility Period', start: '2029-01-01', end: '2029-01-31', synthetic: true },
+    { name: '2029 Extended Sideways', start: '2029-02-01', end: '2029-03-31', synthetic: true },
+    { name: '2029 Flash Crash', start: '2029-06-01', end: '2029-06-15', synthetic: true },
+    { name: '2029 False Bull Breakout', start: '2029-10-01', end: '2029-10-31', synthetic: true },
+  ];
+  
+  const synthetic2030Periods = [
+    { name: '2030 Full Year', start: '2030-01-01', end: '2030-12-31', synthetic: true },
+    { name: '2030 Q1 (High-Frequency Switches→Bull)', start: '2030-01-01', end: '2030-03-31', synthetic: true },
+    { name: '2030 Q2 (Consolidation→Bear Market)', start: '2030-04-01', end: '2030-06-30', synthetic: true },
+    { name: '2030 Q3 (Bear Market→False Breakout)', start: '2030-07-01', end: '2030-09-30', synthetic: true },
+    { name: '2030 Q4 (Recovery→Volatility Squeeze→Explosion)', start: '2030-10-01', end: '2030-12-31', synthetic: true },
+    { name: '2030 High-Frequency Switches', start: '2030-01-01', end: '2030-02-28', synthetic: true },
+    { name: '2030 Extended Consolidation', start: '2030-04-01', end: '2030-05-31', synthetic: true },
+    { name: '2030 False Bear Breakout', start: '2030-08-01', end: '2030-08-31', synthetic: true },
+    { name: '2030 Volatility Squeeze', start: '2030-11-01', end: '2030-11-30', synthetic: true },
+  ];
+  
+  const synthetic2031Periods = [
+    { name: '2031 Full Year', start: '2031-01-01', end: '2031-12-31', synthetic: true },
+    { name: '2031 Q1 (Bull Run→Flash Crash→Recovery)', start: '2031-01-01', end: '2031-03-31', synthetic: true },
+    { name: '2031 Q2 (Recovery→Sideways)', start: '2031-04-01', end: '2031-06-30', synthetic: true },
+    { name: '2031 Q3 (Sideways→Extended Bear Market)', start: '2031-07-01', end: '2031-09-30', synthetic: true },
+    { name: '2031 Q4 (False Breakout→Volatility Squeeze)', start: '2031-10-01', end: '2031-12-31', synthetic: true },
+    { name: '2031 Flash Crash', start: '2031-03-01', end: '2031-03-15', synthetic: true },
+    { name: '2031 Extended Sideways', start: '2031-05-01', end: '2031-06-30', synthetic: true },
+    { name: '2031 Extended Bear Market', start: '2031-07-01', end: '2031-09-30', synthetic: true },
+    { name: '2031 False Bull Breakout', start: '2031-10-01', end: '2031-10-31', synthetic: true },
+  ];
+  
   const testPeriods = [
     ...historicalPeriods,
     ...synthetic2026Periods,
     ...synthetic2027Periods,
     ...multiYearPeriods,
     ...divergenceTestPeriods,
+    ...synthetic2029Periods,
+    ...synthetic2030Periods,
+    ...synthetic2031Periods,
   ];
   
   const reports: string[] = [];
@@ -1042,9 +1166,9 @@ async function main() {
     console.log('='.repeat(60));
     
     try {
-      const result = await runBacktest(period.start, period.end, period.synthetic);
+      const result = await runBacktest(period.start, period.end, period.synthetic, undefined, undefined, undefined, asset);
       
-      const report = generateReport(result, period.name);
+      const report = generateReport(result, period.name, asset);
       reports.push(report);
       
       // Categorize results
@@ -1071,9 +1195,9 @@ async function main() {
     : 0;
   
   // Combine all reports
-  const fullReport = `# Backfill Test Results - Historical 2025, Synthetic 2026 & 2027 Periods
+  const fullReport = `# Backfill Test Results - Historical 2025, Synthetic 2026-2031 Periods
 
-This report shows backfill test results using the **new smoothed regime detection with hysteresis**.
+This report shows backfill test results using the **baseline configuration** with expanded validation set (2029-2031).
 
 ## Test Periods
 

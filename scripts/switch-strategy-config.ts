@@ -85,7 +85,10 @@ function getConfigShortName(config: EnhancedAdaptiveStrategyConfig): string {
   const regime = (config.regimeConfidenceThreshold ?? 0.22).toFixed(2);
   const kelly = config.kellyCriterion?.fractionalMultiplier?.toFixed(2) ?? '0.25';
   const atr = config.stopLoss?.atrMultiplier?.toFixed(1) ?? '2.0';
-  return `B${bullBuy}-S${bullSell}|Be${bearBuy}-S${bearSell}|R${regime}|K${kelly}|A${atr}`;
+  const hfMultiplier = config.adaptivePositionSizing?.highFrequencySwitchPositionMultiplier?.toFixed(2) ?? '0.5';
+  const volSqueezeMultiplier = config.lowVolatilityFilter?.volatilitySqueezePositionMultiplier?.toFixed(2) ?? '0.5';
+  const signalStrengthMultiplier = config.lowVolatilityFilter?.signalStrengthMultiplier?.toFixed(2) ?? '1.5';
+  return `B${bullBuy}-S${bullSell}|Be${bearBuy}-S${bearSell}|R${regime}|K${kelly}|A${atr}|HF${hfMultiplier}|VS${volSqueezeMultiplier}|SS${signalStrengthMultiplier}`;
 }
 
 /**

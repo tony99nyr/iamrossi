@@ -223,8 +223,8 @@ async function main() {
   const year = args[0] ? parseInt(args[0], 10) : 2026;
   const timeframe = args[1] || '8h';
   
-  if (isNaN(year) || year < 2026 || year > 2028) {
-    console.error('❌ Invalid year. Must be 2026, 2027, or 2028');
+  if (isNaN(year) || year < 2026 || year > 2031) {
+    console.error('❌ Invalid year. Must be between 2026 and 2031');
     process.exit(1);
   }
   

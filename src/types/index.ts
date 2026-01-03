@@ -370,6 +370,7 @@ export interface Trade {
   costBasis?: number; // Cost basis for P&L calculation (buy: usdcAmount, sell: matched buy cost)
   pnl?: number; // Profit/Loss for sell trades (usdcAmount - costBasis)
   fullySold?: boolean; // For buy trades: whether this position has been fully sold
+  exitReason?: string; // Reason for exit (e.g., 'stop-loss', 'critical-drawdown', 'time-based-exit', 'max-hold-period')
   // Execution state tracking
   executionState?: 'pending' | 'executing' | 'filled' | 'failed';
   executionAttempts?: number; // Number of execution attempts

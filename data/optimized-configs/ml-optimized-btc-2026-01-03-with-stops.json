@@ -1,0 +1,138 @@
+{
+  "bullishStrategy": {
+    "name": "Bullish-Hybrid",
+    "timeframe": "8h",
+    "indicators": [
+      {
+        "type": "sma",
+        "weight": 0.35,
+        "params": {
+          "period": 20
+        }
+      },
+      {
+        "type": "ema",
+        "weight": 0.35,
+        "params": {
+          "period": 12
+        }
+      },
+      {
+        "type": "macd",
+        "weight": 0.2,
+        "params": {
+          "fastPeriod": 9,
+          "slowPeriod": 19,
+          "signalPeriod": 9
+        }
+      },
+      {
+        "type": "rsi",
+        "weight": 0.1,
+        "params": {
+          "period": 14
+        }
+      }
+    ],
+    "buyThreshold": 0.31077520913310125,
+    "sellThreshold": -0.49321542292623133,
+    "maxPositionPct": 0.881968412840783,
+    "initialCapital": 1000
+  },
+  "bearishStrategy": {
+    "name": "Bearish-Recovery",
+    "timeframe": "8h",
+    "indicators": [
+      {
+        "type": "sma",
+        "weight": 0.5,
+        "params": {
+          "period": 20
+        }
+      },
+      {
+        "type": "ema",
+        "weight": 0.5,
+        "params": {
+          "period": 12
+        }
+      }
+    ],
+    "buyThreshold": 0.5567238242932351,
+    "sellThreshold": -0.18947859995935107,
+    "maxPositionPct": 0.22546644577086122,
+    "initialCapital": 1000
+  },
+  "regimeConfidenceThreshold": 0.15,
+  "momentumConfirmationThreshold": 0.28359600023753007,
+  "regimePersistencePeriods": 2,
+  "bullishPositionMultiplier": 0.9942710299584813,
+  "maxBullishPosition": 0.9126474892505332,
+  "kellyCriterion": {
+    "enabled": true,
+    "fractionalMultiplier": 0.3375498733332124,
+    "minTrades": 10,
+    "lookbackPeriod": 50
+  },
+  "stopLoss": {
+    "enabled": true,
+    "atrMultiplier": 2.5707319425046746,
+    "trailing": true,
+    "useEMA": true,
+    "atrPeriod": 14
+  },
+  "entryThresholdMultiplier": 1.0602886433268424,
+  "bullMarketParticipation": {
+    "enabled": true,
+    "exitThresholdMultiplier": 0.5332847942268908,
+    "positionSizeMultiplier": 1.0709121564146011,
+    "trendStrengthThreshold": 0.4248538603396629,
+    "useTrailingStops": true,
+    "trailingStopATRMultiplier": 2.3547778930168013
+  },
+  "regimeTransitionFilter": {
+    "enabled": true,
+    "transitionPeriods": 4,
+    "positionSizeReduction": 0.7053928173326194,
+    "minConfidenceDuringTransition": 0.43957980807728064,
+    "stayOutDuringTransition": false
+  },
+  "adaptivePositionSizing": {
+    "enabled": true,
+    "highFrequencySwitchDetection": true,
+    "switchFrequencyPeriods": 3,
+    "maxSwitchesAllowed": 2,
+    "uncertainPeriodMultiplier": 0.5,
+    "lowConfidenceMultiplier": 0.7,
+    "confidenceThreshold": 0.4,
+    "stayOutDuringHighFrequencySwitches": true
+  },
+  "lowVolatilityFilter": {
+    "enabled": true,
+    "minVolatilityThreshold": 0.01,
+    "lookbackPeriods": 20,
+    "requireStrongerSignals": true,
+    "signalStrengthMultiplier": 1.5,
+    "stayOutDuringSqueeze": true
+  },
+  "correlationAdjustments": {
+    "enabled": true,
+    "lowRiskThresholdMultiplier": 0.8128680192607957,
+    "highRiskThresholdMultiplier": 1.1486860683692632,
+    "lowRiskPositionMultiplier": 1.287898122563852,
+    "highRiskPositionMultiplier": 0.6533531412421304,
+    "contradictingAlignmentMultiplier": 0.9269794407214296,
+    "contradictingAlignmentThreshold": -0.15579115082786876
+  },
+  "dynamicPositionSizingConfig": {
+    "minPositionMultiplier": 0.7357741172462857,
+    "maxPositionMultiplier": 1.0730004072905208
+  },
+  "volatilityConfig": {
+    "lookbackPeriod": 18
+  },
+  "circuitBreakerConfig": {
+    "minTradesRequired": 3
+  }
+}
+

@@ -26,6 +26,7 @@ export interface RegimeChangeNotification {
   newRegime: string;
   confidence: number;
   timestamp: number;
+  asset?: 'eth' | 'btc'; // Optional asset identifier
 }
 
 export interface StopLossNotification {
@@ -179,8 +180,11 @@ export async function sendTradeAlert(notification: TradeNotification): Promise<b
     timestamp: new Date(notification.timestamp).toISOString(),
   };
 
+  // Use dynamic username based on asset
+  const assetName = notification.symbol === 'BTCUSDT' ? 'BTC' : 'ETH';
+  
   return sendDiscordWebhook({
-    username: 'ETH Trading Bot',
+    username: `${assetName} Trading Bot`,
     embeds: [embed],
   });
 }
@@ -218,8 +222,11 @@ export async function sendRegimeChangeAlert(notification: RegimeChangeNotificati
     timestamp: new Date(notification.timestamp).toISOString(),
   };
 
+  // Use dynamic username based on asset
+  const assetName = notification.asset === 'btc' ? 'BTC' : 'ETH';
+  
   return sendDiscordWebhook({
-    username: 'ETH Trading Bot',
+    username: `${assetName} Trading Bot`,
     embeds: [embed],
   });
 }
@@ -385,8 +392,25 @@ export async function sendErrorAlert(notification: ErrorNotification): Promise<b
     timestamp: new Date(notification.timestamp).toISOString(),
   };
 
+  // Try to extract asset from context or message
+  let assetName = 'Trading';
+  if (notification.context) {
+    const assetMatch = notification.context.match(/Asset:\s*(\w+)/i);
+    if (assetMatch) {
+      assetName = assetMatch[1]!.toUpperCase();
+    } else if (notification.message.includes('[ETH]')) {
+      assetName = 'ETH';
+    } else if (notification.message.includes('[BTC]')) {
+      assetName = 'BTC';
+    }
+  } else if (notification.message.includes('[ETH]')) {
+    assetName = 'ETH';
+  } else if (notification.message.includes('[BTC]')) {
+    assetName = 'BTC';
+  }
+  
   return sendDiscordWebhook({
-    username: 'ETH Trading Bot',
+    username: `${assetName} Trading Bot`,
     embeds: [embed],
   });
 }

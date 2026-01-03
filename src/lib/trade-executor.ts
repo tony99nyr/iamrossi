@@ -73,7 +73,7 @@ export interface TradeExecutionOptions {
 
 const DEFAULT_STOP_LOSS_CONFIG: StopLossConfig = {
   enabled: true,
-  atrMultiplier: 2.0,
+  atrMultiplier: 2.0, // Baseline configuration (2.0x ATR)
   trailing: true,
   useEMA: true,
   atrPeriod: 14,
@@ -235,14 +235,117 @@ export function executeTrade(
   
   // Check maximum drawdown circuit breaker (before new trades)
   const maxDrawdownThreshold = config.maxDrawdownThreshold ?? 0.20; // Default 20%
+  const maxDrawdownExitThreshold = config.maxDrawdownExitThreshold ?? 0.25; // Default 25% - force exit all positions
   const sessionId = options.sessionId || 'default'; // Get sessionId from options if available
   const drawdownCheck = checkDrawdownCircuitBreaker(sessionId, portfolio.totalValue, maxDrawdownThreshold);
+  const criticalDrawdownCheck = checkDrawdownCircuitBreaker(sessionId, portfolio.totalValue, maxDrawdownExitThreshold);
+  
+  // CRITICAL: Force exit all positions if drawdown exceeds critical threshold
+  if (criticalDrawdownCheck.shouldPause && openPositions.length > 0) {
+    // Force exit all positions immediately
+    for (const position of openPositions) {
+      const ethToSell = position.buyTrade.ethAmount;
+      const saleValue = ethToSell * currentPrice;
+      const costs = applyTransactionCosts(saleValue, transactionCostConfig, candles, candleIndex);
+      const netProceeds = saleValue - costs.totalCost;
+      
+      portfolio.ethBalance -= ethToSell;
+      portfolio.usdcBalance += netProceeds;
+      portfolio.totalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
+      portfolio.tradeCount++;
+      portfolio.totalReturn = ((portfolio.totalValue - portfolio.initialCapital) / portfolio.initialCapital) * 100;
+      
+      const buyCost = position.buyTrade.costBasis || position.buyTrade.usdcAmount;
+      const pnl = netProceeds - buyCost;
+      const isWin = pnl > 0;
+      if (isWin) portfolio.winCount++;
+      
+      const trade: Trade = {
+        id: uuidv4(),
+        type: 'sell',
+        timestamp: candles[candleIndex]?.timestamp || Date.now(),
+        ethPrice: currentPrice,
+        ethAmount: ethToSell,
+        usdcAmount: saleValue,
+        signal: signal.signal,
+        confidence,
+        portfolioValue: portfolio.totalValue,
+        pnl,
+        exitReason: 'critical-drawdown',
+        costBasis: buyCost,
+      };
+      
+      trades.push(trade);
+      if (onTradeExecuted) onTradeExecuted(trade);
+      if (recordTradeResult) recordTradeResult(isWin);
+    }
+    // Clear all positions
+    openPositions.length = 0;
+    // Block all new trades after critical drawdown
+    return null;
+  }
   
   if (drawdownCheck.shouldPause && signal.action !== 'hold') {
     // Drawdown exceeds threshold - block new trades (but allow stop loss exits)
     // Only block if it's a new trade, not a stop loss exit
     if (signal.action === 'buy' || (signal.action === 'sell' && openPositions.length === 0)) {
       return null; // Block the trade
+    }
+  }
+  
+  // Check time-based exits for losing positions (before stop losses)
+  const maxHoldPeriods = config.maxPositionHoldPeriods ?? 50; // Default 50 periods (~17 days for 8h timeframe)
+  if (openPositions.length > 0) {
+    const currentCandleIndex = candleIndex;
+    for (let i = openPositions.length - 1; i >= 0; i--) {
+      const position = openPositions[i]!;
+      // Estimate periods held (approximate based on trade timestamp)
+      const positionCandleIndex = candles.findIndex(c => c.timestamp >= position.buyTrade.timestamp);
+      if (positionCandleIndex >= 0) {
+        const periodsHeld = currentCandleIndex - positionCandleIndex;
+        const isLosing = currentPrice < position.entryPrice;
+        
+        // Force exit losing positions held too long
+        if (isLosing && periodsHeld >= maxHoldPeriods) {
+          const ethToSell = position.buyTrade.ethAmount;
+          const saleValue = ethToSell * currentPrice;
+          const costs = applyTransactionCosts(saleValue, transactionCostConfig, candles, candleIndex);
+          const netProceeds = saleValue - costs.totalCost;
+          
+          portfolio.ethBalance -= ethToSell;
+          portfolio.usdcBalance += netProceeds;
+          portfolio.totalValue = portfolio.usdcBalance + portfolio.ethBalance * currentPrice;
+          portfolio.tradeCount++;
+          portfolio.totalReturn = ((portfolio.totalValue - portfolio.initialCapital) / portfolio.initialCapital) * 100;
+          
+          const buyCost = position.buyTrade.costBasis || position.buyTrade.usdcAmount;
+          const pnl = netProceeds - buyCost;
+          const isWin = pnl > 0;
+          if (isWin) portfolio.winCount++;
+          
+          const trade: Trade = {
+            id: uuidv4(),
+            type: 'sell',
+            timestamp: candles[candleIndex]?.timestamp || Date.now(),
+            ethPrice: currentPrice,
+            ethAmount: ethToSell,
+            usdcAmount: saleValue,
+            signal: signal.signal,
+            confidence,
+            portfolioValue: portfolio.totalValue,
+            pnl,
+            exitReason: 'max-hold-period',
+            costBasis: buyCost,
+          };
+          
+          trades.push(trade);
+          if (onTradeExecuted) onTradeExecuted(trade);
+          if (recordTradeResult) recordTradeResult(isWin);
+          
+          // Remove position
+          openPositions.splice(i, 1);
+        }
+      }
     }
   }
   

@@ -198,8 +198,8 @@ async function main() {
   const year = args[0] ? parseInt(args[0], 10) : 2026;
   const timeframe = args[1] || '8h';
   
-  if (isNaN(year) || year < 2026 || year > 2028) {
-    console.error('❌ Invalid year. Must be 2026, 2027, or 2028');
+  if (isNaN(year) || year < 2026 || year > 2031) {
+    console.error('❌ Invalid year. Must be between 2026 and 2031');
     process.exit(1);
   }
   
@@ -217,8 +217,13 @@ async function main() {
   const ethCandles = loadETHSyntheticData(year, timeframe);
   if (!ethCandles || ethCandles.length === 0) {
     console.error(`❌ Failed to load ETH synthetic data for ${year} ${timeframe}`);
-    console.error(`   Please generate ETH synthetic data first using:`);
-    console.error(`   pnpm tsx scripts/generate-synthetic-${year}-data-enhanced.ts`);
+    if (year >= 2029) {
+      console.error(`   For ${year}, ETH synthetic data should already exist.`);
+      console.error(`   Check: data/historical-prices/synthetic/ethusdt_${timeframe}_${year}-01-01_${year}-12-30.json.gz`);
+    } else {
+      console.error(`   Please generate ETH synthetic data first using:`);
+      console.error(`   pnpm tsx scripts/generate-synthetic-${year}-data-enhanced.ts`);
+    }
     process.exit(1);
   }
   

@@ -48,7 +48,7 @@ interface ComparisonResult {
 /**
  * Load optimized config from file
  */
-function loadOptimizedConfig(filePath: string): EnhancedAdaptiveStrategyConfig {
+export function loadOptimizedConfig(filePath: string): EnhancedAdaptiveStrategyConfig {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Optimized config file not found: ${filePath}`);
   }
@@ -90,13 +90,12 @@ function findLatestOptimizedConfig(asset: TradingAsset): string | null {
  * Get default config (from backfill-test.ts)
  */
 function getDefaultConfig(asset: TradingAsset = 'eth'): EnhancedAdaptiveStrategyConfig {
-  // Import the default config from backfill-test
-  // We'll need to duplicate it here or import it
-  const assetConfig = getAssetConfig(asset);
+  // Match the DEFAULT_CONFIG from backfill-test.ts
+  const TIMEFRAME = '8h' as const;
   return {
     bullishStrategy: {
       name: 'Bullish-Hybrid',
-      timeframe: '8h',
+      timeframe: TIMEFRAME,
       indicators: [
         { type: 'sma', weight: 0.35, params: { period: 20 } },
         { type: 'ema', weight: 0.35, params: { period: 12 } },
@@ -110,7 +109,7 @@ function getDefaultConfig(asset: TradingAsset = 'eth'): EnhancedAdaptiveStrategy
     },
     bearishStrategy: {
       name: 'Bearish-Recovery',
-      timeframe: '8h',
+      timeframe: TIMEFRAME,
       indicators: [
         { type: 'sma', weight: 0.5, params: { period: 20 } },
         { type: 'ema', weight: 0.5, params: { period: 12 } },
@@ -124,7 +123,38 @@ function getDefaultConfig(asset: TradingAsset = 'eth'): EnhancedAdaptiveStrategy
     momentumConfirmationThreshold: 0.26,
     regimePersistencePeriods: 1,
     bullishPositionMultiplier: 1.0,
+    dynamicPositionSizing: false,
     maxBullishPosition: 0.90,
+    maxVolatility: 0.019,
+    circuitBreakerWinRate: 0.18,
+    circuitBreakerLookback: 12,
+    whipsawDetectionPeriods: 5,
+    whipsawMaxChanges: 3,
+    // New ML-optimizable parameters (disabled by default to maintain baseline)
+    bullMarketParticipation: {
+      enabled: false,
+      exitThresholdMultiplier: 1.0,
+      positionSizeMultiplier: 1.0,
+      trendStrengthThreshold: 0.6,
+      useTrailingStops: false,
+      trailingStopATRMultiplier: 2.0,
+    },
+    regimeTransitionFilter: {
+      enabled: false,
+      transitionPeriods: 3,
+      positionSizeReduction: 0.5,
+      minConfidenceDuringTransition: 0.3,
+      stayOutDuringTransition: false,
+    },
+    adaptivePositionSizing: {
+      enabled: false,
+      highFrequencySwitchDetection: true,
+      switchFrequencyPeriods: 5,
+      maxSwitchesAllowed: 3,
+      uncertainPeriodMultiplier: 0.5,
+      lowConfidenceMultiplier: 0.7,
+      confidenceThreshold: 0.4,
+    },
     kellyCriterion: {
       enabled: true,
       fractionalMultiplier: 0.25,
@@ -393,7 +423,17 @@ async function main() {
   const avgOptimized = results.reduce((sum, r) => sum + r.optimized.totalReturnPct, 0) / results.length;
   console.log(`   Average Return - Default: ${avgDefault.toFixed(2)}% | Optimized: ${avgOptimized.toFixed(2)}%`);
   console.log(`   Improvement: ${avgOptimized >= avgDefault ? '+' : ''}${(avgOptimized - avgDefault).toFixed(2)}%`);
-  console.log(`\n📄 Full report saved to: ${reportPath}\n`);
+  console.log(`\n📄 Full report saved to: ${reportPath}`);
+  console.log(`\n📋 Next Steps:`);
+  console.log(`   Review the comparison report: ${reportPath}`);
+  if (avgOptimized > avgDefault) {
+    console.log(`   ✅ Optimized config shows improvement! Consider applying it:`);
+    console.log(`   ${asset === 'eth' ? 'pnpm eth:switch-config' : 'pnpm btc:switch-config'} ${optimizedConfigPath}`);
+  } else {
+    console.log(`   ⚠️  Optimized config didn't improve performance. Review parameters and consider re-running optimization.`);
+  }
+  console.log(`\n   Or run another comparison:`);
+  console.log(`   ${asset === 'eth' ? 'pnpm eth:compare-config' : 'pnpm btc:compare-config'} [config-path] [years]\n`);
 }
 
 main()

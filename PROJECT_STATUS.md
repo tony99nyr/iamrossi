@@ -1,6 +1,6 @@
 # Trading Strategy Project Status
 
-**Last Updated**: 2026-01-01 (Updated: Data quality improvements, ML optimizer asset support, compare config BTC support, correlation alignment fixes)  
+**Last Updated**: 2026-01-03 (Updated: ML optimizer improvements, autonomous operation enhancements, targeted stops with numeric multipliers)  
 **Current Phase**: Phase 10 - Multi-Asset Trading System ✅ **COMPLETED**
 - ✅ 8h timeframe standardized for both ETH and BTC
 - ✅ Correlation integration complete (affects confidence and thresholds)
@@ -402,14 +402,43 @@
   - Multi-core parallel processing (6-8x speedup on 8-core CPU)
   - Config name logging in backfill tests
   - Tests across ALL periods by default for robustness
-  - Command: `pnpm eth:ml-optimize [asset] [years]`
+  - Command: `pnpm eth:ml-optimize [asset]` or `pnpm btc:ml-optimize`
   - Documentation updated in `ML_INTEGRATION_GUIDE.md`
   - **🎉 Excellent Results (Jan 2026):**
     - Optimized config: **57.59% average return** vs **22.80% default** (+34.79% improvement, **2.5x better**)
     - Wins 17/32 periods (53%) vs default's 8/32 (25%)
     - Particularly strong in bullish periods (386% vs 56% on bull runs)
     - Robust across diverse market conditions (bull, bear, crash, whipsaw)
-    - Comparison script: `pnpm eth:compare-config` to compare optimized vs default
+    - Comparison script: `pnpm eth:compare-config` or `pnpm btc:compare-config` to compare optimized vs default
+- ✅ **ML Optimizer Scoring System (Jan 2026)** - ETH-Relative Performance Focus
+  - **50% weight on asset-relative performance** (primary goal: beat ETH/BTC hold)
+  - Context-aware scoring: Heavy rewards for bear market avoidance (2.0-2.5x), medium rewards for bull market participation (1.5x)
+  - Penalizes missing bull markets (0.8-2.0x) and losing more than asset in bear markets (3.0x)
+  - Aligns with core objective: Beat asset hold by avoiding bear markets and capturing volatility
+  - Documentation: `data/backfill-reports/ML_SCORING_SYSTEM.md`
+- ✅ **ML Optimizer Parameter Expansion (Jan 2026)** - 30+ New Configurable Parameters
+  - **Bull Market Participation** (6 params): Exit thresholds, position multipliers, trailing stops
+  - **Regime Transition Filters** (5 params): Transition periods, position size reduction, stay-out options
+  - **Adaptive Position Sizing** (7 params): High-frequency switch detection, confidence thresholds
+  - **Correlation Adjustments** (7 params): Threshold/position multipliers for correlation risk levels
+  - **Dynamic Position Sizing Config** (2 params): Min/max position multipliers
+  - **Volatility Config** (1 param): Volatility lookback period
+  - **Momentum Config** (5 params): MACD, RSI, price momentum periods
+  - **Circuit Breaker Config** (1 param): Minimum trades required
+  - **Total**: ~50+ optimizable parameters (was ~20)
+  - All parameters disabled by default to maintain baseline behavior
+  - Documentation: `data/backfill-reports/ML_OPTIMIZABLE_PARAMETERS.md`
+- ✅ **ML Optimizer Asset Support (Jan 2026)** - Full BTC Support
+  - ETH: All 59 test periods (historical 2025 + synthetic 2026-2031)
+  - BTC: ~50 test periods (skips 2025 historical, uses synthetic 2026-2031)
+  - Automatic period filtering based on asset data availability
+  - Correlation analysis enabled for BTC (uses ETH correlation)
+  - Commands: `pnpm eth:ml-optimize` and `pnpm btc:ml-optimize`
+  - Documentation: `data/backfill-reports/ML_OPTIMIZER_READY_BOTH_ASSETS.md`
+- ✅ **Script Output Improvements (Jan 2026)** - Next Steps Guidance
+  - ML optimizer outputs next command to run (`pnpm eth:compare-config` or `pnpm btc:compare-config`)
+  - Compare script outputs next steps (switch config if improved, or re-run optimization)
+  - Improved user workflow guidance
 - ✅ **Improved Backfill Test Logging** - Cleaner, more informative logs
   - Config display: Shows Redis key `[source]` - short name (e.g., `eth:adaptive:strategy:config [default] - B0.26-S0.30|...`)
   - Removed verbose candle loading logs (not useful for debugging)
@@ -422,6 +451,22 @@
   - Replaced `new Date(dateString).getFullYear()` with direct string parsing
   - Prevents timezone-related year calculation errors (e.g., 2026 showing as 2025)
   - Fixed in `backfill-test.ts` and `ml-strategy-optimizer.ts`
+- ✅ **Testing Framework Enhancements (Jan 2026)**
+  - ✅ **Out-of-Sample Validation** (`iamrossi-j2y`) - Completed
+    - Script: `scripts/out-of-sample-validation.ts`
+    - Command: `pnpm eth:out-of-sample [asset] [holdout-percent]`
+    - Splits data into training/validation sets to detect overfitting
+    - Generates detailed reports comparing training vs validation performance
+  - ✅ **Stress Testing Framework** (`iamrossi-i61`) - Completed
+    - Script: `scripts/stress-test.ts`
+    - Command: `pnpm eth:stress-test [asset]`
+    - Tests strategy under extreme conditions (flash crashes, exchange outages, volatility)
+    - Generates reports comparing normal vs stress conditions
+  - ✅ **Walk-Forward Optimization** (`iamrossi-u6f`) - Completed
+    - Script: `scripts/walk-forward-optimization.ts`
+    - Command: `pnpm eth:walk-forward [asset]`
+    - Optimizes strategy on rolling windows to prevent overfitting
+    - Generates reports comparing in-sample vs out-of-sample performance
 
 
 ### Phase 9: Testing & Notifications (December 31, 2025)
@@ -577,7 +622,7 @@
 ### Immediate ✅ Completed
 1. ✅ **Generate BTC synthetic data** - Generated for 2026, 2027, 2028 (8h timeframe, standardized)
 2. ✅ **Run comprehensive tests** - Executed comprehensive multi-asset backfill tests for all combinations (all periods 2025-2028)
-3. ⏳ **Configure Discord webhook** - Set `DISCORD_WEBHOOK_URL` environment variable (code ready, user action needed)
+3. **Configure Discord webhook** - Set `DISCORD_WEBHOOK_URL` environment variable (code ready, user action needed) - See `iamrossi-dxy`
 4. ✅ **Test BTC trading** - BTC paper trading now works (historical data loading fixed, uses REAL data only)
 5. ✅ **Standardize on 8h timeframe** - Both ETH and BTC use 8h (comprehensive analysis complete)
 6. ✅ **Correlation integration** - Correlation affects confidence and thresholds (implemented and tested)
@@ -588,8 +633,8 @@
 3. ✅ **Data quality improvements** - OHLC fixing, gap filling, validation improvements complete
 4. ✅ **ML optimizer asset support** - Works for both ETH and BTC with asset-aware period filtering
 5. ✅ **Compare config BTC support** - Full BTC support added to comparison script
-6. **Historical trade replay** - Visualize past trades on chart
-7. **Cross-asset correlation UI** - Display correlation indicator on overview dashboard
+6. ✅ **Historical trade replay** - Visualize past trades on chart - See `iamrossi-x7v` ✅ **COMPLETED**
+7. ✅ **Cross-asset correlation UI** - Display correlation indicator on overview dashboard - See `iamrossi-9v0` ✅ **COMPLETED**
 
 ### Medium Term
 1. ✅ **Mobile-friendly dashboard** - Already responsive and mobile-friendly
@@ -662,7 +707,7 @@
 - ✅ Comprehensive test coverage (unit + integration)
 - ✅ Type safety with TypeScript
 - ✅ Error handling and validation
-- ⏳ Some optimization scripts could be refactored for reusability
+- Some optimization scripts could be refactored for reusability - See `iamrossi-fue`
 
 ### Performance
 - ✅ Caching for regime detection and indicators
@@ -682,6 +727,26 @@
   - Fetched candles saved to files for future use (reduces API calls)
   - Multiple gap-filling stages ensure complete coverage
   - **Result**: 0 OHLC warnings, 0 gap warnings in backfill tests
+- ✅ **Autonomous Operation Enhancements** (January 2026)
+  - Automatic gap detection and filling in paper trading (no manual intervention needed)
+  - Retry logic for stale candles (ensures fresh data on cron updates)
+  - Automatic gap filling from API for recent gaps (7-day window)
+  - Enhanced data quality validation in paper trading sessions
+  - **Result**: System maintains data quality autonomously without manual refresh
+- ✅ **Targeted Stops Implementation** (January 2026)
+  - High-frequency switching protection (numeric multiplier: 0.0-1.0, default 0.5)
+  - Volatility squeeze protection (numeric multiplier: 0.0-1.0, default 0.5)
+  - Signal strength multiplier (1.0-2.5, default 1.5) for low volatility periods
+  - Converted boolean flags to numeric thresholds for ML optimization
+  - All parameters included in ML optimizer and config short names
+  - **Result**: Fine-grained control over problematic trading scenarios
+- ✅ **ML Optimizer Improvements** (January 2026)
+  - Added 2-hour timeout protection to prevent infinite hangs
+  - Improved TensorFlow memory management (tensor disposal to prevent leaks)
+  - Enhanced exit handling with `setImmediate` for cleaner process termination
+  - All 50+ ML-optimizable parameters included and tested
+  - Comprehensive error handling and stability improvements
+  - **Result**: Production-ready ML optimizer with robust error handling
 
 ### Documentation
 - ✅ Complete strategy documentation
@@ -749,7 +814,7 @@
 - **Test Coverage** - 374+ tests passing, including 20 paper trading integration tests and 15 divergence detection tests
 - **Comparison Scripts** - Comprehensive tests comparing all asset/timeframe combinations (all periods 2025-2028)
 - **Divergence Data** - Generated BTC divergence data (39.2% correlation) for realistic correlation testing
-- **ML Strategy Optimizer** - Fully implemented using TensorFlow.js, multi-core support, config name logging, asset-aware period filtering
+- **ML Strategy Optimizer** - Fully implemented using TensorFlow.js, multi-core support, config name logging, asset-aware period filtering, timeout protection, tensor cleanup, improved exit handling
 - **Backfill Test Improvements** - Fixed timezone issues (year parsing), added config name logging, asset-aware period filtering, correlation alignment with tolerance
 - **Config Name Format** - Short config names in logs: `B0.41-S0.45|Be0.65-S0.25|R0.22|K0.25|A2.0` (Bullish/Bearish thresholds, Regime, Kelly, ATR)
 - **Compare Config Script** - Full BTC support, asset-aware period filtering, smart argument parsing

@@ -66,8 +66,8 @@ export async function checkDrawdownThreshold(
         type: 'system_error',
         severity: isPaused ? 'high' : 'medium', // High if already paused, medium if approaching
         message: isPaused 
-          ? `Drawdown protection ACTIVE: ${currentDrawdown.toFixed(2)}% (max threshold: ${(maxDrawdownThreshold * 100).toFixed(0)}%). Trading is paused.`
-          : `Drawdown approaching threshold: ${currentDrawdown.toFixed(2)}% (alert: ${thresholds.drawdownThreshold}%, max: ${(maxDrawdownThreshold * 100).toFixed(0)}%). Trading will pause at ${(maxDrawdownThreshold * 100).toFixed(0)}%.`,
+          ? `[${assetName.toUpperCase()}] Drawdown protection ACTIVE: ${currentDrawdown.toFixed(2)}% (max threshold: ${(maxDrawdownThreshold * 100).toFixed(0)}%). Trading is paused.`
+          : `[${assetName.toUpperCase()}] Drawdown approaching threshold: ${currentDrawdown.toFixed(2)}% (alert: ${thresholds.drawdownThreshold}%, max: ${(maxDrawdownThreshold * 100).toFixed(0)}%). Trading will pause at ${(maxDrawdownThreshold * 100).toFixed(0)}%.`,
         context: `Session: ${session.name || session.id}, Asset: ${assetName}, Peak: $${session.drawdownInfo.peakValue.toFixed(2)}`,
         timestamp: Date.now(),
       });
@@ -106,7 +106,7 @@ export async function checkWinRateThreshold(
       await sendErrorAlert({
         type: 'system_error',
         severity: 'medium',
-        message: `Win rate below threshold: ${winRate.toFixed(2)}% (threshold: ${thresholds.winRateThreshold}%, last ${sellTrades.length} trades). Circuit breaker may be active (${(circuitBreakerWinRate * 100).toFixed(0)}% for last ${circuitBreakerLookback} trades).`,
+        message: `[${assetName.toUpperCase()}] Win rate below threshold: ${winRate.toFixed(2)}% (threshold: ${thresholds.winRateThreshold}%, last ${sellTrades.length} trades). Circuit breaker may be active (${(circuitBreakerWinRate * 100).toFixed(0)}% for last ${circuitBreakerLookback} trades).`,
         context: `Session: ${session.name || session.id}, Asset: ${assetName}. Low win rate may cause circuit breaker to block new trades.`,
         timestamp: Date.now(),
       });
@@ -118,8 +118,7 @@ export async function checkWinRateThreshold(
  * Check no trade threshold
  */
 export async function checkNoTradeThreshold(
-  session: EnhancedPaperTradingSession,
-  thresholds: AlertThresholds = DEFAULT_THRESHOLDS
+  session: EnhancedPaperTradingSession
 ): Promise<void> {
   // Don't alert for inactive or emergency-stopped sessions
   if (!session.isActive || session.isEmergencyStopped) return;
@@ -133,16 +132,18 @@ export async function checkNoTradeThreshold(
   
   if (!lastTrade) {
     // No trades at all - check session age
-    // Only alert if session is very old (suggests system issue, not just waiting for conditions)
+    // Don't alert for normal waiting periods - only alert if session is extremely old (7+ days)
+    // This suggests a potential system issue, not just normal waiting for conditions
     const sessionAgeHours = (Date.now() - session.startedAt) / (1000 * 60 * 60);
-    if (sessionAgeHours > thresholds.noTradeHours) {
-      const alertKey = `notrade-${session.id}`;
+    const EXTREME_NO_TRADE_HOURS = 7 * 24; // 7 days
+    if (sessionAgeHours > EXTREME_NO_TRADE_HOURS) {
+      const alertKey = `notrade-extreme-${session.id}`;
       if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
         await sendErrorAlert({
           type: 'system_error',
-          severity: 'low', // Lower severity - could be normal waiting for conditions
-          message: `No trades since session start (${sessionAgeHours.toFixed(1)} hours). This may be normal if waiting for good market conditions.`,
-          context: `Session: ${session.name || session.id}, Asset: ${assetName}, Started: ${new Date(session.startedAt).toISOString()}. Check if signals are being generated but filtered by risk management.`,
+          severity: 'medium', // Medium severity only for extreme cases (7+ days)
+          message: `[${assetName.toUpperCase()}] No trades since session start (${sessionAgeHours.toFixed(1)} hours / ${(sessionAgeHours / 24).toFixed(1)} days). This may indicate a system issue.`,
+          context: `Session: ${session.name || session.id}, Asset: ${assetName}, Started: ${new Date(session.startedAt).toISOString()}. Verify signals are being generated and check risk management filters.`,
           timestamp: Date.now(),
         });
       }
@@ -152,16 +153,18 @@ export async function checkNoTradeThreshold(
   
   const hoursSinceLastTrade = (Date.now() - lastTrade.timestamp) / (1000 * 60 * 60);
   
-  // Only alert if it's been a very long time since last trade
-  // This suggests a potential system issue, not just normal waiting
-  if (hoursSinceLastTrade > thresholds.noTradeHours) {
-    const alertKey = `notrade-${session.id}`;
+  // Don't alert for no trades - this is normal when waiting for good market conditions
+  // The strategy is designed to wait for high-confidence signals, so periods without trades are expected
+  // Only alert if it's been an extremely long time (7 days) which might indicate a system issue
+  const EXTREME_NO_TRADE_HOURS = 7 * 24; // 7 days
+  if (hoursSinceLastTrade > EXTREME_NO_TRADE_HOURS) {
+    const alertKey = `notrade-extreme-${session.id}`;
     if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
       await sendErrorAlert({
         type: 'system_error',
-        severity: 'low', // Lower severity - could be normal waiting for conditions
-        message: `No trades in ${hoursSinceLastTrade.toFixed(1)} hours (threshold: ${thresholds.noTradeHours}h). This may be normal if waiting for good market conditions.`,
-        context: `Session: ${session.name || session.id}, Asset: ${assetName}, Last trade: ${new Date(lastTrade.timestamp).toISOString()}. Check if signals are being generated but filtered by risk management.`,
+        severity: 'medium', // Medium severity only for extreme cases (7+ days)
+        message: `[${assetName.toUpperCase()}] No trades in ${hoursSinceLastTrade.toFixed(1)} hours (${(hoursSinceLastTrade / 24).toFixed(1)} days). This may indicate a system issue.`,
+        context: `Session: ${session.name || session.id}, Asset: ${assetName}, Last trade: ${new Date(lastTrade.timestamp).toISOString()}. Verify signals are being generated and check risk management filters.`,
         timestamp: Date.now(),
       });
     }
@@ -206,7 +209,7 @@ export async function checkAllThresholds(
   await Promise.all([
     checkDrawdownThreshold(session, thresholds),
     checkWinRateThreshold(session, thresholds),
-    checkNoTradeThreshold(session, thresholds),
+    checkNoTradeThreshold(session),
     checkApiFailureThreshold(thresholds),
   ]);
 }

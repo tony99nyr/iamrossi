@@ -46,12 +46,83 @@ export interface EnhancedAdaptiveStrategyConfig {
   };
   // Maximum drawdown protection
   maxDrawdownThreshold?: number; // Maximum drawdown before pausing trading (default: 0.20 = 20%)
+  maxDrawdownExitThreshold?: number; // Critical drawdown to force exit all positions (default: 0.25 = 25%)
+  maxPositionHoldPeriods?: number; // Maximum periods to hold a losing position (default: 50, ~17 days for 8h timeframe)
+  // Entry criteria tuning
+  entryThresholdMultiplier?: number; // Multiplier for buy threshold to require stronger signals (default: 1.0 = no increase)
   // Position size limits
   minPositionSize?: number; // Minimum trade size in USDC (default: 10)
   maxPositionSize?: number; // Maximum trade size in USDC (default: unlimited, uses maxPositionPct instead)
   maxPositionConcentration?: number; // Maximum position concentration in single asset (default: 0.95 = 95%)
   // Price validation
   priceValidationThreshold?: number; // Maximum price movement since signal to allow trade (default: 0.02 = 2%)
+  // Correlation-based adjustments (ML-optimizable)
+  correlationAdjustments?: {
+    enabled: boolean; // Enable correlation-based threshold adjustments (default: true)
+    lowRiskThresholdMultiplier?: number; // Multiplier for confidence threshold when correlation risk is low (default: 0.9)
+    highRiskThresholdMultiplier?: number; // Multiplier for confidence threshold when correlation risk is high (default: 1.3)
+    lowRiskPositionMultiplier?: number; // Position size multiplier for low correlation risk (default: 1.1)
+    highRiskPositionMultiplier?: number; // Position size multiplier for high correlation risk (default: 0.8)
+    contradictingAlignmentMultiplier?: number; // Position size multiplier when correlation contradicts regime (default: 0.85)
+    contradictingAlignmentThreshold?: number; // Alignment threshold below which to reduce position (default: -0.3)
+  };
+  // Dynamic position sizing adjustments (ML-optimizable)
+  dynamicPositionSizingConfig?: {
+    minPositionMultiplier?: number; // Minimum position as multiplier of base (default: 0.7 = 70%)
+    maxPositionMultiplier?: number; // Maximum position as multiplier of base (default: 1.0 = 100%)
+  };
+  // Volatility calculation (ML-optimizable)
+  volatilityConfig?: {
+    lookbackPeriod?: number; // Periods to calculate volatility (default: 20)
+  };
+  // Momentum detection (ML-optimizable)
+  momentumConfig?: {
+    macdFastPeriod?: number; // MACD fast period (default: 12)
+    macdSlowPeriod?: number; // MACD slow period (default: 26)
+    macdSignalPeriod?: number; // MACD signal period (default: 9)
+    rsiPeriod?: number; // RSI period (default: 14)
+    priceMomentumLookback?: number; // Price momentum lookback periods (default: 20)
+  };
+  // Circuit breaker adjustments (ML-optimizable)
+  circuitBreakerConfig?: {
+    minTradesRequired?: number; // Minimum trades before checking circuit breaker (default: 5)
+  };
+  // Bull market participation improvements (ML-optimizable)
+  bullMarketParticipation?: {
+    enabled: boolean; // Enable enhanced bull market participation (default: true)
+    exitThresholdMultiplier?: number; // Multiplier for sell threshold in bull markets (default: 1.0 = no change, <1.0 = stay in longer)
+    positionSizeMultiplier?: number; // Multiplier for position size in strong bull markets (default: 1.0 = no change, >1.0 = larger positions)
+    trendStrengthThreshold?: number; // Minimum trend strength to apply bull market settings (default: 0.6)
+    useTrailingStops?: boolean; // Use trailing stops instead of fixed exits in bull markets (default: false)
+    trailingStopATRMultiplier?: number; // ATR multiplier for trailing stops in bull markets (default: 2.0)
+  };
+  // Regime transition filters (ML-optimizable)
+  regimeTransitionFilter?: {
+    enabled: boolean; // Enable regime transition filtering (default: true)
+    transitionPeriods?: number; // Number of periods to be cautious during transitions (default: 3)
+    positionSizeReduction?: number; // Reduce position size during transitions (default: 0.5 = 50% of normal)
+    minConfidenceDuringTransition?: number; // Minimum confidence required during transitions (default: 0.3)
+    stayOutDuringTransition?: boolean; // Completely stay out during transitions (default: false)
+  };
+  // Adaptive position sizing for uncertain periods (ML-optimizable)
+  adaptivePositionSizing?: {
+    enabled: boolean; // Enable adaptive position sizing (default: true)
+    highFrequencySwitchDetection?: boolean; // Detect and reduce sizing during high-frequency switches (default: true)
+    switchFrequencyPeriods?: number; // Periods to check for high-frequency switches (default: 5)
+    maxSwitchesAllowed?: number; // Maximum regime switches before reducing position size (default: 3)
+    uncertainPeriodMultiplier?: number; // Position size multiplier during uncertain periods (default: 0.5 = 50% of normal)
+    lowConfidenceMultiplier?: number; // Position size multiplier when confidence is low (default: 0.7 = 70% of normal)
+    confidenceThreshold?: number; // Confidence threshold below which to reduce position size (default: 0.4)
+    highFrequencySwitchPositionMultiplier?: number; // Position size multiplier during high-frequency switches (0.0 = stay out, 1.0 = no reduction, default: 0.5)
+  };
+  // Low volatility / consolidation filter (ML-optimizable)
+  lowVolatilityFilter?: {
+    enabled: boolean; // Enable low volatility filter (default: false)
+    minVolatilityThreshold?: number; // Minimum volatility to allow trading (default: 0.01 = 1% daily)
+    lookbackPeriods?: number; // Periods to calculate volatility (default: 20)
+    signalStrengthMultiplier?: number; // Multiplier for required signal strength during low volatility (1.0 = no change, >1.0 = stronger signals required, default: 1.5)
+    volatilitySqueezePositionMultiplier?: number; // Position size multiplier during volatility squeeze (0.0 = stay out, 1.0 = no reduction, default: 0.5)
+  };
 }
 
 // Track regime history for persistence
@@ -67,14 +138,16 @@ const peakPortfolioValues: Map<string, number> = new Map();
 function calculateVolatility(
   candles: PriceCandle[],
   currentIndex: number,
-  period: number = 20
+  period: number = 20,
+  config?: EnhancedAdaptiveStrategyConfig
 ): number {
-  if (currentIndex < period) return 0;
+  const lookbackPeriod = config?.volatilityConfig?.lookbackPeriod ?? period;
+  if (currentIndex < lookbackPeriod) return 0;
   
   const prices = candles.map(c => c.close);
   const returns: number[] = [];
   
-  for (let i = currentIndex - period + 1; i <= currentIndex; i++) {
+  for (let i = currentIndex - lookbackPeriod + 1; i <= currentIndex; i++) {
     if (i > 0 && prices[i - 1] > 0) {
       returns.push((prices[i]! - prices[i - 1]!) / prices[i - 1]!);
     }
@@ -117,10 +190,11 @@ function detectWhipsaw(
 function checkCircuitBreaker(
   sessionId: string,
   minWinRate: number = 0.2,
-  lookback: number = 10
+  lookback: number = 10,
+  minTradesRequired: number = 5
 ): boolean {
   const trades = recentTradeResults.get(sessionId) || [];
-  if (trades.length < 5) return false; // Need at least 5 trades
+  if (trades.length < minTradesRequired) return false;
   
   const recent = trades.slice(-lookback);
   const wins = recent.filter(t => t.profitable).length;
@@ -191,21 +265,84 @@ export function resetDrawdownTracking(sessionId: string, initialValue: number): 
 }
 
 /**
+ * Check if we're in a regime transition period
+ */
+function checkRegimeTransition(
+  candles: PriceCandle[],
+  currentIndex: number,
+  sessionId: string | undefined,
+  currentRegime: 'bullish' | 'bearish' | 'neutral',
+  transitionPeriods: number = 3
+): boolean {
+  if (!sessionId) return false; // Can't track transitions without session ID
+  
+  const history = regimeHistory.get(sessionId) || [];
+  
+  if (history.length < transitionPeriods) return false;
+  
+  // Check if regime has changed in recent periods (including current)
+  const recent = [...history.slice(-transitionPeriods), currentRegime];
+  const uniqueRegimes = new Set(recent);
+  
+  // If we have multiple regimes in recent history, we're in transition
+  return uniqueRegimes.size > 1;
+}
+
+/**
+ * Detect high-frequency regime switches
+ */
+function detectHighFrequencySwitches(
+  candles: PriceCandle[],
+  currentIndex: number,
+  sessionId: string | undefined,
+  config: NonNullable<EnhancedAdaptiveStrategyConfig['adaptivePositionSizing']>
+): boolean {
+  if (!sessionId) return false;
+  
+  const history = regimeHistory.get(sessionId) || [];
+  const checkPeriods = config.switchFrequencyPeriods ?? 5;
+  const maxSwitches = config.maxSwitchesAllowed ?? 3;
+  
+  if (history.length < checkPeriods) return false;
+  
+  const recent = history.slice(-checkPeriods);
+  let switches = 0;
+  
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i] !== recent[i - 1]) {
+      switches++;
+    }
+  }
+  
+  return switches > maxSwitches;
+}
+
+/**
  * Check if momentum is strong enough to confirm bullish regime
  */
 function hasStrongMomentum(
   candles: PriceCandle[],
   currentIndex: number,
-  threshold: number = 0.3
+  threshold: number = 0.3,
+  config?: EnhancedAdaptiveStrategyConfig
 ): boolean {
-  if (currentIndex < 50) return false;
+  const momentumConfig = config?.momentumConfig;
+  const macdFast = momentumConfig?.macdFastPeriod ?? 12;
+  const macdSlow = momentumConfig?.macdSlowPeriod ?? 26;
+  const macdSignal = momentumConfig?.macdSignalPeriod ?? 9;
+  const rsiPeriod = momentumConfig?.rsiPeriod ?? 14;
+  const priceLookback = momentumConfig?.priceMomentumLookback ?? 20;
+  
+  // Need enough data for the longest indicator
+  const minIndex = Math.max(macdSlow + macdSignal, rsiPeriod, priceLookback);
+  if (currentIndex < minIndex) return false;
 
   const prices = candles.map(c => c.close);
   
-  const { macd, signal, histogram } = calculateMACD(prices, 12, 26, 9);
-  const macdValue = getLatestIndicatorValue(macd, currentIndex, 34);
-  const signalValue = getLatestIndicatorValue(signal, currentIndex, 34);
-  const histogramValue = getLatestIndicatorValue(histogram, currentIndex, 34);
+  const { macd, signal, histogram } = calculateMACD(prices, macdFast, macdSlow, macdSignal);
+  const macdValue = getLatestIndicatorValue(macd, currentIndex, macdSlow + macdSignal);
+  const signalValue = getLatestIndicatorValue(signal, currentIndex, macdSlow + macdSignal);
+  const histogramValue = getLatestIndicatorValue(histogram, currentIndex, macdSlow + macdSignal);
   
   let momentumScore = 0;
   let momentumSignals = 0;
@@ -224,16 +361,16 @@ function hasStrongMomentum(
     momentumSignals++;
   }
   
-  const rsi = calculateRSI(prices, 14);
-  const rsiValue = getLatestIndicatorValue(rsi, currentIndex, 14);
+  const rsi = calculateRSI(prices, rsiPeriod);
+  const rsiValue = getLatestIndicatorValue(rsi, currentIndex, rsiPeriod);
   if (rsiValue !== null && rsiValue > 50) {
     momentumScore += 1;
     momentumSignals++;
   }
   
-  if (currentIndex >= 20) {
-    const price20PeriodsAgo = prices[currentIndex - 20];
-    const priceMomentum = (prices[currentIndex] - price20PeriodsAgo) / price20PeriodsAgo;
+  if (currentIndex >= priceLookback) {
+    const priceLookbackAgo = prices[currentIndex - priceLookback];
+    const priceMomentum = (prices[currentIndex] - priceLookbackAgo) / priceLookbackAgo;
     if (priceMomentum > 0) {
       momentumScore += 1;
       momentumSignals++;
@@ -317,7 +454,8 @@ function calculateDynamicPositionSize(
   }
   
   const maxPosition = config.maxBullishPosition || 0.95;
-  const minPosition = basePositionSize * 0.7; // Minimum 70% of base
+  const minMultiplier = config.dynamicPositionSizingConfig?.minPositionMultiplier ?? 0.7;
+  const minPosition = basePositionSize * minMultiplier;
   
   if (regime.regime === 'bullish') {
     // Scale from minPosition to maxPosition based on confidence
@@ -330,19 +468,27 @@ function calculateDynamicPositionSize(
       
       // High correlation (low risk) = can take larger positions
       // Low correlation (high risk) = reduce position size
-      if (riskLevel === 'low') {
-        position = Math.min(maxPosition, position * 1.1);
-      } else if (riskLevel === 'high') {
-        position = Math.max(minPosition, position * 0.8);
-      }
-      
-      // If correlation signal contradicts regime, reduce position size further
-      const regimeSignal = 1; // bullish
-      const alignment = correlationSignal * regimeSignal;
-      
-      if (alignment < -0.3) {
-        // Correlation contradicts regime - reduce position size
-        position = Math.max(minPosition, position * 0.85);
+      const correlationConfig = config.correlationAdjustments;
+      if (correlationConfig?.enabled !== false) { // Default to enabled if not specified
+        const lowRiskMultiplier = correlationConfig?.lowRiskPositionMultiplier ?? 1.1;
+        const highRiskMultiplier = correlationConfig?.highRiskPositionMultiplier ?? 0.8;
+        const contradictingMultiplier = correlationConfig?.contradictingAlignmentMultiplier ?? 0.85;
+        const contradictingThreshold = correlationConfig?.contradictingAlignmentThreshold ?? -0.3;
+        
+        if (riskLevel === 'low') {
+          position = Math.min(maxPosition, position * lowRiskMultiplier);
+        } else if (riskLevel === 'high') {
+          position = Math.max(minPosition, position * highRiskMultiplier);
+        }
+        
+        // If correlation signal contradicts regime, reduce position size further
+        const regimeSignal = 1; // bullish
+        const alignment = correlationSignal * regimeSignal;
+        
+        if (alignment < contradictingThreshold) {
+          // Correlation contradicts regime - reduce position size
+          position = Math.max(minPosition, position * contradictingMultiplier);
+        }
       }
     }
     
@@ -379,7 +525,7 @@ export function generateEnhancedAdaptiveSignal(
   
   // 1. Volatility Filter - Block trading if volatility too high
   const maxVolatility = config.maxVolatility || 0.05; // 5% daily volatility
-  const currentVolatility = calculateVolatility(candles, currentIndex, 20);
+  const currentVolatility = calculateVolatility(candles, currentIndex, 20, config);
   if (currentVolatility > maxVolatility) {
     // Return hold signal if volatility too high
     return {
@@ -417,7 +563,8 @@ export function generateEnhancedAdaptiveSignal(
   if (sessionId) {
     const minWinRate = config.circuitBreakerWinRate || 0.2;
     const lookback = config.circuitBreakerLookback || 10;
-    if (checkCircuitBreaker(sessionId, minWinRate, lookback)) {
+    const minTradesRequired = config.circuitBreakerConfig?.minTradesRequired ?? 5;
+    if (checkCircuitBreaker(sessionId, minWinRate, lookback, minTradesRequired)) {
       return {
         timestamp: candles[currentIndex]!.timestamp,
         signal: 0,
@@ -440,19 +587,28 @@ export function generateEnhancedAdaptiveSignal(
   // Adjust confidence threshold based on correlation risk level
   // Lower threshold when correlation is high (more confident), higher when low (less confident)
   let effectiveConfidenceThreshold = confidenceThreshold;
-  if (correlationContext) {
+  if (correlationContext && config.correlationAdjustments?.enabled !== false) {
+    const correlationConfig = config.correlationAdjustments;
+    const lowRiskMultiplier = correlationConfig?.lowRiskThresholdMultiplier ?? 0.9;
+    const highRiskMultiplier = correlationConfig?.highRiskThresholdMultiplier ?? 1.3;
+    
     if (correlationContext.riskLevel === 'low') {
       // High correlation - can be more confident, lower threshold slightly
-      effectiveConfidenceThreshold = confidenceThreshold * 0.9;
+      effectiveConfidenceThreshold = confidenceThreshold * lowRiskMultiplier;
     } else if (correlationContext.riskLevel === 'high') {
       // Low correlation - need higher confidence, raise threshold
-      effectiveConfidenceThreshold = confidenceThreshold * 1.3;
+      effectiveConfidenceThreshold = confidenceThreshold * highRiskMultiplier;
     }
   }
   
+  // 4. Require stronger signals for entry (improve win rate)
+  // Increase effective buy threshold by configurable amount to require stronger signals
+  // Default: 1.0 (no increase) - baseline configuration for maximum returns/win rate
+  let buyThresholdMultiplier = config.entryThresholdMultiplier ?? 1.0; // Default: no increase (baseline)
+  
   if (regime.regime === 'bullish' && regime.confidence >= effectiveConfidenceThreshold) {
     // Check momentum confirmation
-    momentumConfirmed = hasStrongMomentum(candles, currentIndex, momentumThreshold);
+    momentumConfirmed = hasStrongMomentum(candles, currentIndex, momentumThreshold, config);
     
     // Check regime persistence (require bullish for N periods)
     const regimePersisted = checkRegimePersistence(candles, currentIndex, persistencePeriods, 'bullish', sessionId);
@@ -482,13 +638,167 @@ export function generateEnhancedAdaptiveSignal(
     activeStrategy = config.neutralStrategy || config.bearishStrategy;
   }
 
+  // Check for regime transition (recent regime change)
+  const isRegimeTransition = checkRegimeTransition(candles, currentIndex, sessionId, regime.regime, 
+    config.regimeTransitionFilter?.transitionPeriods ?? 3);
+  
+  // Check for high-frequency switches
+  const isHighFrequencySwitch = config.adaptivePositionSizing?.enabled && 
+    config.adaptivePositionSizing?.highFrequencySwitchDetection &&
+    detectHighFrequencySwitches(candles, currentIndex, sessionId, config.adaptivePositionSizing);
+  
+  // Apply regime transition filter
+  if (config.regimeTransitionFilter?.enabled && isRegimeTransition) {
+    const transitionConfig = config.regimeTransitionFilter;
+    const minConfidence = transitionConfig.minConfidenceDuringTransition ?? 0.3;
+    
+    // Stay out completely if configured
+    if (transitionConfig.stayOutDuringTransition && regime.confidence < minConfidence) {
+      return {
+        timestamp: candles[currentIndex]!.timestamp,
+        signal: 0,
+        confidence: 0,
+        indicators: {},
+        action: 'hold',
+        regime,
+        activeStrategy: config.bearishStrategy,
+        momentumConfirmed: false,
+        positionSizeMultiplier: 0,
+      };
+    }
+    
+    // Reduce position size during transitions
+    const transitionMultiplier = transitionConfig.positionSizeReduction ?? 0.5;
+    positionSizeMultiplier *= transitionMultiplier;
+  }
+  
+  // Apply adaptive position sizing for uncertain periods
+  if (config.adaptivePositionSizing?.enabled) {
+    const adaptiveConfig = config.adaptivePositionSizing;
+    
+    // Apply position size multiplier during high-frequency switches
+    if (isHighFrequencySwitch) {
+      const hfMultiplier = adaptiveConfig.highFrequencySwitchPositionMultiplier ?? 0.5;
+      if (hfMultiplier === 0) {
+        // Stay out completely
+        return {
+          timestamp: candles[currentIndex]!.timestamp,
+          signal: 0,
+          confidence: 0,
+          indicators: {},
+          action: 'hold',
+          regime,
+          activeStrategy: config.bearishStrategy,
+          momentumConfirmed: false,
+          positionSizeMultiplier: 0,
+        };
+      }
+      // Apply multiplier (0.0-1.0 range)
+      positionSizeMultiplier *= hfMultiplier;
+    }
+    
+    // Reduce position size when confidence is low
+    const confidenceThreshold = adaptiveConfig.confidenceThreshold ?? 0.4;
+    if (regime.confidence < confidenceThreshold) {
+      positionSizeMultiplier *= (adaptiveConfig.lowConfidenceMultiplier ?? 0.7);
+    }
+  }
+  
+  // Check for low volatility / consolidation (volatility squeeze)
+  if (config.lowVolatilityFilter?.enabled) {
+    const lowVolConfig = config.lowVolatilityFilter;
+    const lookbackPeriods = lowVolConfig.lookbackPeriods ?? 20;
+    const minVolatility = lowVolConfig.minVolatilityThreshold ?? 0.01; // 1% daily
+    
+    const currentVolatility = calculateVolatility(candles, currentIndex, lookbackPeriods, config);
+    const isLowVolatility = currentVolatility < minVolatility;
+    
+    if (isLowVolatility) {
+      // Apply position size multiplier during volatility squeeze
+      const squeezeMultiplier = lowVolConfig.volatilitySqueezePositionMultiplier ?? 0.5;
+      if (squeezeMultiplier === 0) {
+        // Stay out completely
+        return {
+          timestamp: candles[currentIndex]!.timestamp,
+          signal: 0,
+          confidence: 0,
+          indicators: {},
+          action: 'hold',
+          regime,
+          activeStrategy: config.bearishStrategy,
+          momentumConfirmed: false,
+          positionSizeMultiplier: 0,
+        };
+      }
+      // Apply multiplier (0.0-1.0 range)
+      positionSizeMultiplier *= squeezeMultiplier;
+      
+      // Require stronger signals during low volatility (always active if multiplier > 1.0)
+      const signalStrengthMultiplier = lowVolConfig.signalStrengthMultiplier ?? 1.5;
+      if (signalStrengthMultiplier > 1.0) {
+        // This will be applied after signal generation
+        // We'll adjust the buy threshold multiplier
+        buyThresholdMultiplier *= signalStrengthMultiplier;
+      }
+    }
+  }
+
   // Generate signal using the active strategy
   const signal = generateSignal(candles, activeStrategy, currentIndex);
   
-  // Apply position size multiplier if using bullish strategy
+  // Apply entry criteria based on config (baseline: no filtering)
   const adjustedSignal = { ...signal };
+  if (signal.action === 'buy' && buyThresholdMultiplier > 1.0) {
+    // Only apply stricter entry criteria if multiplier > 1.0
+    const effectiveBuyThreshold = activeStrategy.buyThreshold * buyThresholdMultiplier;
+    if (signal.signal < effectiveBuyThreshold) {
+      adjustedSignal.action = 'hold'; // Block weak buy signals
+    }
+  }
+  
+  // Apply bull market participation improvements
+  if (config.bullMarketParticipation?.enabled && 
+      activeStrategy === config.bullishStrategy && 
+      momentumConfirmed &&
+      regime.confidence >= (config.bullMarketParticipation.trendStrengthThreshold ?? 0.6)) {
+    const bullConfig = config.bullMarketParticipation;
+    
+    // Adjust exit threshold (lower = stay in longer)
+    if (bullConfig.exitThresholdMultiplier && bullConfig.exitThresholdMultiplier < 1.0) {
+      // Make sell threshold less negative (harder to exit)
+      const originalSellThreshold = activeStrategy.sellThreshold;
+      const adjustedSellThreshold = originalSellThreshold * bullConfig.exitThresholdMultiplier;
+      // Note: This affects the signal generation, but we can't modify the strategy here
+      // Instead, we'll adjust the signal action after generation
+      if (signal.action === 'sell' && signal.signal > adjustedSellThreshold) {
+        adjustedSignal.action = 'hold'; // Don't exit yet in strong bull markets
+      }
+    }
+    
+    // Increase position size in strong bull markets
+    if (bullConfig.positionSizeMultiplier && bullConfig.positionSizeMultiplier > 1.0) {
+      positionSizeMultiplier *= bullConfig.positionSizeMultiplier;
+    }
+  }
+  
+  // Apply position size multiplier if using bullish strategy
   if (activeStrategy === config.bullishStrategy && momentumConfirmed) {
     adjustedSignal.signal = Math.min(1, signal.signal * positionSizeMultiplier);
+  }
+
+  // Update regime history for transition detection (only if sessionId provided)
+  if (sessionId) {
+    const cacheKey = sessionId;
+    if (!regimeHistory.has(cacheKey)) {
+      regimeHistory.set(cacheKey, []);
+    }
+    const history = regimeHistory.get(cacheKey)!;
+    history.push(regime.regime);
+    // Keep only last 20 periods to avoid memory growth
+    if (history.length > 20) {
+      history.shift();
+    }
+    regimeHistory.set(cacheKey, history);
   }
 
   return {

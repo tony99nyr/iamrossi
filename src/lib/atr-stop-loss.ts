@@ -39,7 +39,7 @@ export interface StopLossResult {
 
 const DEFAULT_CONFIG: StopLossConfig = {
   enabled: true,
-  atrMultiplier: 2.0, // 2x ATR stop loss
+  atrMultiplier: 2.0, // 2.0x ATR stop loss (baseline configuration)
   trailing: true,
   useEMA: true,
   atrPeriod: 14,
