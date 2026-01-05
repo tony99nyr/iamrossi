@@ -3,7 +3,7 @@
  * Detect and Fill Missing Candles for ETH and BTC
  * 
  * This script:
- * 1. Checks both ETH and BTC for missing candles (8h, 1d, 12h timeframes)
+ * 1. Checks both ETH and BTC for missing candles (8h timeframe)
  * 2. Detects gaps using data quality validator
  * 3. Fetches missing candles from API
  * 4. Saves to both Redis and files
@@ -12,7 +12,7 @@
  *   pnpm tsx scripts/detect-and-fill-missing-candles.ts [timeframe]
  * 
  * Examples:
- *   pnpm tsx scripts/detect-and-fill-missing-candles.ts        # Checks 8h, 1d, 12h
+ *   pnpm tsx scripts/detect-and-fill-missing-candles.ts        # Checks 8h
  *   pnpm tsx scripts/detect-and-fill-missing-candles.ts 8h     # Only 8h timeframe
  */
 
@@ -138,7 +138,7 @@ async function main() {
   const timeframeArg = process.argv[2];
   const timeframes = timeframeArg 
     ? [timeframeArg] 
-    : ['8h', '1d', '12h']; // Default: check all critical timeframes
+    : ['8h']; // Default: check 8h (primary trading timeframe)
   
   console.log(`\n${'='.repeat(80)}`);
   console.log(`🔍 Detect and Fill Missing Candles`);

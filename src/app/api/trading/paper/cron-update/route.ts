@@ -11,7 +11,7 @@ import crypto from 'crypto';
  * Background cron job to update price candles and paper trading sessions (if active)
  * 
  * This endpoint:
- * 1. Always fetches the latest price for BOTH ETH and BTC and updates candles (1d, 1h, 8h, 12h, 5m) in Redis
+ * 1. Always fetches the latest price for BOTH ETH and BTC and updates candles (1d, 1h, 8h, 5m) in Redis
  * 2. Updates paper trading sessions for BOTH assets if they are active
  * 
  * NOTE: Vercel Hobby plan only allows daily cron jobs, so this endpoint
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch latest prices for ALL assets (ETH and BTC)
-    // fetchLatestPrice calls updateTodayCandle for 1d, 1h, 8h, 12h, and 5m timeframes
+    // fetchLatestPrice calls updateTodayCandle for 1d, 1h, 8h, and 5m timeframes
     const priceFetches: Record<TradingAsset, { success: boolean; price?: number; error?: string }> = {
       eth: { success: false },
       btc: { success: false },
@@ -127,8 +127,8 @@ export async function GET(request: NextRequest) {
       const asset = assetId as TradingAsset;
       const symbol = config.symbol;
       
-      // Focus on 8h candles (primary trading timeframe), also check 1d and 12h
-      const timeframes = ['8h', '1d', '12h'];
+      // Focus on 8h candles (primary trading timeframe)
+      const timeframes = ['8h'];
       
       for (const timeframe of timeframes) {
         try {
