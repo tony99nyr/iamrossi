@@ -594,7 +594,10 @@ export class PaperTradingService {
           const missingStart = Math.min(...endGaps.map(g => g.expected));
           const missingEnd = Math.max(...endGaps.map(g => g.expected));
           const missingStartDate = new Date(missingStart).toISOString().split('T')[0];
-          const missingEndDate = new Date(missingEnd).toISOString().split('T')[0];
+          // Extend endDate to today to ensure fetchPriceCandles doesn't treat it as historical
+          // This forces API fetch for recent missing candles
+          const todayDate = new Date().toISOString().split('T')[0];
+          const missingEndDate = todayDate; // Use today to ensure API fetch
           
           try {
             const endCandles = await fetchPriceCandles(
@@ -603,8 +606,8 @@ export class PaperTradingService {
               missingStartDate,
               missingEndDate,
               currentPrice,
-              false,
-              false
+              false, // Don't skip API fetch
+              false  // No synthetic data
             );
             
             if (endCandles.length > 0) {

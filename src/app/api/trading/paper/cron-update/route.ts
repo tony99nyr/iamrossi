@@ -159,7 +159,10 @@ export async function GET(request: NextRequest) {
               const missingStart = Math.min(...recentGaps.map(g => g.expected));
               const missingEnd = Math.max(...recentGaps.map(g => g.expected));
               const missingStartDate = new Date(missingStart).toISOString().split('T')[0];
-              const missingEndDate = new Date(missingEnd).toISOString().split('T')[0];
+              // Extend endDate to today to ensure fetchPriceCandles doesn't treat it as historical
+              // This forces API fetch for recent missing candles
+              const todayDate = new Date().toISOString().split('T')[0];
+              const missingEndDate = todayDate; // Use today to ensure API fetch
               
               // Fetch missing candles from API (automatically saves to Redis)
               const filledCandles = await fetchPriceCandles(
