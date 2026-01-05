@@ -11,8 +11,35 @@ jobs:
   update-trading-bot:
     runs-on: ubuntu-latest
     timeout-minutes: 4  # Reduced from 5 to ensure quick failure if API is slow
+    permissions:
+      contents: write  # Required to push commits back to repository
     
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # Fetch full history for proper git operations
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Configure Git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+      
       - name: Call Trading Bot Update API
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -124,4 +151,65 @@ jobs:
           
           # Should not reach here, but just in case
           exit 1
+      
+      - name: Detect and fill missing candles
+        env:
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+        run: |
+          if [ -z "$REDIS_URL" ]; then
+            echo "⚠️  REDIS_URL not set - skipping gap detection/filling"
+            echo "   (This is optional - cron job still updated prices)"
+            exit 0
+          fi
+          echo "🔍 Detecting and filling missing candles for ETH and BTC (8h, 1d, 12h)..."
+          echo "🔗 Connecting to Redis (URL: ${REDIS_URL:0:30}...)"
+          pnpm detect-missing-candles || {
+            echo "⚠️  Gap detection/filling completed with warnings or errors"
+            # Continue even if there are warnings - API update was successful
+            exit 0
+          }
+      
+      - name: Check for file changes
+        id: git-check
+        run: |
+          # Check specifically for changes in data/historical-prices/
+          if [ -n "$(git status --porcelain data/historical-prices/)" ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "📝 Missing candles were filled and files updated in data/historical-prices/"
+            git status --short data/historical-prices/
+            echo ""
+            echo "Changed files:"
+            git diff --name-only data/historical-prices/ || true
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "✅ No file changes (no missing candles found or already in files)"
+          fi
+      
+      - name: Commit and push changes
+        if: steps.git-check.outputs.changes == 'true'
+        run: |
+          echo "📦 Staging changes in data/historical-prices/"
+          git add data/historical-prices/
+          
+          echo "📝 Committing changes..."
+          git commit -m "chore: fill missing candles detected by cron job [skip ci]" || {
+            echo "⚠️  Commit failed - files may have been identical or already committed"
+            exit 0
+          }
+          
+          echo "📊 Commit details:"
+          git log -1 --stat
+          
+          echo "🚀 Pushing to origin/main..."
+          git push origin HEAD:main || {
+            echo "❌ Failed to push changes"
+            echo "💡 This may be due to:"
+            echo "   1. GITHUB_TOKEN permissions (check workflow permissions)"
+            echo "   2. Branch protection rules (may need to use pull request)"
+            echo "   3. Network issues"
+            echo ""
+            echo "⚠️  Changes are committed locally but not pushed - they will be lost on next deploy!"
+            exit 1  # Fail the workflow if push fails - this is critical
+          }
+          echo "✅ Changes committed and pushed to repository"
 

@@ -42,6 +42,22 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
       
+      - name: Detect and fill missing candles
+        env:
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+        run: |
+          if [ -z "$REDIS_URL" ]; then
+            echo "❌ ERROR: REDIS_URL secret is not set in GitHub Secrets"
+            echo "   Please add REDIS_URL to Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "🔍 Detecting and filling missing candles for ETH and BTC (8h, 1d, 12h)..."
+          echo "🔗 Connecting to Redis (URL: ${REDIS_URL:0:30}...)"
+          pnpm detect-missing-candles || {
+            echo "⚠️  Gap detection/filling completed with warnings or errors"
+            # Continue even if there are warnings - migration will still run
+          }
+      
       - name: Run migration script
         env:
           REDIS_URL: ${{ secrets.REDIS_URL }}

@@ -54,6 +54,7 @@
     "eth:tune": "npx tsx scripts/tune-risk-parameters.ts",
     "eth:fix-missing": "npx tsx scripts/fix-eth-missing-candles.ts eth",
     "btc:fix-missing": "npx tsx scripts/fix-eth-missing-candles.ts btc",
+    "detect-missing-candles": "npx tsx scripts/detect-and-fill-missing-candles.ts",
     "validate:full": "pnpm validate && pnpm eth:verify-backtest",
     "redis:analyze": "npx tsx scripts/analyze-redis-memory.ts",
     "google-fit:exchange-token": "npx tsx scripts/exchange-google-fit-token.ts",

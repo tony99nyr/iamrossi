@@ -580,10 +580,52 @@ export class PaperTradingService {
         }
       }
       
-      // If gaps still exist after API fill attempt, log warning but continue
+      // If gaps still exist after API fill attempt, try to fetch missing end candles explicitly
       const remainingGaps = detectGaps(candles, timeframe, gapStartTime, gapEndTime);
       if (remainingGaps.missingCandles.length > 0) {
-        console.warn(`[Paper Trading] ${remainingGaps.missingCandles.length} gaps remain after fill attempt. This may affect regime detection accuracy.`);
+        // Try to fetch missing end candles explicitly
+        const now = Date.now();
+        const endGaps = remainingGaps.missingCandles.filter(m => {
+          const gapAge = now - m.expected;
+          return gapAge > 0 && gapAge < 7 * 24 * 60 * 60 * 1000; // Last 7 days
+        });
+        
+        if (endGaps.length > 0) {
+          const missingStart = Math.min(...endGaps.map(g => g.expected));
+          const missingEnd = Math.max(...endGaps.map(g => g.expected));
+          const missingStartDate = new Date(missingStart).toISOString().split('T')[0];
+          const missingEndDate = new Date(missingEnd).toISOString().split('T')[0];
+          
+          try {
+            const endCandles = await fetchPriceCandles(
+              symbol,
+              timeframe,
+              missingStartDate,
+              missingEndDate,
+              currentPrice,
+              false,
+              false
+            );
+            
+            if (endCandles.length > 0) {
+              // Merge with existing candles
+              const allCandles = [...candles, ...endCandles];
+              const merged = allCandles
+                .filter((c, i, arr) => arr.findIndex(cc => cc.timestamp === c.timestamp) === i)
+                .sort((a, b) => a.timestamp - b.timestamp);
+              candles = merged;
+              console.log(`[Paper Trading] Filled ${endCandles.length} missing end candles from API`);
+            }
+          } catch (error) {
+            console.warn(`[Paper Trading] Failed to fetch missing end candles:`, error instanceof Error ? error.message : error);
+          }
+        }
+        
+        // Re-check gaps after fetch
+        const finalGaps = detectGaps(candles, timeframe, gapStartTime, gapEndTime);
+        if (finalGaps.missingCandles.length > 0) {
+          console.warn(`[Paper Trading] ${finalGaps.missingCandles.length} gaps remain after fill attempt. This may affect regime detection accuracy.`);
+        }
       }
     }
 

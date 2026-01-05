@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PaperTradingService } from '@/lib/paper-trading-enhanced';
-import { fetchLatestPrice } from '@/lib/eth-price-service';
+import { fetchLatestPrice, fetchPriceCandles } from '@/lib/eth-price-service';
 import { ASSET_CONFIGS, type TradingAsset } from '@/lib/asset-config';
 import { isNotificationsEnabled, sendErrorAlert } from '@/lib/notifications';
+import { detectGaps } from '@/lib/data-quality-validator';
 import crypto from 'crypto';
 
 /**
@@ -114,6 +115,85 @@ export async function GET(request: NextRequest) {
     });
 
     await Promise.allSettled(pricePromises);
+
+    // NEW: Gap detection and filling for each asset (especially 8h candles)
+    // This proactively fills missing candles to prevent data quality issues
+    const gapFillingResults: Record<TradingAsset, Record<string, { detected: number; filled: number }>> = {
+      eth: {},
+      btc: {},
+    };
+
+    const gapFillingPromises = Object.entries(ASSET_CONFIGS).map(async ([assetId, config]) => {
+      const asset = assetId as TradingAsset;
+      const symbol = config.symbol;
+      
+      // Focus on 8h candles (primary trading timeframe), also check 1d and 12h
+      const timeframes = ['8h', '1d', '12h'];
+      
+      for (const timeframe of timeframes) {
+        try {
+          // Load candles to check for gaps (last 7 days)
+          const endDate = new Date().toISOString().split('T')[0];
+          const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          
+          const candles = await fetchPriceCandles(symbol, timeframe, startDate, endDate, undefined, false, false);
+          
+          if (candles.length === 0) continue;
+          
+          // Detect gaps
+          const startTime = new Date(startDate).getTime();
+          const endTime = new Date(endDate + 'T23:59:59.999Z').getTime();
+          const gapInfo = detectGaps(candles, timeframe, startTime, endTime);
+          
+          if (gapInfo.missingCandles.length > 0) {
+            // Filter to recent gaps only (within last 7 days, completed periods)
+            const now = Date.now();
+            const recentGaps = gapInfo.missingCandles.filter(m => {
+              const gapAge = now - m.expected;
+              const maxGapAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+              return gapAge > 0 && gapAge < maxGapAge;
+            });
+            
+            if (recentGaps.length > 0) {
+              // Calculate date range for missing candles
+              const missingStart = Math.min(...recentGaps.map(g => g.expected));
+              const missingEnd = Math.max(...recentGaps.map(g => g.expected));
+              const missingStartDate = new Date(missingStart).toISOString().split('T')[0];
+              const missingEndDate = new Date(missingEnd).toISOString().split('T')[0];
+              
+              // Fetch missing candles from API (automatically saves to Redis)
+              const filledCandles = await fetchPriceCandles(
+                symbol,
+                timeframe,
+                missingStartDate,
+                missingEndDate,
+                undefined,
+                false, // Don't skip API fetch
+                false  // No synthetic data
+              );
+              
+              if (filledCandles.length > 0) {
+                gapFillingResults[asset][timeframe] = {
+                  detected: recentGaps.length,
+                  filled: filledCandles.length,
+                };
+                console.log(`✅ [Cron] Filled ${filledCandles.length} missing ${timeframe} candles for ${config.displayName}`);
+              } else {
+                gapFillingResults[asset][timeframe] = {
+                  detected: recentGaps.length,
+                  filled: 0,
+                };
+              }
+            }
+          }
+        } catch (error) {
+          // Non-critical - log but don't fail the cron job
+          console.warn(`⚠️ [Cron] Failed to check/fill gaps for ${config.displayName} ${timeframe}:`, error instanceof Error ? error.message : error);
+        }
+      }
+    });
+
+    await Promise.allSettled(gapFillingPromises);
 
     // Check for active sessions for ALL assets and update them
     // Both TRADING_UPDATE_TOKEN and CRON_SECRET can update sessions (execute trades)
