@@ -32,7 +32,14 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
       return;
     }
 
+    // Create AbortController to cancel in-flight requests when timeRange changes
+    const abortController = new AbortController();
+    let isCancelled = false;
+
     const fetchCandles = async () => {
+      // Capture current timeRange to check if it changed during fetch
+      const currentTimeRange = timeRange;
+      
       try {
         // Determine timeframe based on timeRange
         const timeframe = timeRange === '48h' ? '5m' : (session.config.bullishStrategy.timeframe || '8h');
@@ -49,11 +56,18 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
         // This ensures SMA200 and all other indicators are calculated correctly
         const regimeBufferMs = 200 * 8 * 60 * 60 * 1000;
         
-        switch (timeRange) {
+        switch (currentTimeRange) {
           case '48h':
-            // For 48h, fetch last 48 hours + buffer for regime calculation
-            const cutoff48h = now - (48 * 60 * 60 * 1000);
-            startDate = new Date(cutoff48h - regimeBufferMs).toISOString().split('T')[0];
+            // For 48h with 5m candles, only fetch last 48 hours (no buffer needed)
+            // Regime calculation uses 8h candles which are fetched separately
+            if (timeframe === '5m') {
+              const cutoff48h = now - (48 * 60 * 60 * 1000);
+              startDate = new Date(cutoff48h).toISOString().split('T')[0];
+            } else {
+              // For other timeframes, add buffer for regime calculation
+              const cutoff48h = now - (48 * 60 * 60 * 1000);
+              startDate = new Date(cutoff48h - regimeBufferMs).toISOString().split('T')[0];
+            }
             break;
           case '7d':
             // 7 days + 67 days buffer = 74 days
@@ -93,46 +107,89 @@ export default function PriceChart({ trades, timeRange = 'all', session }: Price
         // Use skipAPIFetch=false to match strategy behavior
         const response = await fetch(`/api/trading/candles?symbol=${symbol}&timeframe=${timeframe}&startDate=${startDate}&endDate=${endDate}&skipAPIFetch=false`, {
           credentials: 'include',
+          signal: abortController.signal,
         });
+        
+        // Check if request was cancelled or timeRange changed
+        if (isCancelled || timeRange !== currentTimeRange) {
+          return;
+        }
         
         if (response.ok) {
           const data = await response.json();
+          
+          // Double-check timeRange hasn't changed before updating state
+          if (isCancelled || timeRange !== currentTimeRange) {
+            return;
+          }
+          
           setActualCandles(data.candles || []);
           
           // For 48H view, also fetch 8h candles for regime calculation
           // This ensures regime matches what the trading strategy actually calculates
-          if (timeRange === '48h') {
+          if (currentTimeRange === '48h') {
             const regimeTimeframe = session.config.bullishStrategy.timeframe || '8h';
             // Need to fetch enough 8h candles for SMA200 calculation
             const regimeStartDate = new Date(now - regimeBufferMs).toISOString().split('T')[0];
             const regimeSymbol = session.asset === 'btc' ? 'BTCUSDT' : 'ETHUSDT';
             const regimeResponse = await fetch(`/api/trading/candles?symbol=${regimeSymbol}&timeframe=${regimeTimeframe}&startDate=${regimeStartDate}&endDate=${endDate}&skipAPIFetch=false`, {
               credentials: 'include',
+              signal: abortController.signal,
             });
+            
+            // Check again if cancelled or timeRange changed
+            if (isCancelled || timeRange !== currentTimeRange) {
+              return;
+            }
             
             if (regimeResponse.ok) {
               const regimeData = await regimeResponse.json();
-              setRegimeCandles(regimeData.candles || []);
+              
+              // Final check before updating state
+              if (!isCancelled && timeRange === currentTimeRange) {
+                setRegimeCandles(regimeData.candles || []);
+              }
             } else {
-              setRegimeCandles(null);
+              if (!isCancelled && timeRange === currentTimeRange) {
+                setRegimeCandles(null);
+              }
             }
           } else {
             // For non-48H views, actualCandles are already 8h, so use them for regime
-            setRegimeCandles(null);
+            if (!isCancelled && timeRange === currentTimeRange) {
+              setRegimeCandles(null);
+            }
           }
         } else {
-          console.warn('Failed to fetch candles for chart');
+          if (!isCancelled && timeRange === currentTimeRange) {
+            console.warn('Failed to fetch candles for chart');
+            setActualCandles(null);
+            setRegimeCandles(null);
+          }
+        }
+      } catch (error) {
+        // Ignore AbortError (expected when cancelling)
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
+        
+        // Only update state if not cancelled and timeRange hasn't changed
+        // Note: currentTimeRange is captured at the start of the function
+        if (!isCancelled && timeRange === currentTimeRange) {
+          console.warn('Error fetching candles for chart:', error);
           setActualCandles(null);
           setRegimeCandles(null);
         }
-      } catch (error) {
-        console.warn('Error fetching candles for chart:', error);
-        setActualCandles(null);
-        setRegimeCandles(null);
       }
     };
 
     fetchCandles();
+
+    // Cleanup: abort in-flight requests when timeRange or session changes
+    return () => {
+      isCancelled = true;
+      abortController.abort();
+    };
   }, [session, timeRange]);
 
   // Filter candles based on time range

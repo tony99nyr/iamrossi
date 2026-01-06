@@ -623,6 +623,9 @@ export async function fetchPriceCandles(
   }
   
   // Remove duplicates and sort by timestamp
+  // Flag for targeted gap filling (function scope - must be accessible in try block)
+  let shouldUseTargetedGapFillingFlag = false;
+  
   if (allCandles.length > 0) {
     const uniqueCandles = Array.from(
       new Map(allCandles.map(c => [c.timestamp, c])).values()
@@ -869,6 +872,19 @@ export async function fetchPriceCandles(
           // Only warn about incomplete coverage for daily candles (intraday partial coverage is OK)
           // For very large historical ranges, incomplete coverage is expected and we should use what we have
           const coveragePercent = (uniqueIntervals.size / intervalsInRange) * 100;
+          const missingCount = intervalsInRange - uniqueIntervals.size;
+          
+          // OPTIMIZATION: If we have high coverage (>=95%) and only a few missing candles (<=5),
+          // use targeted gap filling instead of fetching the entire range
+          const shouldUseTargetedGapFilling = hasCompleteCoverage === false && 
+                                              coveragePercent >= 95 && 
+                                              missingCount > 0 && 
+                                              missingCount <= 5 &&
+                                              timeframe !== '5m' && 
+                                              timeframe !== '1h' &&
+                                              !skipAPIFetch &&
+                                              endTime >= Date.now() &&
+                                              !isLargeHistoricalRange;
           
           if (!skipAPIFetch && endTime >= Date.now() && !isLargeHistoricalRange) {
             // Only warn if coverage is below 95% - high coverage (95%+) is normal and doesn't need a warning
@@ -876,11 +892,18 @@ export async function fetchPriceCandles(
               console.log(`⚠️ Incomplete coverage: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${coveragePercent.toFixed(1)}%) - fetching from API`);
             } else {
               // High coverage is normal - use debug/info level instead of warning
-              console.log(`ℹ️ High coverage: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${coveragePercent.toFixed(1)}%) - fetching ${intervalsInRange - uniqueIntervals.size} missing from API`);
+              if (shouldUseTargetedGapFilling) {
+                console.log(`🎯 High coverage: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${coveragePercent.toFixed(1)}%) - using targeted gap filling for ${missingCount} missing candles`);
+              } else {
+                console.log(`ℹ️ High coverage: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${coveragePercent.toFixed(1)}%) - fetching ${missingCount} missing from API`);
+              }
             }
           } else if (isLargeHistoricalRange && !hasCompleteCoverage) {
             console.log(`ℹ️ Incomplete coverage for large historical range: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${coveragePercent.toFixed(1)}%, gaps expected for old dates)`);
           }
+          
+          // Store flag for later use in API fetch section
+          shouldUseTargetedGapFillingFlag = shouldUseTargetedGapFilling;
         }
       }
     } else {
@@ -1135,9 +1158,11 @@ export async function fetchPriceCandles(
     }
     
     // Fetch full range from API if we don't have enough data OR if we don't have complete coverage
+    // For intraday intervals (5m, 1h), use actualEndTime to include up to now
+    const coverageEndTime = (interval === '5m' || interval === '1h') ? actualEndTime : endTime;
     const hasCompleteCoverage = allCandles.length > 0 && 
       allCandles[0]!.timestamp <= startTime && 
-      allCandles[allCandles.length - 1]!.timestamp >= endTime;
+      allCandles[allCandles.length - 1]!.timestamp >= coverageEndTime;
     
     // Skip API fetch if:
     // 1. skipAPIFetch is true (explicit flag for backfill tests)
@@ -1149,7 +1174,9 @@ export async function fetchPriceCandles(
     // 4. We have enough data (>=50 candles) and it's a very large historical range (incomplete coverage expected)
     const isHistoricalPeriod = endTime < Date.now();
     const isLargeHistoricalRange = (endTime - startTime) > 365 * 24 * 60 * 60 * 1000; // More than 1 year
-    const hasEnoughData = allCandles.length >= 50 || allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime);
+    // For intraday intervals, use actualEndTime to include up to now
+    const rangeEndTime = (interval === '5m' || interval === '1h') ? actualEndTime : endTime;
+    const hasEnoughData = allCandles.length >= 50 || allCandles.some(c => c.timestamp >= startTime && c.timestamp <= rangeEndTime);
     // NOTE: We can't detect synthetic data by date - synthetic data is identified by location (synthetic/ directory)
     // When allowSyntheticData=false, synthetic data is never loaded, so hasSyntheticData is always false
     const hasSyntheticData = false; // Synthetic data detection removed - synthetic is identified by location, not date
@@ -1161,28 +1188,91 @@ export async function fetchPriceCandles(
     // Otherwise, fetch from API to fill gaps (needed for populate scripts)
     const shouldSkipHistoricalFetch = isHistoricalPeriod && hasCompleteCoverage;
     
-    if (!skipAPIFetch && !shouldSkipHistoricalFetch && !hasSyntheticData && !shouldSkipAPIFetchForLargeRange && (allCandles.length < 50 || !allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime) || !hasCompleteCoverage)) {
-      // For 8h candles, CryptoCompare is most reliable - try it first
-      // For other timeframes, use Binance first
-      if (interval === '8h') {
+    // For intraday intervals (5m, 1h), we need more candles to be considered "enough"
+    // 48 hours of 5m candles = 576 candles, 48 hours of 1h candles = 48 candles
+    // Always fetch if we don't have complete coverage for intraday intervals
+    const shouldFetchForIntraday = (interval === '5m' || interval === '1h') && !hasCompleteCoverage;
+    const minCandlesForIntraday = (interval === '5m' && (endTime - startTime) <= 48 * 60 * 60 * 1000) ? 400 : 50;
+    const hasEnoughIntradayData = (interval === '5m' || interval === '1h') 
+      ? allCandles.length >= minCandlesForIntraday && hasCompleteCoverage
+      : hasEnoughData;
+    
+    if (!skipAPIFetch && !shouldSkipHistoricalFetch && !hasSyntheticData && !shouldSkipAPIFetchForLargeRange && (shouldFetchForIntraday || !hasEnoughIntradayData || !hasCompleteCoverage)) {
+      // OPTIMIZATION: If we have high coverage (>=95%) and only a few missing candles (<=5),
+      // use targeted gap filling instead of fetching the entire range
+      // Use the flag calculated during coverage check
+      let useTargetedGapFilling = false;
+      if (shouldUseTargetedGapFillingFlag) {
+        // Use targeted gap filling for small gaps
         try {
-          const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
-          candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
-          if (candles.length > 0) {
-            // Success - CryptoCompare provided the data
+          const { detectGaps } = await import('./data-quality-validator');
+          const { fetchMissingCandles } = await import('./targeted-gap-filler');
+          
+          // CRITICAL: For targeted gap filling, only detect gaps in the RECENT range (last 7 days)
+          // NOT the full date range, which could be 91 days and include old historical gaps
+          const now = Date.now();
+          const recentWindowStart = now - (7 * 24 * 60 * 60 * 1000); // Last 7 days
+          const recentWindowEnd = now;
+          
+          // Only detect gaps in the recent window for targeted gap filling
+          const gapInfo = detectGaps(allCandles, timeframe, recentWindowStart, recentWindowEnd);
+          const missingTimestamps = gapInfo.missingCandles.map(m => m.expected);
+          
+          if (missingTimestamps.length > 0) {
+            console.log(`🎯 Using targeted gap filling for ${missingTimestamps.length} recent missing ${timeframe} candles`);
+            const filledCandles = await fetchMissingCandles(symbol, timeframe, missingTimestamps);
+            if (filledCandles.length > 0) {
+              // Merge filled candles with existing
+              allCandles.push(...filledCandles);
+              candles = Array.from(
+                new Map(allCandles.map(c => [c.timestamp, c])).values()
+              ).sort((a, b) => a.timestamp - b.timestamp);
+              console.log(`✅ Filled ${filledCandles.length} missing candles using targeted gap filling`);
+              useTargetedGapFilling = true; // Success - skip full range fetch
+            } else {
+              // Targeted gap filling failed, fall through to full range fetch
+              console.log(`⚠️  Targeted gap filling returned no candles, falling back to full range fetch`);
+            }
           } else {
-            throw new Error('CryptoCompare returned no candles');
+            // No recent gaps found - don't use targeted gap filling, and don't fetch full range either
+            // The "High coverage" message was misleading - the missing candle is old, not recent
+            console.log(`ℹ️  No recent gaps found (last 7 days). The missing candle(s) are historical. Skipping API fetch.`);
+            useTargetedGapFilling = true; // Set to true to skip full range fetch
           }
-        } catch {
-          // CryptoCompare failed, try Binance
-          console.log('CryptoCompare failed for 8h candles, trying Binance...');
-          candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
+        } catch (gapFillError) {
+          // Targeted gap filling failed, fall through to full range fetch
+          const errorMsg = gapFillError instanceof Error ? gapFillError.message : String(gapFillError);
+          console.warn(`⚠️  Targeted gap filling failed: ${errorMsg}, falling back to full range fetch`);
         }
-      } else {
-        // For non-8h candles, try Binance first
-        // Note: API might not return the most recent 08:00 candle if it's still in progress
-        // We'll merge API data with file data to preserve all candles from files
-        candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
+      }
+      
+      // If targeted gap filling didn't work or wasn't applicable, fetch full range
+      // BUT: Only fetch full range if we actually need to (not for old historical gaps)
+      if (!useTargetedGapFilling) {
+        // For 8h candles, CryptoCompare is most reliable - try it first
+        // For other timeframes, use Binance first
+        if (interval === '8h') {
+          try {
+            const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
+            candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
+            if (candles.length > 0) {
+              // Success - CryptoCompare provided the data
+            } else {
+              throw new Error('CryptoCompare returned no candles');
+            }
+          } catch {
+            // CryptoCompare failed, try Binance
+            console.log('CryptoCompare failed for 8h candles, trying Binance...');
+            candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
+          }
+        } else {
+          // For non-8h candles, try Binance first
+          // Note: API might not return the most recent 08:00 candle if it's still in progress
+          // We'll merge API data with file data to preserve all candles from files
+          // For intraday intervals (5m, 1h), use actualEndTime to include up to now
+          const apiEndTime = (interval === '5m' || interval === '1h') ? actualEndTime : endTime;
+          candles = await fetchBinanceCandles(symbol, interval, startTime, apiEndTime);
+        }
       }
     }
   } catch (error) {
@@ -1190,9 +1280,11 @@ export async function fetchPriceCandles(
     const isRateLimit = errorMessage.includes('451') || errorMessage.includes('429') || errorMessage.includes('Rate limited');
     
     // Calculate hasCompleteCoverage here too (needed in catch block)
+    // For intraday intervals (5m, 1h), use actualEndTime to include up to now
+    const coverageEndTimeInCatch = (interval === '5m' || interval === '1h') ? actualEndTime : endTime;
     const hasCompleteCoverageInCatch = allCandles.length > 0 && 
       allCandles[0]!.timestamp <= startTime && 
-      allCandles[allCandles.length - 1]!.timestamp >= endTime;
+      allCandles[allCandles.length - 1]!.timestamp >= coverageEndTimeInCatch;
     
     // Skip API fallbacks if skipAPIFetch is true or this is a historical period with complete coverage
     // For historical periods without complete coverage, still try fallback APIs (needed for populate scripts)
@@ -1237,7 +1329,9 @@ export async function fetchPriceCandles(
         
         try {
           const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
-          candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
+          // For intraday intervals (5m, 1h), use actualEndTime to include up to now
+          const apiEndTime = (interval === '5m' || interval === '1h') ? actualEndTime : endTime;
+          candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, apiEndTime);
           if (candles.length > 0) {
             // Success - CryptoCompare provided the data, skip CoinGecko
           } else {
@@ -1261,7 +1355,9 @@ export async function fetchPriceCandles(
           const ohlcCandles = await fetchCoinGeckoOHLC(symbol, daysToFetch);
           
           // Filter to requested time range (timestamps are already in milliseconds)
-          let filteredCandles = ohlcCandles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
+          // For intraday intervals (5m, 1h), use actualEndTime to include up to now
+          const filterEndTime = (interval === '5m' || interval === '1h') ? actualEndTime : endTime;
+          let filteredCandles = ohlcCandles.filter(c => c.timestamp >= startTime && c.timestamp <= filterEndTime);
           
           // Aggregate 30-minute candles to requested interval if needed
           if (interval !== '30m' && filteredCandles.length > 0) {
@@ -1277,7 +1373,9 @@ export async function fetchPriceCandles(
           console.error('CoinGecko OHLC failed, trying CoinGecko market_chart (old method):', ohlcError);
           // Fallback to CoinGecko market_chart (will aggregate price points into candles)
           try {
-            candles = await fetchCoinGeckoCandles(symbol, startTime, endTime, interval);
+            // For intraday intervals (5m, 1h), use actualEndTime to include up to now
+            const apiEndTime = (interval === '5m' || interval === '1h') ? actualEndTime : endTime;
+            candles = await fetchCoinGeckoCandles(symbol, startTime, apiEndTime, interval);
           } catch (fallbackError) {
             const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
             console.error('CoinGecko API also failed:', fallbackError);

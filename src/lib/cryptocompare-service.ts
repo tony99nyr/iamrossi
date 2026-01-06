@@ -53,6 +53,14 @@ export async function fetchCryptoCompareCandles(
   const hoursDiff = (endTimeSeconds - startTimeSeconds) / 3600;
   const daysDiff = hoursDiff / 24;
   
+  // DEBUG: Log the time range to help diagnose issues
+  if (hoursDiff > 200) {
+    console.error(`❌ [CryptoCompare] ERROR: Time range is ${hoursDiff.toFixed(1)} hours (${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()})`);
+    console.error(`   This should not happen for targeted gap filling! startTime: ${startTime}, endTime: ${endTime}`);
+  } else if (hoursDiff < 24 && timeframe === '8h') {
+    console.log(`🔍 [CryptoCompare Debug] Time range: ${hoursDiff.toFixed(1)} hours (${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()})`);
+  }
+  
   // Determine endpoint and aggregation
   let endpoint: string;
   let aggregate: number = 1;
@@ -83,8 +91,13 @@ export async function fetchCryptoCompareCandles(
   }
   
   // Calculate how many requests we need
+  // OPTIMIZATION: For small time ranges, we don't need multiple requests
   const pointsNeeded = endpoint === 'histohour' ? Math.ceil(hoursDiff) : Math.ceil(daysDiff);
-  const requestsNeeded = Math.ceil(pointsNeeded / maxPointsPerRequest);
+  // For aggregating timeframes (8h, 12h), calculate based on target candles needed, not hourly
+  const effectivePointsNeeded = aggregate > 1 && endpoint === 'histohour'
+    ? Math.ceil((pointsNeeded / aggregate) * aggregate) + aggregate  // Add buffer for aggregation
+    : pointsNeeded;
+  const requestsNeeded = Math.ceil(effectivePointsNeeded / maxPointsPerRequest);
   
   const allCandles: PriceCandle[] = [];
   
@@ -100,6 +113,7 @@ export async function fetchCryptoCompareCandles(
     // OPTIMIZATION: Only request what's needed, not the full 2000 limit
     let remainingPoints: number;
     if (endpoint === 'histohour') {
+      // Calculate hours needed for THIS request (from startTimeSeconds to currentEndTime)
       const hoursNeeded = Math.ceil((currentEndTime - startTimeSeconds) / 3600);
       // If aggregating, we need enough hourly candles for the target timeframe
       // For 8h: if we need 1 8h candle (8h), we only need 8-16 hourly candles (with small buffer)
@@ -110,10 +124,25 @@ export async function fetchCryptoCompareCandles(
         // Request hourly candles: target candles * aggregate + small buffer (max 1 period)
         // This ensures we have enough for aggregation without requesting 2000 when only 1 candle is needed
         const bufferHours = Math.min(targetIntervalHours, 8); // Max 8 hour buffer
-        const calculatedPoints = (targetCandlesNeeded * targetIntervalHours) + bufferHours;
-        // OPTIMIZATION: Cap at what's actually needed based on the time range, not the full 2000
-        // This prevents fetching 2000 hourly candles when only 1 candle is missing
-        remainingPoints = Math.min(calculatedPoints, hoursNeeded + bufferHours);
+        // CRITICAL FIX: For targeted gap filling, request ONLY what's needed
+        // For 1 missing 8h candle: hoursNeeded should be 8 (the exact 8-hour period), so request 8 hourly candles
+        // For 2 missing 8h candles: hoursNeeded should be 16, so request 16 hourly candles
+        // The key: hoursNeeded should match the actual time range, not be inflated
+        if (hoursNeeded <= 24) {
+          // Small range (1-3 candles): request exactly what's needed
+          // For 1 missing 8h candle: hoursNeeded = 8, so request 8 hourly candles
+          remainingPoints = hoursNeeded;
+        } else if (hoursNeeded <= 200) {
+          // Medium range: use calculated points but cap at hours needed
+          const calculatedPoints = (targetCandlesNeeded * targetIntervalHours) + bufferHours;
+          remainingPoints = Math.min(calculatedPoints, hoursNeeded + bufferHours);
+        } else {
+          // Large range: Something is wrong - this shouldn't happen for targeted fetching
+          // But cap it to prevent excessive API calls
+          const maxReasonablePoints = Math.ceil((hoursNeeded / targetIntervalHours) * targetIntervalHours) + bufferHours;
+          remainingPoints = Math.min(maxReasonablePoints, 500); // Cap at 500 hourly candles max
+          console.warn(`⚠️  Large fetch range detected (${hoursNeeded} hours). This may indicate a bug in batch calculation.`);
+        }
       } else {
         remainingPoints = hoursNeeded;
       }
@@ -121,6 +150,7 @@ export async function fetchCryptoCompareCandles(
       remainingPoints = Math.ceil((currentEndTime - startTimeSeconds) / 86400);
     }
     // OPTIMIZATION: Cap at what's actually needed, not the full 2000 limit
+    // This is the critical fix - ensure we never request more than needed
     const limit = Math.min(remainingPoints, maxPointsPerRequest);
     
     const url = new URL(`${CRYPTOCOMPARE_API_URL}/${endpoint}`);
@@ -139,7 +169,14 @@ export async function fetchCryptoCompareCandles(
       const candleType = aggregate > 1 
         ? `${endpoint === 'histohour' ? 'hourly' : 'daily'} (will aggregate to ${timeframe})`
         : endpoint === 'histohour' ? 'hourly' : 'daily';
-      console.log(`📡 CryptoCompare: Fetching ${limit} ${candleType} candles for ${cryptoCompareSymbol}...`);
+      // Log the actual limit being used with debug info
+      const timeRangeHours = Math.ceil((endTimeSeconds - startTimeSeconds) / 3600);
+      if (aggregate > 1 && limit >= 100) {
+        // Debug log for large requests to help diagnose the issue
+        console.log(`📡 CryptoCompare: Fetching ${limit} ${candleType} candles for ${cryptoCompareSymbol} (time range: ${timeRangeHours} hours, calculated: ${remainingPoints}, max: ${maxPointsPerRequest})...`);
+      } else {
+        console.log(`📡 CryptoCompare: Fetching ${limit} ${candleType} candles for ${cryptoCompareSymbol} (time range: ${timeRangeHours} hours)...`);
+      }
     }
     
     // Rate limiting

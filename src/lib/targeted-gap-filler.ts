@@ -195,6 +195,12 @@ export async function fetchMissingCandles(
   const maxBatchRetries = 3;
 
   for (const batch of batches) {
+    // DEBUG: Log batch information
+    console.log(`🔍 [DEBUG] Processing batch: ${batch.timestamps.length} timestamps`);
+    console.log(`   batch.start: ${batch.start} (${new Date(batch.start).toISOString()})`);
+    console.log(`   batch.end: ${batch.end} (${new Date(batch.end).toISOString()})`);
+    console.log(`   batch.timestamps: [${batch.timestamps.map(ts => new Date(ts).toISOString()).join(', ')}]`);
+    
     let batchFetched = false;
     
     for (let batchAttempt = 0; batchAttempt < maxBatchRetries && !batchFetched; batchAttempt++) {
@@ -206,14 +212,75 @@ export async function fetchMissingCandles(
           await new Promise(resolve => setTimeout(resolve, delay));
         }
         
-        // Add small buffer to ensure we get the candles we need
-        // For 8h candles, we only need a small buffer (1 period) since CryptoCompare aggregates from hourly
-        const bufferMs = timeframe === '8h' ? intervalMs : intervalMs;
-        const fetchStart = batch.start - bufferMs;
-        const fetchEnd = batch.end + bufferMs;
+        // CRITICAL FIX: For targeted gap filling, fetch ONLY the exact intervals needed
+        // For 8h candles: if 1 candle is missing, we only need 8 hourly candles (the 8h period), not 500!
+        let fetchStart: number;
+        let fetchEnd: number;
+        
+        if (timeframe === '8h' && batch.timestamps.length === 1) {
+          // Single missing 8h candle: fetch ONLY the 8-hour period it belongs to
+          // CRITICAL: Align the missing timestamp to the period start (00:00, 08:00, or 16:00 UTC)
+          const missingTimestamp = batch.timestamps[0]!;
+          const periodStart = alignTimestampToPeriod(missingTimestamp, timeframe);
+          fetchStart = periodStart;
+          fetchEnd = periodStart + intervalMs - 1; // End of the 8h period
+          const fetchRangeHours = (fetchEnd - fetchStart) / (1000 * 60 * 60);
+          console.log(`📡 Fetching 1 missing ${timeframe} candle for ${symbol}`);
+          console.log(`   Missing timestamp: ${new Date(missingTimestamp).toISOString()}`);
+          console.log(`   Aligned period start: ${new Date(periodStart).toISOString()}`);
+          console.log(`   Exact period: ${new Date(fetchStart).toISOString()} to ${new Date(fetchEnd).toISOString()} (${fetchRangeHours.toFixed(1)} hours)`);
+          
+          // CRITICAL: Verify the range is correct (should be ~8 hours, not 2184!)
+          if (fetchRangeHours > 24) {
+            console.error(`❌ ERROR: Fetch range is ${fetchRangeHours.toFixed(1)} hours for 1 missing candle! This is a bug.`);
+            console.error(`   batch.start: ${batch.start}, batch.end: ${batch.end}`);
+            console.error(`   missingTimestamp: ${missingTimestamp}, periodStart: ${periodStart}, intervalMs: ${intervalMs}`);
+            console.error(`   fetchStart: ${fetchStart}, fetchEnd: ${fetchEnd}`);
+            // Force correct range - something is very wrong with the batch calculation
+            // Use the missing timestamp directly, aligned to period
+            const correctedPeriodStart = alignTimestampToPeriod(missingTimestamp, timeframe);
+            fetchStart = correctedPeriodStart;
+            fetchEnd = correctedPeriodStart + intervalMs - 1;
+            const correctedRange = (fetchEnd - fetchStart) / (1000 * 60 * 60);
+            console.error(`   Corrected: fetchStart=${fetchStart}, fetchEnd=${fetchEnd}, range=${correctedRange.toFixed(1)} hours`);
+          }
+        } else if (timeframe === '8h' && batch.timestamps.length <= 3) {
+          // Small batch (2-3 candles): fetch only the periods needed, with minimal buffer
+          // CRITICAL: Align all timestamps to period boundaries
+          const alignedTimestamps = batch.timestamps.map(ts => alignTimestampToPeriod(ts, timeframe));
+          const firstPeriod = Math.min(...alignedTimestamps);
+          const lastPeriod = Math.max(...alignedTimestamps);
+          fetchStart = firstPeriod;
+          fetchEnd = lastPeriod + intervalMs - 1; // End of last period
+          const fetchRangeHours = (fetchEnd - fetchStart) / (1000 * 60 * 60);
+          console.log(`📡 Fetching ${batch.timestamps.length} missing ${timeframe} candles for ${symbol}`);
+          console.log(`   Period range: ${fetchRangeHours.toFixed(1)} hours (${new Date(fetchStart).toISOString()} to ${new Date(fetchEnd).toISOString()})`);
+          
+          // Verify range is reasonable
+          const expectedMaxRange = batch.timestamps.length * intervalMs / (1000 * 60 * 60);
+          if (fetchRangeHours > expectedMaxRange * 2) {
+            console.warn(`⚠️  WARNING: Fetch range (${fetchRangeHours.toFixed(1)}h) is larger than expected (${expectedMaxRange.toFixed(1)}h) for ${batch.timestamps.length} candles`);
+          }
+        } else {
+          // Larger batches: use small buffer
+          const bufferMs = intervalMs; // 1 period buffer
+          fetchStart = batch.start - bufferMs;
+          fetchEnd = batch.end + bufferMs;
+          const fetchRangeHours = (fetchEnd - fetchStart) / (1000 * 60 * 60);
+          console.log(`📡 Fetching ${batch.timestamps.length} missing ${timeframe} candles for ${symbol}`);
+          console.log(`   Fetch range: ${fetchRangeHours.toFixed(1)} hours (${new Date(fetchStart).toISOString()} to ${new Date(fetchEnd).toISOString()})`);
+        }
 
-        console.log(`📡 Fetching ${batch.timestamps.length} missing ${timeframe} candles for ${symbol} (batch: ${new Date(batch.start).toISOString()} to ${new Date(batch.end).toISOString()})`);
-
+        // DEBUG: Log the fetch range before calling API
+        const fetchRangeHours = (fetchEnd - fetchStart) / (1000 * 60 * 60);
+        console.log(`🔍 [DEBUG] About to call API with fetchStart: ${fetchStart} (${new Date(fetchStart).toISOString()}), fetchEnd: ${fetchEnd} (${new Date(fetchEnd).toISOString()}), range: ${fetchRangeHours.toFixed(1)} hours`);
+        if (fetchRangeHours > 200) {
+          console.error(`❌ [DEBUG] CRITICAL ERROR: fetchStart and fetchEnd are ${fetchRangeHours.toFixed(1)} hours apart! This should not happen for targeted gap filling!`);
+          console.error(`   batch.start: ${batch.start}, batch.end: ${batch.end}`);
+          console.error(`   batch.timestamps.length: ${batch.timestamps.length}`);
+          throw new Error(`Invalid fetch range: ${fetchRangeHours.toFixed(1)} hours for ${batch.timestamps.length} missing candles`);
+        }
+        
         // For 8h candles, use CryptoCompare first (most reliable)
         // For other timeframes, use Binance
         let fetchedCandles: PriceCandle[] = [];
@@ -239,6 +306,17 @@ export async function fetchMissingCandles(
             return diff <= tolerance;
           });
         });
+        
+        // DEBUG: Log what we fetched vs what we need
+        console.log(`🔍 [DEBUG] Fetched ${fetchedCandles.length} candles, filtered to ${neededCandles.length} needed candles`);
+        console.log(`🔍 [DEBUG] Batch timestamps: [${batch.timestamps.map(ts => new Date(ts).toISOString()).join(', ')}]`);
+        if (neededCandles.length > 0) {
+          console.log(`🔍 [DEBUG] Needed candle timestamps: [${neededCandles.map(c => new Date(c.timestamp).toISOString()).join(', ')}]`);
+        } else if (fetchedCandles.length > 0) {
+          console.warn(`⚠️ [DEBUG] Fetched ${fetchedCandles.length} candles but none match batch timestamps!`);
+          console.warn(`   Fetched timestamps: [${fetchedCandles.slice(0, 5).map(c => new Date(c.timestamp).toISOString()).join(', ')}...]`);
+          console.warn(`   Batch timestamps: [${batch.timestamps.map(ts => new Date(ts).toISOString()).join(', ')}]`);
+        }
 
         // CRITICAL: For period-based timeframes (8h, 12h, 1d), align timestamps to period boundaries
         // This ensures consistency with gap detection logic

@@ -236,20 +236,23 @@ export default function PerformanceMetricsPanel({ ethSession, btcSession }: Perf
         )}
 
         {/* Column Headers */}
-        <div className={css({ 
-          display: 'flex', 
-          justifyContent: 'flex-end', 
-          gap: '24px', 
+        <div className={css({
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
           paddingTop: '8px',
           borderTop: '1px solid #30363d',
           marginTop: '8px'
         })}>
-          <span className={css({ color: '#7d8590', fontSize: 'xs', fontWeight: 'semibold', minWidth: '80px', textAlign: 'right' })}>
-            ETH
-          </span>
-          <span className={css({ color: '#7d8590', fontSize: 'xs', fontWeight: 'semibold', minWidth: '80px', textAlign: 'right' })}>
-            BTC
-          </span>
+          <span className={css({ flex: '1' })}></span>
+          <div className={flex({ gap: '24px', flex: '2' })}>
+            <span className={css({ color: '#7d8590', fontSize: 'xs', fontWeight: 'semibold', minWidth: '80px', textAlign: 'right' })}>
+              ETH
+            </span>
+            <span className={css({ color: '#7d8590', fontSize: 'xs', fontWeight: 'semibold', minWidth: '80px', textAlign: 'right' })}>
+              BTC
+            </span>
+          </div>
         </div>
       </div>
     </div>
