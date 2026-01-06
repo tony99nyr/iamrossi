@@ -703,7 +703,6 @@ export class PaperTradingService {
     // CRITICAL: Detect and fill gaps automatically to prevent missing candles
     // This ensures data quality without manual intervention
     const { detectGaps } = await import('./data-quality-validator');
-    const { fillGapsInCandles } = await import('./historical-file-utils');
     
     // Use actual data range for gap detection (from first to last REAL candle, not future dates)
     // Check for gaps in the data
@@ -830,7 +829,7 @@ export class PaperTradingService {
             if (endCandles.length > 0) {
               // Merge with existing candles
               const allCandles = [...candles, ...endCandles];
-              const merged = allCandles
+              candles = allCandles
                 .filter((c, i, arr) => arr.findIndex(cc => cc.timestamp === c.timestamp) === i)
                 .sort((a, b) => a.timestamp - b.timestamp);
               

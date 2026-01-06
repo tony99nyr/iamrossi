@@ -32,16 +32,7 @@ async function fetchBinanceCandles(
   startTime: number,
   endTime: number
 ): Promise<PriceCandle[]> {
-  // Import dynamically to avoid circular dependencies
-  const { fetchPriceCandles } = await import('./eth-price-service');
-  
-  // Use fetchPriceCandles but with a targeted date range
-  const startDate = new Date(startTime).toISOString().split('T')[0];
-  const endDate = new Date(endTime).toISOString().split('T')[0];
-  
-  // fetchPriceCandles will use Binance internally, but we need direct access
-  // So we'll use the internal fetchBinanceCandles from eth-price-service
-  // Actually, let's just call the Binance API directly here to avoid circular deps
+  // Call the Binance API directly here to avoid circular deps
   const BINANCE_API_URL = process.env.BINANCE_API_URL || 'https://api.binance.com/api/v3';
   
   const url = new URL(`${BINANCE_API_URL}/klines`);
@@ -155,7 +146,7 @@ export async function fetchMissingCandles(
         try {
           const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
           fetchedCandles = await fetchCryptoCompareCandles(symbol, timeframe, fetchStart, fetchEnd);
-        } catch (cryptoCompareError) {
+        } catch {
           // CryptoCompare failed, fallback to Binance
           console.log(`⚠️  CryptoCompare failed, trying Binance...`);
           fetchedCandles = await fetchBinanceCandles(symbol, interval, fetchStart, fetchEnd);

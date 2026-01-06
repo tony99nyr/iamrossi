@@ -1165,7 +1165,7 @@ export async function fetchPriceCandles(
           } else {
             throw new Error('CryptoCompare returned no candles');
           }
-        } catch (cryptoCompareError) {
+        } catch {
           // CryptoCompare failed, try Binance
           console.log('CryptoCompare failed for 8h candles, trying Binance...');
           candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
@@ -1215,7 +1215,7 @@ export async function fetchPriceCandles(
         
         try {
           candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
-        } catch (binanceError) {
+        } catch {
           console.log('Binance also failed for 8h candles, trying CoinGecko...');
           // Fall through to CoinGecko fallback below
         }
@@ -1235,7 +1235,7 @@ export async function fetchPriceCandles(
           } else {
             throw new Error('CryptoCompare returned no candles');
           }
-        } catch (cryptoCompareError) {
+        } catch {
           console.log('CryptoCompare also failed, trying CoinGecko...');
           // Fall through to CoinGecko fallback below
         }
