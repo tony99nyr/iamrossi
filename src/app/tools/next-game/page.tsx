@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 import NextGameClient from './NextGameClient';
 import { matchVideosToGames } from '@/utils/videoMatcher';
 import { getSchedule, getMHRSchedule, getSettings, getYouTubeVideos, getEnrichedGames, setEnrichedGames, isEnrichedGamesCacheStale, getSyncStatus, getCalendarSyncStatus, setSyncStatus, setCalendarSyncStatus, getStatSessions } from '@/lib/kv';
-import { enrichPastGamesWithStatScores } from '@/lib/enrich-game-scores';
+import { enrichPastGamesWithStatScores, createGamesFromStatSessions } from '@/lib/enrich-game-scores';
 import { Game } from '@/types';
 import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
 import { partitionNextGameSchedule } from '@/lib/next-game/partition-games';
@@ -328,6 +328,68 @@ export default async function NextGamePage() {
         upcomingGracePeriodMs: UPCOMING_GRACE_PERIOD_MS,
     });
     
+    // Calculate season bounds for filtering
+    const mhrYear = settings.mhrYear || '2025';
+    const seasonStartYear = mhrYear;
+    const seasonEndYear = String(parseInt(mhrYear) + 1);
+    const currentSeasonStart = new Date(`${seasonStartYear}-08-01T00:00:00`);
+    const currentSeasonEnd = new Date(`${seasonEndYear}-03-01T23:59:59`);
+    
+    // Get stat sessions early to create games from unmatched sessions
+    let statSessions: Awaited<ReturnType<typeof getStatSessions>> = [];
+    try {
+        statSessions = await getStatSessions();
+    } catch (error) {
+        console.error('[Next Game] Failed to load stat sessions from KV:', error);
+    }
+    
+    // Create games from stat sessions that don't match existing MHR games
+    const gamesFromStatSessions = createGamesFromStatSessions(
+        statSessions,
+        pastFromMhr,
+        settings.teamName,
+        now,
+        currentSeasonStart,
+        currentSeasonEnd
+    );
+    
+    // Merge MHR games with games from stat sessions
+    // Deduplicate by game_nbr or date/opponent
+    const allPastGames = [...pastFromMhr];
+    for (const statGame of gamesFromStatSessions) {
+        // Check if this game already exists (by game_nbr or date/opponent)
+        const exists = allPastGames.some(existing => {
+            // Check by game_nbr first
+            if (statGame.game_nbr && existing.game_nbr) {
+                if (String(statGame.game_nbr) === String(existing.game_nbr)) {
+                    return true;
+                }
+            }
+            // Check by date and opponent
+            const statDate = statGame.game_date_format || statGame.game_date;
+            const existingDate = existing.game_date_format || existing.game_date;
+            if (statDate && existingDate && statDate === existingDate) {
+                const statOpponent = statGame.home_team_name === settings.teamName 
+                    ? statGame.visitor_team_name 
+                    : statGame.home_team_name;
+                const existingOpponent = existing.home_team_name === settings.teamName
+                    ? existing.visitor_team_name
+                    : existing.home_team_name;
+                // Normalize team names for comparison (remove special chars, lowercase)
+                const normalizeTeamName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (statOpponent && existingOpponent && 
+                    normalizeTeamName(statOpponent) === normalizeTeamName(existingOpponent)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+        
+        if (!exists) {
+            allPastGames.push(statGame);
+        }
+    }
+    
     // Create a map from combined schedule to enrich past games with rating data
     // The combined schedule has ratings from calendar sync that raw MHR doesn't have
     // IMPORTANT: Normalize game_nbr to string to ensure consistent lookups (number vs string)
@@ -340,12 +402,7 @@ export default async function NextGamePage() {
     
     // Filter for past games (current season only)
     // Season runs from August 1st of MHR year to March 1st of (MHR year + 1)
-    const mhrYear = settings.mhrYear || '2025';
-    const seasonStartYear = mhrYear;
-    const seasonEndYear = String(parseInt(mhrYear) + 1);
-    const currentSeasonStart = new Date(`${seasonStartYear}-08-01T00:00:00`);
-    const currentSeasonEnd = new Date(`${seasonEndYear}-03-01T23:59:59`);
-    const pastGames = pastFromMhr
+    const pastGames = allPastGames
         .filter((game: Game) => {
             // Keep placeholders out of the past games list (they're not "results").
             if (game.isPlaceholder) return false;
@@ -436,12 +493,7 @@ export default async function NextGamePage() {
     });
 
     // Enrich past games with stat session scores when MHR scores are invalid
-    let statSessions: Awaited<ReturnType<typeof getStatSessions>> = [];
-    try {
-        statSessions = await getStatSessions();
-    } catch (error) {
-        console.error('[Next Game] Failed to load stat sessions from KV:', error);
-    }
+    // (statSessions already loaded earlier for createGamesFromStatSessions)
     enrichedPastGames = enrichPastGamesWithStatScores(
         enrichedPastGames,
         statSessions,

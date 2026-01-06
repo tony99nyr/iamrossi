@@ -36,7 +36,8 @@ const ASSETS_TO_MIGRATE: TradingAsset[] = ['eth', 'btc'];
 /**
  * Get file path for historical price data
  * Simplified: Single file per symbol/interval (no dates in filename)
- * Format: {symbol}_{interval}.json.gz (e.g., ethusdt_8h.json.gz)
+ * Format: {symbol}_{interval}.json (without .gz - loadFromFile and saveToFile add .gz)
+ * This matches the pattern in historical-file-utils.ts
  */
 function getHistoricalDataPath(symbol: string, interval: string): string {
   const symbolLower = symbol.toLowerCase();
@@ -45,7 +46,8 @@ function getHistoricalDataPath(symbol: string, interval: string): string {
   // Ensure directory exists
   fs.mkdir(dir, { recursive: true }).catch(() => {});
   
-  return path.join(dir, `${symbolLower}_${interval}.json.gz`);
+  // Return path WITHOUT .gz extension - loadFromFile and saveToFile will add it
+  return path.join(dir, `${symbolLower}_${interval}.json`);
 }
 
 /**

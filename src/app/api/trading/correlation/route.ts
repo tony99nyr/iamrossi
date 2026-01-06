@@ -66,9 +66,19 @@ export async function GET(request: NextRequest) {
         // Get aligned BTC candles
         let aligned: { eth: PriceCandle[]; btc: PriceCandle[] };
         try {
+          console.error(`[Correlation] Fetching aligned BTC candles for ${ethCandles.length} ETH candles (${startDateStr} to ${endDateStr})`);
           aligned = await fetchAlignedCandles(ethCandles, '8h');
+          console.error(`[Correlation] Got ${aligned.eth.length} aligned ETH and ${aligned.btc.length} aligned BTC candles`);
+          
+          if (aligned.btc.length === 0) {
+            console.error(`[Correlation] ERROR: No BTC candles aligned! ETH has ${ethCandles.length} candles, but 0 BTC candles matched.`);
+            return NextResponse.json({
+              error: 'No BTC data available',
+              message: `No BTC candles found for the requested period (${startDateStr} to ${endDateStr}). BTC historical data may be missing. Try running a populate script to fetch BTC historical data.`,
+            }, { status: 400 });
+          }
         } catch (error) {
-          console.error('Error fetching aligned candles:', error);
+          console.error('[Correlation] Error fetching aligned candles:', error);
           return NextResponse.json({
             error: 'Failed to fetch BTC data',
             message: error instanceof Error ? error.message : 'Unknown error',
@@ -76,20 +86,28 @@ export async function GET(request: NextRequest) {
         }
         
         // Check if we have enough aligned data
-        // If not, try with a smaller period (minimum 10 candles)
+        // If not, try with a smaller period (minimum 10 candles for meaningful correlation, but prefer 30)
         let effectivePeriod = period;
-        if (aligned.btc.length < period || aligned.eth.length < period) {
+        const availableCandles = Math.min(aligned.btc.length, aligned.eth.length);
+        
+        if (availableCandles < period) {
           // Try to use what we have, but require at least 10 candles for meaningful correlation
-          const availableCandles = Math.min(aligned.btc.length, aligned.eth.length);
           if (availableCandles < 10) {
+            console.error(`[Correlation] Insufficient aligned data: ${aligned.eth.length} ETH, ${aligned.btc.length} BTC, ${availableCandles} aligned`);
+            console.error(`[Correlation] ETH date range: ${startDateStr} to ${endDateStr}, ${ethCandles.length} total candles`);
+            if (aligned.btc.length > 0) {
+              console.error(`[Correlation] BTC date range: ${new Date(aligned.btc[0]!.timestamp).toISOString().split('T')[0]} to ${new Date(aligned.btc[aligned.btc.length - 1]!.timestamp).toISOString().split('T')[0]}`);
+            } else {
+              console.error(`[Correlation] BTC has 0 aligned candles`);
+            }
             return NextResponse.json({
               error: 'Insufficient aligned data',
-              message: `Need at least 10 aligned candles for correlation. Got ${aligned.eth.length} ETH and ${aligned.btc.length} BTC aligned candles. Please ensure both ETH and BTC have sufficient historical data.`,
+              message: `Need at least 10 aligned candles for correlation. Got ${aligned.eth.length} ETH and ${aligned.btc.length} BTC aligned candles. Please ensure both ETH and BTC have sufficient historical data. Try running 'pnpm btc:populate-data' to populate BTC historical data.`,
             }, { status: 400 });
           }
           // Use available candles, but cap at requested period
           effectivePeriod = Math.min(availableCandles, period);
-          console.log(`⚠️ Using reduced period: ${effectivePeriod} (requested: ${period}, available: ${availableCandles})`);
+          console.log(`⚠️ [Correlation] Using reduced period: ${effectivePeriod} (requested: ${period}, available: ${availableCandles} aligned candles)`);
         }
         
         // Analyze correlation with effective period

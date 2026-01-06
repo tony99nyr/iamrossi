@@ -3,7 +3,9 @@ import { PaperTradingService } from '@/lib/paper-trading-enhanced';
 import { fetchLatestPrice, fetchPriceCandles } from '@/lib/eth-price-service';
 import { ASSET_CONFIGS, type TradingAsset } from '@/lib/asset-config';
 import { isNotificationsEnabled, sendErrorAlert } from '@/lib/notifications';
+import { trackDataQualityIssue } from '@/lib/error-tracking';
 import { detectGaps } from '@/lib/data-quality-validator';
+import { fetchMissingCandles } from '@/lib/targeted-gap-filler';
 import crypto from 'crypto';
 
 /**
@@ -155,43 +157,55 @@ export async function GET(request: NextRequest) {
             });
             
             if (recentGaps.length > 0) {
-              // Calculate date range for missing candles
-              const missingStart = Math.min(...recentGaps.map(g => g.expected));
-              const missingEnd = Math.max(...recentGaps.map(g => g.expected));
-              const missingStartDate = new Date(missingStart).toISOString().split('T')[0];
-              // Extend endDate to today to ensure fetchPriceCandles doesn't treat it as historical
-              // This forces API fetch for recent missing candles
-              const todayDate = new Date().toISOString().split('T')[0];
-              const missingEndDate = todayDate; // Use today to ensure API fetch
+              // Extract only the missing timestamps - fetch ONLY these specific candles
+              const missingTimestamps = recentGaps.map(g => g.expected);
               
-              // Fetch missing candles from API (automatically saves to Redis)
-              const filledCandles = await fetchPriceCandles(
-                symbol,
-                timeframe,
-                missingStartDate,
-                missingEndDate,
-                undefined,
-                false, // Don't skip API fetch
-                false  // No synthetic data
-              );
+              console.log(`📊 [Cron] Detected ${missingTimestamps.length} missing ${timeframe} candles for ${config.displayName}, fetching only missing candles...`);
+              
+              // Fetch ONLY the missing candles (not entire date ranges)
+              const filledCandles = await fetchMissingCandles(symbol, timeframe, missingTimestamps);
               
               if (filledCandles.length > 0) {
                 gapFillingResults[asset][timeframe] = {
                   detected: recentGaps.length,
                   filled: filledCandles.length,
                 };
-                console.log(`✅ [Cron] Filled ${filledCandles.length} missing ${timeframe} candles for ${config.displayName}`);
+                console.log(`✅ [Cron] Filled ${filledCandles.length} of ${missingTimestamps.length} missing ${timeframe} candles for ${config.displayName}`);
               } else {
                 gapFillingResults[asset][timeframe] = {
                   detected: recentGaps.length,
                   filled: 0,
                 };
+                // Send Discord alert if gap filling didn't add any candles
+                if (isNotificationsEnabled()) {
+                  const missingStart = Math.min(...missingTimestamps);
+                  const missingEnd = Math.max(...missingTimestamps);
+                  const missingStartDate = new Date(missingStart).toISOString().split('T')[0];
+                  const missingEndDate = new Date(missingEnd).toISOString().split('T')[0];
+                  await trackDataQualityIssue(
+                    `Gap filling failed to add candles: ${recentGaps.length} recent gaps remain`,
+                    `[Cron] ${config.displayName} ${timeframe}, Missing timestamps: ${missingStartDate} to ${missingEndDate}`
+                  ).catch(err => {
+                    console.warn('[Cron] Failed to send Discord alert:', err);
+                  });
+                }
               }
             }
           }
         } catch (error) {
           // Non-critical - log but don't fail the cron job
-          console.warn(`⚠️ [Cron] Failed to check/fill gaps for ${config.displayName} ${timeframe}:`, error instanceof Error ? error.message : error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn(`⚠️ [Cron] Failed to check/fill gaps for ${config.displayName} ${timeframe}:`, errorMessage);
+          
+          // Send Discord alert for gap filling failures
+          if (isNotificationsEnabled()) {
+            await trackDataQualityIssue(
+              `Gap filling check/fill failed: ${errorMessage}`,
+              `[Cron] ${config.displayName} ${timeframe}`
+            ).catch(err => {
+              console.warn('[Cron] Failed to send Discord alert:', err);
+            });
+          }
         }
       }
     });

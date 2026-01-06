@@ -867,10 +867,18 @@ export async function fetchPriceCandles(
         if (!hasCompleteCoverage && (timeframe !== '5m' && timeframe !== '1h')) {
           // Only warn about incomplete coverage for daily candles (intraday partial coverage is OK)
           // For very large historical ranges, incomplete coverage is expected and we should use what we have
+          const coveragePercent = (uniqueIntervals.size / intervalsInRange) * 100;
+          
           if (!skipAPIFetch && endTime >= Date.now() && !isLargeHistoricalRange) {
-            console.log(`⚠️ Incomplete coverage: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} - fetching from API`);
+            // Only warn if coverage is below 95% - high coverage (95%+) is normal and doesn't need a warning
+            if (coveragePercent < 95) {
+              console.log(`⚠️ Incomplete coverage: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${coveragePercent.toFixed(1)}%) - fetching from API`);
+            } else {
+              // High coverage is normal - use debug/info level instead of warning
+              console.log(`ℹ️ High coverage: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${coveragePercent.toFixed(1)}%) - fetching ${intervalsInRange - uniqueIntervals.size} missing from API`);
+            }
           } else if (isLargeHistoricalRange && !hasCompleteCoverage) {
-            console.log(`ℹ️ Incomplete coverage for large historical range: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (using available data, gaps expected for old dates)`);
+            console.log(`ℹ️ Incomplete coverage for large historical range: ${uniqueIntervals.size}/${intervalsInRange} ${intervalLabel} (${coveragePercent.toFixed(1)}%, gaps expected for old dates)`);
           }
         }
       }
@@ -1125,7 +1133,8 @@ export async function fetchPriceCandles(
     
     // Skip API fetch if:
     // 1. skipAPIFetch is true (explicit flag for backfill tests)
-    // 2. endDate is in the past (historical data, no need for API)
+    // 2. endDate is in the past AND we have complete coverage (historical data already in files, no need for API)
+    //    BUT: If we don't have complete coverage, we should still fetch from API even for historical periods
     // 3. We have synthetic data (for assets like BTC that only have synthetic data, don't try API)
     // 4. We have enough data (>=50 candles) and it's a very large historical range (incomplete coverage expected)
     const isHistoricalPeriod = endTime < Date.now();
@@ -1140,21 +1149,50 @@ export async function fetchPriceCandles(
     // Don't fetch from API if we have enough data and it's a large historical range (incomplete coverage is expected)
     const shouldSkipAPIFetchForLargeRange = isLargeHistoricalRange && hasEnoughData && !hasCompleteCoverage;
     
-    if (!skipAPIFetch && !isHistoricalPeriod && !hasSyntheticData && !shouldSkipAPIFetchForLargeRange && (allCandles.length < 50 || !allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime) || !hasCompleteCoverage)) {
-      // Try Binance first
-      // Note: API might not return the most recent 08:00 candle if it's still in progress
-      // We'll merge API data with file data to preserve all candles from files
-      candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
+    // For historical periods, only skip API if we have complete coverage
+    // Otherwise, fetch from API to fill gaps (needed for populate scripts)
+    const shouldSkipHistoricalFetch = isHistoricalPeriod && hasCompleteCoverage;
+    
+    if (!skipAPIFetch && !shouldSkipHistoricalFetch && !hasSyntheticData && !shouldSkipAPIFetchForLargeRange && (allCandles.length < 50 || !allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime) || !hasCompleteCoverage)) {
+      // For 8h candles, CryptoCompare is most reliable - try it first
+      // For other timeframes, use Binance first
+      if (interval === '8h') {
+        try {
+          const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
+          candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
+          if (candles.length > 0) {
+            // Success - CryptoCompare provided the data
+          } else {
+            throw new Error('CryptoCompare returned no candles');
+          }
+        } catch (cryptoCompareError) {
+          // CryptoCompare failed, try Binance
+          console.log('CryptoCompare failed for 8h candles, trying Binance...');
+          candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
+        }
+      } else {
+        // For non-8h candles, try Binance first
+        // Note: API might not return the most recent 08:00 candle if it's still in progress
+        // We'll merge API data with file data to preserve all candles from files
+        candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
+      }
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const isRateLimit = errorMessage.includes('451') || errorMessage.includes('429') || errorMessage.includes('Rate limited');
     
-    // Skip API fallbacks if skipAPIFetch is true or this is a historical period
+    // Calculate hasCompleteCoverage here too (needed in catch block)
+    const hasCompleteCoverageInCatch = allCandles.length > 0 && 
+      allCandles[0]!.timestamp <= startTime && 
+      allCandles[allCandles.length - 1]!.timestamp >= endTime;
+    
+    // Skip API fallbacks if skipAPIFetch is true or this is a historical period with complete coverage
+    // For historical periods without complete coverage, still try fallback APIs (needed for populate scripts)
     const isHistoricalPeriod = endTime < Date.now();
-    if (skipAPIFetch || isHistoricalPeriod) {
+    const shouldSkipFallbacks = skipAPIFetch || (isHistoricalPeriod && hasCompleteCoverageInCatch);
+    if (shouldSkipFallbacks) {
       if (isRateLimit) {
-        console.log(`ℹ️ Binance rate limited (${errorMessage}), using file data only (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod})`);
+        console.log(`ℹ️ API rate limited (${errorMessage}), using file data only (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod})`);
       } else {
         console.log(`ℹ️ Skipping API fallbacks (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod}) - using file data only`);
       }
@@ -1165,112 +1203,128 @@ export async function fetchPriceCandles(
         ).sort((a, b) => a.timestamp - b.timestamp);
       }
     } else {
-      if (isRateLimit) {
-        console.log(`ℹ️ Binance rate limited (${errorMessage}), trying fallback APIs...`);
-      } else {
-        console.error('Binance API failed, trying CryptoCompare:', error);
-      }
-      
-      // Try CryptoCompare first (free tier, good historical data)
-      try {
-        const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
-        candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
-      } catch (cryptoCompareError) {
-      console.error('CryptoCompare API failed, trying CoinGecko OHLC:', cryptoCompareError);
-      
-      // Try CoinGecko OHLC endpoint (new method - returns 30-minute candles)
-        try {
-      // Calculate days needed - if start and end are the same, we still need at least 1 day
-      // Add 1 day buffer to ensure we get complete data coverage
-      const daysSinceStart = Math.max(1, Math.ceil((endTime - startTime) / (24 * 60 * 60 * 1000)) + 1);
-      const daysToFetch = Math.min(daysSinceStart, 365); // Max 365 days for OHLC endpoint
-      
-      const ohlcCandles = await fetchCoinGeckoOHLC(symbol, daysToFetch);
-      
-      // Filter to requested time range (timestamps are already in milliseconds)
-      let filteredCandles = ohlcCandles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
-      
-      // Aggregate 30-minute candles to requested interval if needed
-      if (interval !== '30m' && filteredCandles.length > 0) {
-        filteredCandles = aggregateCandles(filteredCandles, interval);
-      }
-      
-      if (filteredCandles.length > 0) {
-        candles = filteredCandles;
+      // For 8h candles, fallback order: CryptoCompare (already tried) > Binance > CoinGecko
+      // For other timeframes, fallback order: Binance (already tried) > CryptoCompare > CoinGecko
+      if (interval === '8h') {
+        // For 8h, CryptoCompare was tried first, now try Binance, then CoinGecko
+        if (isRateLimit) {
+          console.log(`ℹ️ CryptoCompare rate limited (${errorMessage}), trying Binance...`);
         } else {
-          throw new Error('CoinGecko OHLC returned no candles in requested range');
+          console.log(`CryptoCompare failed for 8h candles, trying Binance:`, error);
         }
+        
+        try {
+          candles = await fetchBinanceCandles(symbol, interval, startTime, endTime);
+        } catch (binanceError) {
+          console.log('Binance also failed for 8h candles, trying CoinGecko...');
+          // Fall through to CoinGecko fallback below
+        }
+      } else {
+        // For non-8h, Binance was tried first, now try CryptoCompare, then CoinGecko
+        if (isRateLimit) {
+          console.log(`ℹ️ Binance rate limited (${errorMessage}), trying CryptoCompare...`);
+        } else {
+          console.error('Binance API failed, trying CryptoCompare:', error);
+        }
+        
+        try {
+          const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
+          candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
+          if (candles.length > 0) {
+            // Success - CryptoCompare provided the data, skip CoinGecko
+          } else {
+            throw new Error('CryptoCompare returned no candles');
+          }
+        } catch (cryptoCompareError) {
+          console.log('CryptoCompare also failed, trying CoinGecko...');
+          // Fall through to CoinGecko fallback below
+        }
+      }
+      
+      // Try CoinGecko as fallback (for both 8h and non-8h if previous APIs failed)
+      if (!candles || candles.length === 0) {
+        // Try CoinGecko OHLC endpoint (new method - returns 30-minute candles)
+        try {
+          // Calculate days needed - if start and end are the same, we still need at least 1 day
+          // Add 1 day buffer to ensure we get complete data coverage
+          const daysSinceStart = Math.max(1, Math.ceil((endTime - startTime) / (24 * 60 * 60 * 1000)) + 1);
+          const daysToFetch = Math.min(daysSinceStart, 365); // Max 365 days for OHLC endpoint
+          
+          const ohlcCandles = await fetchCoinGeckoOHLC(symbol, daysToFetch);
+          
+          // Filter to requested time range (timestamps are already in milliseconds)
+          let filteredCandles = ohlcCandles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
+          
+          // Aggregate 30-minute candles to requested interval if needed
+          if (interval !== '30m' && filteredCandles.length > 0) {
+            filteredCandles = aggregateCandles(filteredCandles, interval);
+          }
+          
+          if (filteredCandles.length > 0) {
+            candles = filteredCandles;
+          } else {
+            throw new Error('CoinGecko OHLC returned no candles in requested range');
+          }
         } catch (ohlcError) {
-        console.error('CoinGecko OHLC failed, trying CoinGecko market_chart (old method):', ohlcError);
-        // Fallback to CoinGecko market_chart (will aggregate price points into candles)
+          console.error('CoinGecko OHLC failed, trying CoinGecko market_chart (old method):', ohlcError);
+          // Fallback to CoinGecko market_chart (will aggregate price points into candles)
           try {
             candles = await fetchCoinGeckoCandles(symbol, startTime, endTime, interval);
           } catch (fallbackError) {
-        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-        console.error('CoinGecko API also failed:', fallbackError);
-        
-        // If skipAPIFetch or historical period, use file data and return early
-        if (skipAPIFetch || isHistoricalPeriod) {
-          if (allCandles.length > 0) {
-            // Deduplicate and sort allCandles to ensure we have all candles from files
-            candles = Array.from(
-              new Map(allCandles.map(c => [c.timestamp, c])).values()
-            ).sort((a, b) => a.timestamp - b.timestamp);
-            console.log(`ℹ️ Using file data only (${candles.length} candles after dedup) - skipping all API fallbacks`);
-          } else {
-            throw new Error(`No file data available and API fetch is disabled (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod})`);
-          }
-        } else {
-      
-        // NO SYNTHETIC DATA - Only use real API data
-        // If CoinGecko doesn't have the data, we fail gracefully
-        // This ensures we never trade on fake/synthetic data
-        if (fallbackMessage.includes('no price data') || fallbackMessage.includes('no price points') || fallbackMessage.includes('0 candles')) {
-          console.error(`❌ CoinGecko doesn't have ${interval} data for this period - cannot create synthetic data for trading`);
-          console.error(`   Missing data range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
-          // Don't create synthetic data - fail gracefully
-          // Last resort: try CryptoCompare if we haven't already
-          if (!candles || candles.length === 0) {
-            try {
-              const { fetchCryptoCompareCandles } = await import('./cryptocompare-service');
-              candles = await fetchCryptoCompareCandles(symbol, timeframe, startTime, endTime);
-            } catch (cryptoCompareError2) {
-              console.error('CryptoCompare also failed:', cryptoCompareError2);
+            const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            console.error('CoinGecko API also failed:', fallbackError);
+            
+            // If skipAPIFetch or historical period with complete coverage, use file data and return early
+            // Otherwise, we've exhausted all APIs
+            // Calculate hasCompleteCoverage here (needed in this nested scope)
+            const hasCompleteCoverageHere = allCandles.length > 0 && 
+              allCandles[0]!.timestamp <= startTime && 
+              allCandles[allCandles.length - 1]!.timestamp >= endTime;
+            const shouldSkipFallbacks = skipAPIFetch || (isHistoricalPeriod && hasCompleteCoverageHere);
+            if (shouldSkipFallbacks) {
+              if (allCandles.length > 0) {
+                // Deduplicate and sort allCandles to ensure we have all candles from files
+                candles = Array.from(
+                  new Map(allCandles.map(c => [c.timestamp, c])).values()
+                ).sort((a, b) => a.timestamp - b.timestamp);
+                console.log(`ℹ️ Using file data only (${candles.length} candles after dedup) - skipping all API fallbacks`);
+              } else {
+                throw new Error(`No file data available and API fetch is disabled (skipAPIFetch=${skipAPIFetch}, isHistorical=${isHistoricalPeriod})`);
+              }
+            } else {
+              // All APIs failed - log error
+              if (fallbackMessage.includes('no price data') || fallbackMessage.includes('no price points') || fallbackMessage.includes('0 candles')) {
+                console.error(`❌ All APIs failed - no ${interval} data available for this period`);
+                console.error(`   Missing data range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
+              }
+              
+              // If we have file data, use it instead of failing
+              // CRITICAL: Filter out any synthetic data if allowSyntheticData=false
+              let fileCandles = allCandles;
+              if (!allowSyntheticData) {
+                // Remove any candles that look like synthetic data (dates >= 2026-01-01)
+                const syntheticCutoff = new Date('2026-01-01').getTime();
+                fileCandles = allCandles.filter(c => c.timestamp < syntheticCutoff);
+                
+                // If we filtered out candles, log a warning
+                if (fileCandles.length < allCandles.length) {
+                  const removed = allCandles.length - fileCandles.length;
+                  console.warn(`⚠️  Filtered out ${removed} synthetic candles (allowSyntheticData=false) - paper trading must NEVER use synthetic data`);
+                }
+              }
+              
+              if (fileCandles.length > 0) {
+                const dataSource = allowSyntheticData ? 'file/synthetic data' : 'file data';
+                console.log(`ℹ️ All APIs failed but we have ${fileCandles.length} candles from ${dataSource} - using that instead`);
+                candles = Array.from(
+                  new Map(fileCandles.map(c => [c.timestamp, c])).values()
+                ).sort((a, b) => a.timestamp - b.timestamp);
+              } else {
+                throw new Error(`No real API data available for ${interval} candles in requested range - cannot use synthetic data for trading`);
+              }
             }
           }
-          
-          // If we have synthetic/file data, use it even if API fails
-          // This is especially important for BTC which only has synthetic data
-          if ((!candles || candles.length === 0) && allCandles.length === 0) {
-            throw new Error(`No real API data available for ${interval} candles in requested range - cannot use synthetic data for trading`);
-          }
-          // If we have file/synthetic data, use it instead of failing
-          if ((!candles || candles.length === 0) && allCandles.length > 0) {
-            console.log(`ℹ️ API failed but we have ${allCandles.length} candles from file/synthetic data - using that instead`);
-            candles = Array.from(
-              new Map(allCandles.map(c => [c.timestamp, c])).values()
-            ).sort((a, b) => a.timestamp - b.timestamp);
-          }
         }
-        
-        // If all APIs fail, return what we have from files/synthetic data
-        // For assets like BTC that only have synthetic data, this is expected and OK
-        console.error(`❌ All APIs failed - cannot fetch real ${interval} candles`);
-        console.error(`   Missing data range: ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
-        
-        // Return existing file/synthetic data if we have it
-        if (allCandles.length > 0) {
-          console.warn(`⚠️ Returning ${allCandles.length} candles from file/synthetic data (API unavailable)`);
-          const uniqueCandles = Array.from(
-            new Map(allCandles.map(c => [c.timestamp, c])).values()
-          ).sort((a, b) => a.timestamp - b.timestamp);
-          return uniqueCandles;
-        }
-        
-        throw new Error(`No API data available and no file/synthetic data - cannot proceed`);
-          }
-        }
-      }
       }
     }
   }
@@ -1278,8 +1332,23 @@ export async function fetchPriceCandles(
   // Merge API data with file data
   // Always start with file data (allCandles) as the base, then merge in API data
   // This ensures we preserve all candles from files, even if API doesn't return them
-  if (allCandles.length > 0) {
-    const existingMap = new Map(allCandles.map(c => [c.timestamp, c]));
+  // CRITICAL: Filter out synthetic data if allowSyntheticData=false BEFORE merging
+  let fileCandles = allCandles;
+  if (!allowSyntheticData && allCandles.length > 0) {
+    // Remove any candles that look like synthetic data (dates >= 2026-01-01)
+    const syntheticCutoff = new Date('2026-01-01').getTime();
+    const beforeCount = allCandles.length;
+    fileCandles = allCandles.filter(c => c.timestamp < syntheticCutoff);
+    
+    // If we filtered out candles, log a warning
+    if (fileCandles.length < beforeCount) {
+      const removed = beforeCount - fileCandles.length;
+      console.warn(`⚠️  Filtered out ${removed} synthetic candles (allowSyntheticData=false) - paper trading must NEVER use synthetic data`);
+    }
+  }
+  
+  if (fileCandles.length > 0) {
+    const existingMap = new Map(fileCandles.map(c => [c.timestamp, c]));
     // Merge in API data (API data overwrites file data for same timestamps)
     if (candles.length > 0) {
       candles.forEach(c => {
@@ -1291,15 +1360,20 @@ export async function fetchPriceCandles(
   } else if (candles.length > 0) {
     // We have API data but no file data - use API data
     // (This case is rare since we usually have file data)
-  } else if (allCandles.length > 0) {
-    // No API data, but we have file/synthetic data
-    // Use allCandles directly (already deduplicated and sorted from file loading)
+  } else if (fileCandles.length > 0) {
+    // No API data, but we have file data (synthetic already filtered if needed)
+    // Use fileCandles directly (already deduplicated and sorted from file loading)
     candles = Array.from(
-      new Map(allCandles.map(c => [c.timestamp, c])).values()
+      new Map(fileCandles.map(c => [c.timestamp, c])).values()
     ).sort((a, b) => a.timestamp - b.timestamp);
     
-    // Returning file/synthetic data only
+    // Returning file data only (synthetic filtered out if allowSyntheticData=false)
   }
+
+  // NOTE: Synthetic data is prevented by checking allowSyntheticData flag
+  // Synthetic data is identified by LOCATION (synthetic/ directory), NOT by date
+  // Real data can be from any date, including 2026 and beyond
+  // When allowSyntheticData=false, the synthetic/ directory is never accessed
 
   // 4. Save to Redis only (file writes handled by GitHub Actions workflow)
   // Note: File writes are handled by GitHub Actions workflow (migrate-redis-candles.yml)
@@ -1717,62 +1791,128 @@ async function fetchLatestPriceFresh(symbol: string = 'ETHUSDT'): Promise<number
       }
       
       if (fallbackMessage.includes('Rate limited') || fallbackMessage.includes('451') || fallbackMessage.includes('429')) {
-        console.log(`ℹ️ CoinGecko rate limited, trying Coinbase...`);
+        console.log(`ℹ️ CoinGecko rate limited, trying CryptoCompare...`);
       } else if (!fallbackMessage.includes('Rate limited') && !fallbackMessage.includes('451') && !fallbackMessage.includes('429')) {
-        console.error('CoinGecko price fetch failed:', fallbackError);
+        console.error('CoinGecko price fetch failed, trying CryptoCompare:', fallbackError);
       }
-      // Third fallback: Coinbase (public API, no key required)
+      
+      // Third fallback: CryptoCompare (free tier, good for current price)
       try {
-        // Check circuit breaker for Coinbase
-        if (!canMakeRequest('coinbase_price')) {
-          throw new Error('Coinbase API circuit breaker is open');
+        // Check circuit breaker for CryptoCompare
+        if (!canMakeRequest('cryptocompare_price')) {
+          throw new Error('CryptoCompare API circuit breaker is open');
         }
-        // Map symbol to Coinbase currency code
-        const currencyMap: Record<string, string> = {
-          'ETHUSDT': 'ETH',
-          'BTCUSDT': 'BTC',
-        };
-        const currency = currencyMap[symbol.toUpperCase()] || 'ETH'; // Default to ETH for backward compatibility
-        const url = `${COINBASE_API_URL}/exchange-rates?currency=${currency}`;
         
-        // Coinbase returns data in format: { data: { rates: { USD: "2933.32" } } }
+        // Map symbol to CryptoCompare format
+        const cryptoCompareSymbol = symbol === 'ETHUSDT' ? 'ETH' : symbol === 'BTCUSDT' ? 'BTC' : symbol.replace('USDT', '');
+        const url = `https://min-api.cryptocompare.com/data/price?fsym=${cryptoCompareSymbol}&tsyms=USD`;
+        
+        // Add API key if available
+        const apiKey = process.env.CRYPTOCOMPARE_API_KEY;
+        const headers: HeadersInit = {};
+        if (apiKey) {
+          headers['authorization'] = `Apikey ${apiKey}`;
+        }
+        
+        // CryptoCompare returns { USD: price } format
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
         try {
-          const response = await fetch(url, { signal: controller.signal });
+          const response = await fetch(url, { headers, signal: controller.signal });
           clearTimeout(timeoutId);
           
-          if (response.ok) {
-            const data = await response.json();
-            const price = parseFloat(data.data?.rates?.USD);
-            if (price && price > 0) {
-              // Cache successful result
-              cacheRequest(endpoint, cacheKey, price);
-              recordSuccess('coinbase_price');
-              return price;
-            }
+          if (!response.ok) {
+            recordFailure('cryptocompare_price');
+            throw new Error(`CryptoCompare returned ${response.status}`);
           }
-          recordFailure('coinbase_price');
-          throw new Error(`Coinbase returned ${response.status}`);
+          
+          const data = await response.json();
+          const price = parseFloat(data.USD);
+          
+          if (!price || price === 0 || isNaN(price)) {
+            recordFailure('cryptocompare_price');
+            throw new Error('CryptoCompare returned invalid price');
+          }
+          
+          // Cache successful result
+          cacheRequest(endpoint, cacheKey, price);
+          recordSuccess('cryptocompare_price');
+          
+          return price;
         } catch (fetchError) {
           clearTimeout(timeoutId);
           if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-            throw new Error('Coinbase request timeout');
+            throw new Error('CryptoCompare request timeout');
           }
           throw fetchError;
         }
-      } catch (coinbaseError) {
-        const coinbaseMessage = coinbaseError instanceof Error ? coinbaseError.message : String(coinbaseError);
-        // Record failure for Coinbase (unless it's a circuit breaker error)
-        if (!coinbaseMessage.includes('circuit breaker')) {
-          recordFailure('coinbase_price');
+      } catch (cryptoCompareError) {
+        // Record failure for CryptoCompare (unless it's a circuit breaker error)
+        const cryptoCompareMessage = cryptoCompareError instanceof Error ? cryptoCompareError.message : String(cryptoCompareError);
+        if (!cryptoCompareMessage.includes('circuit breaker')) {
+          recordFailure('cryptocompare_price');
         }
-        // Only log non-rate-limit errors at error level
-        if (!coinbaseMessage.includes('Rate limited') && !coinbaseMessage.includes('451') && !coinbaseMessage.includes('429')) {
-          console.error('Coinbase price fetch failed:', coinbaseError);
+        
+        if (cryptoCompareMessage.includes('Rate limited') || cryptoCompareMessage.includes('451') || cryptoCompareMessage.includes('429')) {
+          console.log(`ℹ️ CryptoCompare rate limited, trying Coinbase...`);
+        } else if (!cryptoCompareMessage.includes('Rate limited') && !cryptoCompareMessage.includes('451') && !cryptoCompareMessage.includes('429')) {
+          console.error('CryptoCompare price fetch failed:', cryptoCompareError);
         }
-        throw new Error('Failed to fetch latest price from all APIs (Binance, CoinGecko, Coinbase)');
+        
+        // Fourth fallback: Coinbase (public API, no key required)
+        try {
+          // Check circuit breaker for Coinbase
+          if (!canMakeRequest('coinbase_price')) {
+            throw new Error('Coinbase API circuit breaker is open');
+          }
+          // Map symbol to Coinbase currency code
+          const currencyMap: Record<string, string> = {
+            'ETHUSDT': 'ETH',
+            'BTCUSDT': 'BTC',
+          };
+          const currency = currencyMap[symbol.toUpperCase()] || 'ETH'; // Default to ETH for backward compatibility
+          const url = `${COINBASE_API_URL}/exchange-rates?currency=${currency}`;
+          
+          // Coinbase returns data in format: { data: { rates: { USD: "2933.32" } } }
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          
+          try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              const data = await response.json();
+              const price = parseFloat(data.data?.rates?.USD);
+              if (price && price > 0) {
+                // Cache successful result
+                cacheRequest(endpoint, cacheKey, price);
+                recordSuccess('coinbase_price');
+                return price;
+              }
+            }
+            recordFailure('coinbase_price');
+            throw new Error(`Coinbase returned ${response.status}`);
+          } catch (fetchError) {
+            clearTimeout(timeoutId);
+            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+              throw new Error('Coinbase request timeout');
+            }
+            throw fetchError;
+          }
+        } catch (coinbaseError) {
+          const coinbaseMessage = coinbaseError instanceof Error ? coinbaseError.message : String(coinbaseError);
+          // Record failure for Coinbase (unless it's a circuit breaker error)
+          if (!coinbaseMessage.includes('circuit breaker')) {
+            recordFailure('coinbase_price');
+          }
+          // Only log non-rate-limit errors at error level
+          if (!coinbaseMessage.includes('Rate limited') && !coinbaseMessage.includes('451') && !coinbaseMessage.includes('429')) {
+            console.error('Coinbase price fetch failed:', coinbaseError);
+          }
+          throw new Error('Failed to fetch latest price from all APIs (Binance, CoinGecko, CryptoCompare, Coinbase)');
+        }
       }
     }
   }

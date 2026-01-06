@@ -5,6 +5,7 @@
  */
 
 import { fetchPriceCandles } from '@/lib/eth-price-service';
+import { saveCandlesToFile, getHistoricalDataPath, loadCandlesFromFile, deduplicateCandles } from '@/lib/historical-file-utils';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -153,8 +154,26 @@ async function fetchChunk(
 
   try {
     console.log(`📥 Fetching ${symbol} ${timeframe} from ${startDate} to ${endDate}...`);
-    // fetchPriceCandles will automatically save to the new format file
+    // fetchPriceCandles saves to Redis, but we need to save to files
     const candles = await fetchPriceCandles(symbol, timeframe, startDate, endDate);
+
+    // Save fetched candles to file (merge with existing data)
+    if (candles.length > 0) {
+      // Map timeframe to interval for file path
+      const interval = timeframe === '8h' ? '8h' : timeframe === '12h' ? '12h' : timeframe === '1d' ? '1d' : timeframe;
+      const filePath = getHistoricalDataPath(symbol, interval);
+      
+      // Load existing candles from file
+      const existingCandles = await loadCandlesFromFile(filePath) || [];
+      
+      // Merge with existing candles (deduplicate by timestamp)
+      const allCandles = [...existingCandles, ...candles];
+      const mergedCandles = deduplicateCandles(allCandles);
+      
+      // Save merged candles to file
+      await saveCandlesToFile(filePath, mergedCandles);
+      console.log(`💾 Saved ${mergedCandles.length} candles to file (${candles.length} new, ${existingCandles.length} existing)`);
+    }
 
     return {
       startDate,
@@ -180,15 +199,14 @@ async function fetchChunk(
 async function main() {
   const args = process.argv.slice(2);
   const symbol = args[0] || 'ETHUSDT';
-  const timeframe = args[1] || '1d';
+  const timeframe = args[1] || '8h'; // Default to 8h (primary trading timeframe)
 
   // Determine date range
   const endDate = new Date();
-  const startDate = new Date();
+  const startDate = new Date('2025-01-01T00:00:00.000Z'); // Start from 2025-01-01 (when historical files begin)
   
-  // Try to go back 2 years (CoinGecko free tier typically allows up to ~90 days per request,
-  // but we can work backwards from today)
-  startDate.setFullYear(startDate.getFullYear() - 2);
+  // Historical files start at 2025-01-01, so we should only fetch data from that date forward
+  // Don't go back to 2024 - that data doesn't exist in our files
   
   // For CoinGecko free tier, use smaller chunks (30 days) to avoid time range limits
   const chunkDays = 30;

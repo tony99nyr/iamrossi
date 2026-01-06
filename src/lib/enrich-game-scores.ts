@@ -1,5 +1,6 @@
 import { Game, StatSession } from '@/types';
-import { EASTERN_TIME_ZONE } from '@/lib/timezone';
+import { EASTERN_TIME_ZONE, parseDateTimeInTimeZoneToUtc } from '@/lib/timezone';
+import crypto from 'crypto';
 
 /**
  * Validates if a score is valid (not a placeholder or invalid value)
@@ -180,6 +181,202 @@ function findMatchingStatSession(game: Game, statSessions: StatSession[], ourTea
   }
   
   return match || null;
+}
+
+/**
+ * Checks if a stat session matches an existing game
+ */
+function statSessionMatchesGame(session: StatSession, game: Game, ourTeamName: string): boolean {
+  // First check by gameId (most reliable)
+  if (session.gameId && game.game_nbr) {
+    const sessionGameId = String(session.gameId).trim();
+    const gameNbr = String(game.game_nbr);
+    if (sessionGameId === gameNbr) {
+      return true;
+    }
+  }
+  
+  // Then check by date and opponent
+  const sessionDate = getSessionGameDate(session);
+  const gameDate = game.game_date_format || game.game_date;
+  
+  if (!sessionDate || !gameDate) return false;
+  if (!datesMatch(gameDate, sessionDate)) return false;
+  
+  // Check if session opponent matches the opponent team name in the game
+  const homeTeamName = game.home_team_name;
+  const visitorTeamName = game.visitor_team_name;
+  const isHomeGame = teamNamesMatch(homeTeamName || '', ourTeamName);
+  const opponentTeamName = isHomeGame ? visitorTeamName : homeTeamName;
+  
+  if (opponentTeamName && teamNamesMatch(session.opponent, opponentTeamName)) {
+    return true;
+  }
+  
+  // Fallback: try matching against either team name (excluding our team)
+  if (homeTeamName && !teamNamesMatch(homeTeamName, ourTeamName)) {
+    if (teamNamesMatch(session.opponent, homeTeamName)) return true;
+  }
+  
+  if (visitorTeamName && !teamNamesMatch(visitorTeamName, ourTeamName)) {
+    if (teamNamesMatch(session.opponent, visitorTeamName)) return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Creates Game objects from stat sessions that don't match existing games
+ */
+export function createGamesFromStatSessions(
+  statSessions: StatSession[],
+  existingGames: Game[],
+  ourTeamName: string,
+  now: Date,
+  seasonStart: Date,
+  seasonEnd: Date
+): Game[] {
+  console.log(`[Create Games from Stat Sessions] Processing ${statSessions.length} stat sessions with ${existingGames.length} existing games`);
+  
+  const createdGames: Game[] = [];
+  
+  for (const session of statSessions) {
+    // Only process completed games (have endTime)
+    if (!session.endTime) {
+      continue;
+    }
+    
+    // Check if game is in the past
+    const endTimeDate = new Date(session.endTime);
+    if (endTimeDate >= now) {
+      continue;
+    }
+    
+    // Check if session matches an existing game
+    const matchesExisting = existingGames.some(game => 
+      statSessionMatchesGame(session, game, ourTeamName)
+    );
+    
+    if (matchesExisting) {
+      continue;
+    }
+    
+    // Get game date - prefer scheduledGameDate, fallback to date
+    const gameDateStr = session.scheduledGameDate || session.date;
+    if (!gameDateStr) {
+      continue;
+    }
+    
+    // Normalize date string
+    const normalizedDate = normalizeDateString(gameDateStr);
+    if (!normalizedDate) {
+      continue;
+    }
+    
+    // Check if game is within current season
+    const gameDateEndUtc = parseDateTimeInTimeZoneToUtc(normalizedDate, '23:59:59', EASTERN_TIME_ZONE);
+    if (!gameDateEndUtc || gameDateEndUtc < seasonStart || gameDateEndUtc >= seasonEnd) {
+      continue;
+    }
+    
+    // Get game time - prefer scheduledGameTime, fallback to startTime
+    let gameTimeStr = '00:00:00';
+    if (session.scheduledGameTime) {
+      gameTimeStr = session.scheduledGameTime;
+    } else if (session.startTime) {
+      // Convert startTime (Unix timestamp) to HH:MM format in Eastern timezone
+      const startDate = new Date(session.startTime);
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: EASTERN_TIME_ZONE,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(startDate);
+      
+      const hour = parts.find(p => p.type === 'hour')?.value || '00';
+      const minute = parts.find(p => p.type === 'minute')?.value || '00';
+      gameTimeStr = `${hour}:${minute}:00`;
+    }
+    
+    // Format date for pretty display
+    const [dateYear, dateMonth, dateDay] = normalizedDate.split('-').map(Number);
+    const gameDateObjForFormat = new Date(dateYear, dateMonth - 1, dateDay, 12, 0, 0);
+    const gameDatePretty = gameDateObjForFormat.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      timeZone: EASTERN_TIME_ZONE
+    });
+    
+    // Format time for pretty display
+    let gameTimePretty = 'TBD';
+    if (gameTimeStr !== '00:00:00' && gameTimeStr !== '00:00') {
+      const timeDateStr = `${normalizedDate}T${gameTimeStr}`;
+      const timeDateObj = new Date(timeDateStr);
+      gameTimePretty = timeDateObj.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: EASTERN_TIME_ZONE
+      });
+    }
+    
+    // Determine home/away - use scheduled data if available, otherwise infer
+    let homeTeamName: string;
+    let visitorTeamName: string;
+    let isHomeGame = false;
+    
+    if (session.homeTeamName && session.visitorTeamName) {
+      // Use scheduled team names
+      homeTeamName = session.homeTeamName;
+      visitorTeamName = session.visitorTeamName;
+      isHomeGame = teamNamesMatch(homeTeamName, ourTeamName) || 
+                   teamNamesMatch(session.ourTeamName || '', ourTeamName);
+    } else {
+      // Infer from ourTeamName and opponent
+      const sessionOurTeamName = session.ourTeamName || ourTeamName;
+      // Default: assume we're home (can be adjusted based on location or other hints)
+      isHomeGame = true;
+      homeTeamName = sessionOurTeamName;
+      visitorTeamName = session.opponent;
+    }
+    
+    // Get scores
+    const usGoals = session.usStats.goals;
+    const themGoals = session.themStats.goals;
+    
+    // Map scores to home/visitor
+    const homeScore = isHomeGame ? usGoals : themGoals;
+    const visitorScore = isHomeGame ? themGoals : usGoals;
+    
+    // Generate game_nbr from session ID or date/opponent hash
+    const gameNbr = session.gameId || 
+      crypto.createHash('md5').update(`${normalizedDate}-${session.opponent}`).digest('hex').substring(0, 8);
+    
+    // Create game object
+    const game: Game = {
+      game_nbr: gameNbr,
+      game_date: normalizedDate,
+      game_time: gameTimeStr,
+      game_date_format: normalizedDate,
+      game_date_format_pretty: gameDatePretty,
+      game_time_format: gameTimeStr,
+      game_time_format_pretty: gameTimePretty,
+      home_team_name: homeTeamName,
+      visitor_team_name: visitorTeamName,
+      home_team_score: homeScore,
+      visitor_team_score: visitorScore,
+      rink_name: session.location || 'TBD',
+      game_type: session.gameType || 'Regular Season',
+      source: 'stat-session',
+      _statSessionIsHomeGame: isHomeGame,
+    };
+    
+    createdGames.push(game);
+    console.log(`[Create Games from Stat Sessions] Created game from session: date=${normalizedDate}, opponent=${session.opponent}, sessionId=${session.id}`);
+  }
+  
+  console.log(`[Create Games from Stat Sessions] Created ${createdGames.length} games from stat sessions`);
+  return createdGames;
 }
 
 /**

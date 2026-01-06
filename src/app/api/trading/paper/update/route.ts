@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
       const assetParam = searchParams.get('asset') || 'eth';
       const asset: TradingAsset = isValidAsset(assetParam) ? assetParam : 'eth';
 
-      // Update session
-      const session = await PaperTradingService.updateSession(undefined, asset);
+      // Update session (manual update - fill all gaps up to 90 days)
+      const session = await PaperTradingService.updateSession(undefined, asset, true);
 
       return NextResponse.json({ 
         session,

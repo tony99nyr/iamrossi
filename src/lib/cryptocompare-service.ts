@@ -96,9 +96,25 @@ export async function fetchCryptoCompareCandles(
     requestNumber++;
     
     // Calculate limit for this request
-    const remainingPoints = endpoint === 'histohour' 
-      ? Math.ceil((currentEndTime - startTimeSeconds) / 3600)
-      : Math.ceil((currentEndTime - startTimeSeconds) / 86400);
+    // When aggregating (e.g., 8h from hourly), we need enough hourly candles to cover the time range
+    // Add a small buffer (1 extra period) to ensure we have complete coverage
+    let remainingPoints: number;
+    if (endpoint === 'histohour') {
+      const hoursNeeded = Math.ceil((currentEndTime - startTimeSeconds) / 3600);
+      // If aggregating, we need enough hourly candles for the target timeframe
+      // For 8h: if we need 2 8h candles (16h), we need 16-24 hourly candles (with buffer)
+      if (aggregate > 1) {
+        // Calculate how many target-interval candles we need, then multiply by aggregate
+        const targetIntervalHours = aggregate;
+        const targetCandlesNeeded = Math.ceil(hoursNeeded / targetIntervalHours);
+        // Request hourly candles: target candles * aggregate + 1 period buffer
+        remainingPoints = (targetCandlesNeeded * targetIntervalHours) + targetIntervalHours;
+      } else {
+        remainingPoints = hoursNeeded;
+      }
+    } else {
+      remainingPoints = Math.ceil((currentEndTime - startTimeSeconds) / 86400);
+    }
     const limit = Math.min(remainingPoints, maxPointsPerRequest);
     
     const url = new URL(`${CRYPTOCOMPARE_API_URL}/${endpoint}`);
@@ -114,7 +130,10 @@ export async function fetchCryptoCompareCandles(
     }
     
     if (requestNumber === 1) {
-      console.log(`📡 CryptoCompare: Fetching ${limit} ${endpoint === 'histohour' ? 'hourly' : 'daily'} candles for ${cryptoCompareSymbol}...`);
+      const candleType = aggregate > 1 
+        ? `${endpoint === 'histohour' ? 'hourly' : 'daily'} (will aggregate to ${timeframe})`
+        : endpoint === 'histohour' ? 'hourly' : 'daily';
+      console.log(`📡 CryptoCompare: Fetching ${limit} ${candleType} candles for ${cryptoCompareSymbol}...`);
     }
     
     // Rate limiting
@@ -179,13 +198,15 @@ export async function fetchCryptoCompareCandles(
     new Map(allCandles.map(c => [c.timestamp, c])).values()
   );
   
-  console.log(`✅ CryptoCompare: Fetched ${uniqueCandles.length} ${endpoint === 'histohour' ? 'hourly' : 'daily'} candles`);
-  
   // If we need 4h, 8h, or 12h, aggregate from hourly
   if (aggregate > 1) {
-    return aggregateToTargetInterval(uniqueCandles, timeframe);
+    const aggregated = aggregateToTargetInterval(uniqueCandles, timeframe);
+    // Log shows what we fetched and what we aggregated to
+    console.log(`✅ CryptoCompare: Fetched ${uniqueCandles.length} hourly candles, aggregated to ${aggregated.length} ${timeframe} candles`);
+    return aggregated;
   }
   
+  console.log(`✅ CryptoCompare: Fetched ${uniqueCandles.length} ${endpoint === 'histohour' ? 'hourly' : 'daily'} candles`);
   return uniqueCandles;
 }
 
@@ -233,7 +254,7 @@ function aggregateToTargetInterval(candles: PriceCandle[], targetInterval: strin
   }
   
   const aggregated = Array.from(candleMap.values()).sort((a, b) => a.timestamp - b.timestamp);
-  console.log(`📊 Aggregated ${candles.length} hourly candles → ${aggregated.length} ${targetInterval} candles`);
+  // Log is now handled in the calling function for better context
   
   return aggregated;
 }
