@@ -232,7 +232,6 @@ export async function fetchAlignedCandles(
     const overlapEnd = Math.min(ethEndTime, btcDataEndTime);
     
     if (overlapStart > overlapEnd) {
-      console.error(`[BTC Aligned] No overlap between ETH (${new Date(ethStartTime).toISOString()} to ${new Date(ethEndTime).toISOString()}) and BTC (${new Date(btcDataStartTime).toISOString()} to ${new Date(btcDataEndTime).toISOString()})`);
       return { eth: [], btc: [] };
     }
     
@@ -242,14 +241,9 @@ export async function fetchAlignedCandles(
   
   const startDate = new Date(btcDataStartTime).toISOString().split('T')[0];
   const endDate = new Date(btcDataEndTime).toISOString().split('T')[0];
-
-  console.error(`[BTC Aligned] ETH candle range: ${new Date(ethStartTime).toISOString()} to ${new Date(ethEndTime).toISOString()} (${ethCandles.length} candles)`);
-  console.error(`[BTC Aligned] Requesting BTC candles for overlapping period: ${startDate} to ${endDate}`);
   
   // Fetch BTC candles for the overlapping period
   const btcCandles = await fetchBTCCandles('BTCUSDT', timeframe, startDate, endDate);
-  
-  console.error(`[BTC Aligned] Fetched ${btcCandles.length} BTC candles for alignment`);
 
   // Create a map of BTC candles by timestamp for quick lookup
   const btcMap = new Map<number, PriceCandle>();
@@ -262,8 +256,6 @@ export async function fetchAlignedCandles(
   const ethCandlesInOverlap = ethCandles.filter(c => 
     c.timestamp >= btcDataStartTime && c.timestamp <= btcDataEndTime
   );
-  
-  console.error(`[BTC Aligned] Filtered ETH candles to overlap period: ${ethCandlesInOverlap.length} of ${ethCandles.length} ETH candles are in BTC data range`);
 
   // Align candles - only keep pairs where both ETH and BTC have data
   const alignedEth: PriceCandle[] = [];
@@ -294,15 +286,9 @@ export async function fetchAlignedCandles(
   }
   
   if (alignedEth.length === 0 && ethCandlesInOverlap.length > 0 && btcCandles.length > 0) {
-    // Log diagnostic info if alignment failed but we have data
-    const ethTimestamps = ethCandlesInOverlap.slice(0, 5).map(c => new Date(c.timestamp).toISOString());
-    const btcTimestamps = btcCandles.slice(0, 5).map(c => new Date(c.timestamp).toISOString());
-    console.error(`[BTC Aligned] WARNING: No aligned candles found! ETH has ${ethCandlesInOverlap.length} candles in overlap, BTC has ${btcCandles.length} candles, but timestamps don't match.`);
-    console.error(`[BTC Aligned] Sample ETH timestamps: ${ethTimestamps.join(', ')}`);
-    console.error(`[BTC Aligned] Sample BTC timestamps: ${btcTimestamps.join(', ')}`);
+    // Log warning if alignment failed but we have data
+    console.warn(`[BTC Aligned] No aligned candles found despite having ${ethCandlesInOverlap.length} ETH and ${btcCandles.length} BTC candles - timestamp mismatch`);
   }
-
-  console.error(`[BTC Aligned] Alignment result: ${alignedEth.length} aligned candles from ${ethCandlesInOverlap.length} ETH (in overlap) and ${btcCandles.length} BTC candles`);
   
   return { eth: alignedEth, btc: alignedBtc };
 }

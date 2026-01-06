@@ -205,7 +205,77 @@ export function validateDataFreshness(
 }
 
 /**
+ * Calculate period start timestamp for a given timestamp and timeframe
+ * Ensures timestamps align to period boundaries (e.g., 00:00, 08:00, 16:00 for 8h)
+ */
+function getPeriodStart(timestamp: number, timeframe: string): number {
+  const date = new Date(timestamp);
+  
+  if (timeframe === '8h') {
+    const hours = date.getUTCHours();
+    const period = Math.floor(hours / 8);
+    date.setUTCHours(period * 8, 0, 0, 0);
+    date.setUTCMinutes(0, 0, 0);
+    date.setUTCSeconds(0, 0);
+    date.setUTCMilliseconds(0);
+    return date.getTime();
+  } else if (timeframe === '12h') {
+    const hours = date.getUTCHours();
+    const period = Math.floor(hours / 12);
+    date.setUTCHours(period * 12, 0, 0, 0);
+    date.setUTCMinutes(0, 0, 0);
+    date.setUTCSeconds(0, 0);
+    date.setUTCMilliseconds(0);
+    return date.getTime();
+  } else if (timeframe === '1d') {
+    date.setUTCHours(0, 0, 0, 0);
+    date.setUTCMinutes(0, 0, 0);
+    date.setUTCSeconds(0, 0);
+    date.setUTCMilliseconds(0);
+    return date.getTime();
+  }
+  
+  // For other timeframes, return as-is
+  return timestamp;
+}
+
+/**
+ * Validate that a candle timestamp is properly aligned to period boundaries
+ * Returns true if aligned, false otherwise
+ */
+function isTimestampAligned(timestamp: number, timeframe: string): boolean {
+  const periodStart = getPeriodStart(timestamp, timeframe);
+  // Allow 1 second tolerance for rounding
+  return Math.abs(timestamp - periodStart) < 1000;
+}
+
+/**
+ * Check if a timestamp represents a future period (hasn't started yet)
+ */
+function isFuturePeriod(timestamp: number, timeframe: string, now: number): boolean {
+  const periodStart = getPeriodStart(timestamp, timeframe);
+  const currentPeriodStart = getPeriodStart(now, timeframe);
+  return periodStart > currentPeriodStart;
+}
+
+/**
+ * Check if a timestamp represents the current period that just started (< 2 minutes)
+ * This allows a small grace period for the current period to be created
+ */
+function isCurrentPeriodJustStarted(timestamp: number, timeframe: string, now: number): boolean {
+  const periodStart = getPeriodStart(timestamp, timeframe);
+  const currentPeriodStart = getPeriodStart(now, timeframe);
+  if (periodStart !== currentPeriodStart) {
+    return false;
+  }
+  const timeSincePeriodStart = now - currentPeriodStart;
+  // Allow 2 minutes grace period (increased from 1 minute for reliability)
+  return timeSincePeriodStart < 2 * 60 * 1000;
+}
+
+/**
  * Detect gaps in historical data
+ * Improved version with explicit timestamp alignment validation and clearer logic
  */
 export function detectGaps(
   candles: PriceCandle[],
@@ -229,14 +299,34 @@ export function detectGaps(
   const sortedCandles = [...candles].sort((a, b) => a.timestamp - b.timestamp);
   const missingCandles: Array<{ expected: number; actual: number | null }> = [];
   let gapCount = 0;
+  const now = Date.now();
+  
+  // Validate timestamp alignment for period-based timeframes (8h, 12h, 1d)
+  // Log warnings for misaligned candles but don't fail
+  if (timeframe === '8h' || timeframe === '12h' || timeframe === '1d') {
+    const misalignedCandles = sortedCandles.filter(c => !isTimestampAligned(c.timestamp, timeframe));
+    if (misalignedCandles.length > 0) {
+      console.warn(`[Gap Detection] Found ${misalignedCandles.length} misaligned candles for ${timeframe} timeframe. This may cause gap detection issues.`);
+    }
+  }
 
   // Check for gaps between candles
+  // Use period-aligned timestamps for period-based timeframes
   for (let i = 1; i < sortedCandles.length; i++) {
     const prev = sortedCandles[i - 1]!;
     const curr = sortedCandles[i]!;
-    const timeDiff = curr.timestamp - prev.timestamp;
+    
+    // For period-based timeframes, align to period boundaries
+    const prevAligned = (timeframe === '8h' || timeframe === '12h' || timeframe === '1d')
+      ? getPeriodStart(prev.timestamp, timeframe)
+      : prev.timestamp;
+    const currAligned = (timeframe === '8h' || timeframe === '12h' || timeframe === '1d')
+      ? getPeriodStart(curr.timestamp, timeframe)
+      : curr.timestamp;
+    
+    const timeDiff = currAligned - prevAligned;
 
-    // Allow some tolerance (10% of expected interval)
+    // Allow tolerance (10% of expected interval) for rounding differences
     const tolerance = expectedInterval * 0.1;
     if (timeDiff > expectedInterval + tolerance) {
       // Calculate how many candles are missing
@@ -244,60 +334,20 @@ export function detectGaps(
       let actualMissingCount = 0;
       
       for (let j = 1; j <= missingCount; j++) {
-        const expectedTimestamp = prev.timestamp + expectedInterval * j;
+        // Calculate expected timestamp aligned to period boundaries
+        let expectedTimestamp = prevAligned + expectedInterval * j;
+        
+        // For period-based timeframes, ensure alignment
+        if (timeframe === '8h' || timeframe === '12h' || timeframe === '1d') {
+          expectedTimestamp = getPeriodStart(expectedTimestamp, timeframe);
+        }
+        
         if (expectedTimestamp >= startTime && expectedTimestamp <= endTime) {
-          const now = Date.now();
-          // Only exclude if the period hasn't started yet (future period) or just started (within 1 minute tolerance)
-          // If the period has started and it's been more than 1 minute, we should have the candle
-          let shouldExclude = false;
+          // Exclude future periods and current period that just started
+          const isFuture = isFuturePeriod(expectedTimestamp, timeframe, now);
+          const isJustStarted = isCurrentPeriodJustStarted(expectedTimestamp, timeframe, now);
           
-          if (timeframe === '8h' || timeframe === '12h') {
-            const nowDate = new Date(now);
-            const hours = nowDate.getUTCHours();
-            const periodHours = timeframe === '8h' ? 8 : 12;
-            const currentPeriod = Math.floor(hours / periodHours);
-            const currentPeriodStartDate = new Date(nowDate);
-            currentPeriodStartDate.setUTCHours(currentPeriod * periodHours, 0, 0, 0);
-            currentPeriodStartDate.setUTCMinutes(0, 0, 0);
-            const currentPeriodStart = currentPeriodStartDate.getTime();
-            
-            const expectedDate = new Date(expectedTimestamp);
-            const expectedHours = expectedDate.getUTCHours();
-            const expectedPeriod = Math.floor(expectedHours / periodHours);
-            const expectedPeriodStartDate = new Date(expectedDate);
-            expectedPeriodStartDate.setUTCHours(expectedPeriod * periodHours, 0, 0, 0);
-            expectedPeriodStartDate.setUTCMinutes(0, 0, 0);
-            const expectedPeriodStart = expectedPeriodStartDate.getTime();
-            
-            // Only exclude if it's the current period AND it just started (within 1 minute)
-            // If the period has been going for more than 1 minute, we should have the candle
-            if (expectedPeriodStart === currentPeriodStart) {
-              const timeSincePeriodStart = now - currentPeriodStart;
-              shouldExclude = timeSincePeriodStart < 60 * 1000; // 1 minute tolerance
-            } else if (expectedPeriodStart > currentPeriodStart) {
-              // Future period - exclude it
-              shouldExclude = true;
-            }
-          } else if (timeframe === '1d') {
-            const today = new Date(now);
-            today.setUTCHours(0, 0, 0, 0);
-            const todayStart = today.getTime();
-            const expectedDate = new Date(expectedTimestamp);
-            expectedDate.setUTCHours(0, 0, 0, 0);
-            const expectedDayStart = expectedDate.getTime();
-            
-            // Only exclude if it's today AND it just started (within 1 minute)
-            if (expectedDayStart === todayStart) {
-              const timeSinceDayStart = now - todayStart;
-              shouldExclude = timeSinceDayStart < 60 * 1000; // 1 minute tolerance
-            } else if (expectedDayStart > todayStart) {
-              // Future day - exclude it
-              shouldExclude = true;
-            }
-          }
-          
-          // Add if it's not excluded (i.e., it's a past period or current period that's been going for >1 minute)
-          if (!shouldExclude) {
+          if (!isFuture && !isJustStarted) {
             missingCandles.push({
               expected: expectedTimestamp,
               actual: null,
@@ -307,7 +357,7 @@ export function detectGaps(
         }
       }
       
-      // Only increment gapCount if there are actual missing candles (not just the current period)
+      // Only increment gapCount if there are actual missing candles
       if (actualMissingCount > 0) {
         gapCount++;
       }
@@ -318,7 +368,6 @@ export function detectGaps(
   // Only report missing candles if they're recent (within last 30 days)
   // This prevents false positives when we request data from 2020 but only have data from 2025
   const firstCandle = sortedCandles[0]!;
-  const now = Date.now();
   const recentCutoff = now - (30 * 24 * 60 * 60 * 1000); // Last 30 days
   
   // Only check for missing candles at the start if the first candle is recent
@@ -341,82 +390,32 @@ export function detectGaps(
   // Check for missing candles at the end
   // Only check for missing candles up to the current period (not future periods)
   const lastCandle = sortedCandles[sortedCandles.length - 1]!;
-  
-  // For 8h candles, calculate the current period start
-  // Only flag missing candles if they're from completed periods
-  let currentPeriodStart = now;
-  if (timeframe === '8h') {
-    const nowDate = new Date(now);
-    const hours = nowDate.getUTCHours();
-    const currentPeriod = Math.floor(hours / 8);
-    const currentPeriodStartDate = new Date(nowDate);
-    currentPeriodStartDate.setUTCHours(currentPeriod * 8, 0, 0, 0);
-    currentPeriodStartDate.setUTCMinutes(0, 0, 0);
-    currentPeriodStart = currentPeriodStartDate.getTime();
-  } else if (timeframe === '12h') {
-    const nowDate = new Date(now);
-    const hours = nowDate.getUTCHours();
-    const currentPeriod = Math.floor(hours / 12);
-    const currentPeriodStartDate = new Date(nowDate);
-    currentPeriodStartDate.setUTCHours(currentPeriod * 12, 0, 0, 0);
-    currentPeriodStartDate.setUTCMinutes(0, 0, 0);
-    currentPeriodStart = currentPeriodStartDate.getTime();
-  } else if (timeframe === '1d') {
-    const today = new Date(now);
-    today.setUTCHours(0, 0, 0, 0);
-    currentPeriodStart = today.getTime();
-  }
-  
-  // Check for missing candles at the end
-  // Include the current period if it has started and been going for more than 1 minute
-  const timeSinceCurrentPeriodStart = now - currentPeriodStart;
+  const lastCandleAligned = (timeframe === '8h' || timeframe === '12h' || timeframe === '1d')
+    ? getPeriodStart(lastCandle.timestamp, timeframe)
+    : lastCandle.timestamp;
   
   // Calculate how many periods we're missing
-  const periodsSinceLastCandle = Math.floor((now - lastCandle.timestamp) / expectedInterval);
+  const periodsSinceLastCandle = Math.floor((now - lastCandleAligned) / expectedInterval);
   
-  // We should have candles for all periods that have started and been going for >1 minute
+  // We should have candles for all periods that have started and been going for >2 minutes
   // Don't count future periods
   const maxMissingToCheck = timeframe === '8h' ? 3 : timeframe === '1d' ? 7 : 10;
   for (let j = 1; j <= Math.min(periodsSinceLastCandle, maxMissingToCheck); j++) {
-    const expectedTimestamp = lastCandle.timestamp + expectedInterval * j;
+    // Calculate expected timestamp aligned to period boundaries
+    let expectedTimestamp = lastCandleAligned + expectedInterval * j;
     
-    // Check if this is a future period
-    if (timeframe === '8h' || timeframe === '12h') {
-      const expectedDate = new Date(expectedTimestamp);
-      const expectedHours = expectedDate.getUTCHours();
-      const periodHours = timeframe === '8h' ? 8 : 12;
-      const expectedPeriod = Math.floor(expectedHours / periodHours);
-      const expectedPeriodStartDate = new Date(expectedDate);
-      expectedPeriodStartDate.setUTCHours(expectedPeriod * periodHours, 0, 0, 0);
-      expectedPeriodStartDate.setUTCMinutes(0, 0, 0);
-      const expectedPeriodStart = expectedPeriodStartDate.getTime();
-      
-      // Skip if it's a future period (hasn't started yet)
-      if (expectedPeriodStart > currentPeriodStart) {
-        continue;
-      }
-      
-      // Skip if it's the current period and it just started (<1 minute)
-      if (expectedPeriodStart === currentPeriodStart && timeSinceCurrentPeriodStart < 60 * 1000) {
-        continue;
-      }
-    } else if (timeframe === '1d') {
-      const expectedDate = new Date(expectedTimestamp);
-      expectedDate.setUTCHours(0, 0, 0, 0);
-      const expectedDayStart = expectedDate.getTime();
-      const today = new Date(now);
-      today.setUTCHours(0, 0, 0, 0);
-      const todayStart = today.getTime();
-      
-      // Skip if it's a future day
-      if (expectedDayStart > todayStart) {
-        continue;
-      }
-      
-      // Skip if it's today and it just started (<1 minute)
-      if (expectedDayStart === todayStart && timeSinceCurrentPeriodStart < 60 * 1000) {
-        continue;
-      }
+    // For period-based timeframes, ensure alignment
+    if (timeframe === '8h' || timeframe === '12h' || timeframe === '1d') {
+      expectedTimestamp = getPeriodStart(expectedTimestamp, timeframe);
+    }
+    
+    // Skip future periods and current period that just started
+    if (isFuturePeriod(expectedTimestamp, timeframe, now)) {
+      continue;
+    }
+    
+    if (isCurrentPeriodJustStarted(expectedTimestamp, timeframe, now)) {
+      continue;
     }
     
     // Add missing candle if it's within the requested range

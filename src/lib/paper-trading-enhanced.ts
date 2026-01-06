@@ -504,7 +504,7 @@ export class PaperTradingService {
     }
     
     // CRITICAL: Ensure today's candle is updated in Redis before loading candles
-    // updateTodayCandle is called asynchronously in fetchLatestPrice, but we need to wait for it
+    // updateTodayCandle is now awaited in fetchLatestPrice for 8h timeframe, but we verify it exists
     // Retry loading candles if the latest candle is missing (up to 3 attempts)
     const timeframe = session.config.bullishStrategy.timeframe || assetConfig.defaultTimeframe;
     let candles: PriceCandle[] = [];
@@ -517,9 +517,90 @@ export class PaperTradingService {
     // Don't request data older than what's in files - that would trigger unnecessary API calls
     let startDate = '2025-01-01'; // Default to when historical files start
     
+    // Helper function to verify current period candle exists in Redis
+    const verifyCurrentPeriodCandle = async (): Promise<boolean> => {
+      try {
+        const { redis, ensureConnected } = await import('./kv');
+        const { getPriceCachePrefix, getAssetFromSymbol } = await import('./asset-config');
+        await ensureConnected();
+        
+        const asset = getAssetFromSymbol(symbol) || 'eth';
+        const prefix = getPriceCachePrefix(asset);
+        const fileInterval = timeframe === '8h' ? '8h' : timeframe === '12h' ? '12h' : timeframe === '1d' ? '1d' : '8h';
+        
+        // Calculate current period timestamp (same logic as updateTodayCandle)
+        const now = Date.now();
+        let currentPeriodStart: number;
+        if (timeframe === '8h') {
+          const nowDate = new Date(now);
+          const hours = nowDate.getUTCHours();
+          const period = Math.floor(hours / 8);
+          const periodStart = new Date(nowDate);
+          periodStart.setUTCHours(period * 8, 0, 0, 0);
+          periodStart.setUTCMinutes(0, 0, 0);
+          currentPeriodStart = periodStart.getTime();
+        } else if (timeframe === '12h') {
+          const nowDate = new Date(now);
+          const hours = nowDate.getUTCHours();
+          const period = Math.floor(hours / 12);
+          const periodStart = new Date(nowDate);
+          periodStart.setUTCHours(period * 12, 0, 0, 0);
+          periodStart.setUTCMinutes(0, 0, 0);
+          currentPeriodStart = periodStart.getTime();
+        } else if (timeframe === '1d') {
+          const today = new Date(now);
+          today.setUTCHours(0, 0, 0, 0);
+          currentPeriodStart = today.getTime();
+        } else {
+          return true; // Skip verification for other timeframes
+        }
+        
+        // Use same cache key format as updateTodayCandle (getCacheKey function)
+        const todayStart = currentPeriodStart;
+        const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1;
+        const cacheKey = `${prefix}${symbol}:${fileInterval}:${todayStart}:${todayEnd}`;
+        const cached = await redis.get(cacheKey);
+        
+        if (cached) {
+          const parsed = JSON.parse(cached) as PriceCandle[];
+          // Check if current period candle exists
+          const hasCurrentPeriod = parsed.some(c => {
+            if (timeframe === '8h' || timeframe === '12h') {
+              const candleDate = new Date(c.timestamp);
+              const candleHours = candleDate.getUTCHours();
+              const periodHours = timeframe === '8h' ? 8 : 12;
+              const candlePeriod = Math.floor(candleHours / periodHours);
+              const candlePeriodStart = new Date(candleDate);
+              candlePeriodStart.setUTCHours(candlePeriod * periodHours, 0, 0, 0);
+              candlePeriodStart.setUTCMinutes(0, 0, 0);
+              return candlePeriodStart.getTime() === currentPeriodStart;
+            } else if (timeframe === '1d') {
+              const candleDate = new Date(c.timestamp);
+              candleDate.setUTCHours(0, 0, 0, 0);
+              return candleDate.getTime() === currentPeriodStart;
+            }
+            return false;
+          });
+          return hasCurrentPeriod;
+        }
+        return false;
+      } catch {
+        return false; // Assume not found if verification fails
+      }
+    };
+    
     while (retryCount < maxRetries) {
-      // Wait for updateTodayCandle to complete (increased delay for reliability)
-      await new Promise(resolve => setTimeout(resolve, 500 + retryCount * 200));
+      // For first attempt, verify current period candle exists (since we await it in fetchLatestPrice)
+      if (retryCount === 0 && timeframe === '8h') {
+        const candleExists = await verifyCurrentPeriodCandle();
+        if (!candleExists) {
+          console.warn(`[Paper Trading] Current period candle not found in Redis, waiting for update...`);
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      } else if (retryCount > 0) {
+        // For retries, wait longer
+        await new Promise(resolve => setTimeout(resolve, 500 + retryCount * 200));
+      }
       
       // Strategy: Load ALL file data first (directly from files, no date filtering), then only fetch recent/missing candles from API/Redis
       // The 50 candles should come from files + Redis, NOT from API
@@ -708,9 +789,9 @@ export class PaperTradingService {
     // Check for gaps in the data
     // NOTE: Synthetic data is prevented by allowSyntheticData=false in fetchPriceCandles
     // Synthetic data is identified by LOCATION (synthetic/ directory), NOT by date
-    const now = Date.now();
+    const gapDetectionNow = Date.now();
     const gapStartTime = candles.length > 0 ? candles[0]!.timestamp : new Date(startDate).getTime();
-    const gapEndTime = Math.min(now, new Date(endDate + 'T23:59:59.999Z').getTime());
+    const gapEndTime = Math.min(gapDetectionNow, new Date(endDate + 'T23:59:59.999Z').getTime());
     
     // Detect gaps in the data (all candles are real data since allowSyntheticData=false)
     const gapInfo = detectGaps(candles, timeframe, gapStartTime, gapEndTime);
@@ -719,12 +800,12 @@ export class PaperTradingService {
       // Try to fill gaps from API
       // For manual updates (fillAllGaps=true), fill ALL gaps in the past (no age limit)
       // For automatic updates (fillAllGaps=false), only fill recent gaps (last 7 days)
-      const now = Date.now();
+      const gapFillNow = Date.now();
       
       const gapsToFill = fillAllGaps
-        ? gapInfo.missingCandles.filter(m => m.expected < now) // Fill all gaps in the past (no age limit for manual updates)
+        ? gapInfo.missingCandles.filter(m => m.expected < gapFillNow) // Fill all gaps in the past (no age limit for manual updates)
         : gapInfo.missingCandles.filter(m => {
-            const gapAge = now - m.expected;
+            const gapAge = gapFillNow - m.expected;
             const maxGapAge = 7 * 24 * 60 * 60 * 1000; // 7 days for automatic updates
             return gapAge > 0 && gapAge < maxGapAge;
           });
@@ -734,60 +815,123 @@ export class PaperTradingService {
       console.warn(`[Paper Trading] Detected ${gapInfo.missingCandles.length} missing candles (${gapsToFill.length} ${gapType}, ${oldGaps} too old). Attempting to fill ${gapType} gaps...`);
       
       if (gapsToFill.length > 0) {
-        try {
-          // Use targeted gap filler to fetch only the specific missing candles
-          // This is more efficient than fillGapsInCandles which tries to fill all gaps
-          const { fetchMissingCandles } = await import('./targeted-gap-filler');
-          const missingTimestamps = gapsToFill.map(g => g.expected);
+        // CRITICAL: Verification loop - fill gaps and verify they were actually filled
+        // Retry up to 3 times if gaps persist
+        const maxGapFillRetries = 3;
+        let gapFillAttempt = 0;
+        let remainingGaps = [...gapsToFill];
+        const allFilledCandles: PriceCandle[] = [];
+        
+        while (remainingGaps.length > 0 && gapFillAttempt < maxGapFillRetries) {
+          gapFillAttempt++;
+          const initialGapCount = remainingGaps.length;
           
-          console.log(`[Paper Trading] Attempting to fetch ${gapsToFill.length} missing candles from API...`);
-          const filledCandles = await fetchMissingCandles(symbol, timeframe, missingTimestamps);
-          
-          if (filledCandles.length > 0) {
-            // Merge filled candles with existing candles
-            const allCandles = [...candles, ...filledCandles];
-            const merged = allCandles
-              .filter((c, i, arr) => arr.findIndex(cc => cc.timestamp === c.timestamp) === i)
-              .sort((a, b) => a.timestamp - b.timestamp);
+          try {
+            // Use targeted gap filler to fetch only the specific missing candles
+            const { fetchMissingCandles } = await import('./targeted-gap-filler');
+            const missingTimestamps = remainingGaps.map(g => g.expected);
             
-            // NOTE: Synthetic data is prevented by allowSyntheticData=false in fetchPriceCandles
-            candles = merged;
+            console.log(`[Paper Trading] Gap fill attempt ${gapFillAttempt}/${maxGapFillRetries}: Attempting to fetch ${missingTimestamps.length} missing candles from API...`);
+            const filledCandles = await fetchMissingCandles(symbol, timeframe, missingTimestamps);
             
-            console.log(`[Paper Trading] Filled ${filledCandles.length} of ${gapsToFill.length} missing candles from API`);
-          } else {
-            // Gap filling didn't add any candles - send alert
-            console.warn(`[Paper Trading] Gap filling attempt did not add any candles. ${gapsToFill.length} gaps remain.`);
-            if (isNotificationsEnabled()) {
-              await trackDataQualityIssue(
-                `Gap filling failed to add candles: ${gapsToFill.length} gaps remain`,
-                `[${sessionAsset.toUpperCase()}] Symbol: ${symbol}, Timeframe: ${timeframe}, Gaps: ${gapsToFill.length}`
-              ).catch(err => {
-                console.warn('[Paper Trading] Failed to send Discord alert:', err);
+            if (filledCandles.length > 0) {
+              // Merge filled candles with existing candles
+              allFilledCandles.push(...filledCandles);
+              const allCandles = [...candles, ...allFilledCandles];
+              
+              // CRITICAL: Use proper deduplication that keeps candles with higher volume
+              // This ensures newly fetched candles (which may have more accurate data) are preferred
+              const { deduplicateCandles } = await import('./historical-file-utils');
+              const merged = deduplicateCandles(allCandles);
+              
+              // NOTE: Synthetic data is prevented by allowSyntheticData=false in fetchPriceCandles
+              candles = merged;
+              
+              console.log(`[Paper Trading] Filled ${filledCandles.length} candles from API (attempt ${gapFillAttempt})`);
+              
+              // VERIFICATION: Re-detect gaps to verify they were filled
+              // Wait a moment for Redis to update and ensure candles are properly merged
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // Ensure we have the latest candles (re-merge to catch any Redis updates)
+              // This ensures verification uses the most up-to-date data
+              const verifyCandles = [...candles].sort((a, b) => a.timestamp - b.timestamp);
+              
+              // Re-detect gaps with updated candles using same time reference
+              const verifyGapInfo = detectGaps(verifyCandles, timeframe, gapStartTime, gapEndTime);
+              const stillMissing = verifyGapInfo.missingCandles.filter(m => {
+                // Check if this gap was in our original list (use tolerance for timestamp matching)
+                return remainingGaps.some(original => Math.abs(original.expected - m.expected) < 1000);
               });
+              
+              if (stillMissing.length === 0) {
+                console.log(`[Paper Trading] ✅ All ${initialGapCount} gaps successfully filled and verified!`);
+                break; // All gaps filled, exit retry loop
+              } else {
+                remainingGaps = stillMissing;
+                console.warn(`[Paper Trading] ⚠️  ${stillMissing.length} of ${initialGapCount} gaps still remain after attempt ${gapFillAttempt}. Will retry...`);
+                
+                if (gapFillAttempt < maxGapFillRetries) {
+                  // Wait before retry (exponential backoff)
+                  const retryDelay = Math.pow(2, gapFillAttempt - 1) * 1000;
+                  console.log(`[Paper Trading] Waiting ${retryDelay}ms before retry...`);
+                  await new Promise(resolve => setTimeout(resolve, retryDelay));
+                }
+              }
+            } else {
+              // Gap filling didn't add any candles
+              console.warn(`[Paper Trading] Gap filling attempt ${gapFillAttempt} did not add any candles. ${remainingGaps.length} gaps remain.`);
+              
+              if (gapFillAttempt === maxGapFillRetries) {
+                // Final attempt failed - send alert
+                if (isNotificationsEnabled()) {
+                  await trackDataQualityIssue(
+                    `Gap filling failed to add candles after ${maxGapFillRetries} attempts: ${remainingGaps.length} gaps remain`,
+                    `[${sessionAsset.toUpperCase()}] Symbol: ${symbol}, Timeframe: ${timeframe}, Gaps: ${remainingGaps.length}`
+                  ).catch(err => {
+                    console.warn('[Paper Trading] Failed to send Discord alert:', err);
+                  });
+                }
+              } else {
+                // Wait before retry
+                const retryDelay = Math.pow(2, gapFillAttempt - 1) * 1000;
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+              }
+            }
+          } catch (fillError) {
+            const errorMessage = fillError instanceof Error ? fillError.message : String(fillError);
+            console.warn(`[Paper Trading] Gap filling attempt ${gapFillAttempt} failed: ${errorMessage}`);
+            
+            if (gapFillAttempt === maxGapFillRetries) {
+              // Final attempt failed - send alert
+              if (isNotificationsEnabled()) {
+                await trackDataQualityIssue(
+                  `Gap filling failed after ${maxGapFillRetries} attempts: ${errorMessage}`,
+                  `[${sessionAsset.toUpperCase()}] Symbol: ${symbol}, Timeframe: ${timeframe}, Gaps: ${remainingGaps.length}`
+                ).catch(err => {
+                  console.warn('[Paper Trading] Failed to send Discord alert:', err);
+                });
+              }
+            } else {
+              // Wait before retry
+              const retryDelay = Math.pow(2, gapFillAttempt - 1) * 1000;
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
           }
-        } catch (fillError) {
-          const errorMessage = fillError instanceof Error ? fillError.message : String(fillError);
-          console.warn(`[Paper Trading] Failed to fill gaps from API: ${errorMessage}`);
-          
-          // Send Discord alert for gap filling failure
-          if (isNotificationsEnabled()) {
-            await trackDataQualityIssue(
-              `Gap filling failed: ${errorMessage}`,
-              `[${sessionAsset.toUpperCase()}] Symbol: ${symbol}, Timeframe: ${timeframe}, Gaps: ${gapsToFill.length}`
-            ).catch(err => {
-              console.warn('[Paper Trading] Failed to send Discord alert:', err);
-            });
-          }
-          
-          // Continue with existing candles - better than failing completely
+        }
+        
+        // Final summary for verification loop
+        if (remainingGaps.length > 0) {
+          console.warn(`[Paper Trading] ⚠️  ${remainingGaps.length} gaps remain after ${maxGapFillRetries} fill attempts. These may be future periods or unavailable data.`);
+        } else if (allFilledCandles.length > 0) {
+          console.log(`[Paper Trading] ✅ Successfully filled all gaps! Total candles added: ${allFilledCandles.length}`);
         }
       } else {
         // No gaps to fill - log why
         if (oldGaps > 0) {
           if (fillAllGaps) {
             // For manual updates, all past gaps should be filled - if we have oldGaps, they must be in the future
-            const futureGaps = gapInfo.missingCandles.filter(m => m.expected >= now);
+            const futureGaps = gapInfo.missingCandles.filter(m => m.expected >= gapFillNow);
             if (futureGaps.length > 0) {
               console.log(`[Paper Trading] ${futureGaps.length} gaps are in the future and cannot be filled.`);
             }
@@ -797,12 +941,13 @@ export class PaperTradingService {
         }
       }
       
-      // If gaps still exist after API fill attempt, try to fetch missing end candles explicitly
-      const remainingGaps = detectGaps(candles, timeframe, gapStartTime, gapEndTime);
-      if (remainingGaps.missingCandles.length > 0) {
-        // Try to fetch missing end candles explicitly
+      // Final check: Re-detect gaps to see if any new gaps appeared (e.g., at the end of the range)
+      // This is separate from the verification loop and handles edge cases
+      const finalGapCheck = detectGaps(candles, timeframe, gapStartTime, gapEndTime);
+      if (finalGapCheck.missingCandles.length > 0) {
+        // Filter to only recent gaps that we should try to fill
         const now = Date.now();
-        const endGaps = remainingGaps.missingCandles.filter(m => {
+        const endGaps = finalGapCheck.missingCandles.filter(m => {
           const gapAge = now - m.expected;
           return gapAge > 0 && gapAge < 7 * 24 * 60 * 60 * 1000; // Last 7 days
         });
@@ -827,11 +972,10 @@ export class PaperTradingService {
             );
             
             if (endCandles.length > 0) {
-              // Merge with existing candles
+              // Merge with existing candles using proper deduplication
               const allCandles = [...candles, ...endCandles];
-              candles = allCandles
-                .filter((c, i, arr) => arr.findIndex(cc => cc.timestamp === c.timestamp) === i)
-                .sort((a, b) => a.timestamp - b.timestamp);
+              const { deduplicateCandles } = await import('./historical-file-utils');
+              candles = deduplicateCandles(allCandles);
               
               // NOTE: Synthetic data is prevented by allowSyntheticData=false in fetchPriceCandles
               

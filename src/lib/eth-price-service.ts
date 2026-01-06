@@ -556,6 +556,7 @@ export async function fetchPriceCandles(
     const filtered = fixedData.filter(c => 
       c.timestamp >= startTime && c.timestamp <= actualEndTime
     );
+    
     allCandles.push(...filtered);
     
     // If we fixed any OHLC issues, save the fixed data back to file
@@ -1063,21 +1064,28 @@ export async function fetchPriceCandles(
             new Map(allCachedCandles.map(c => [c.timestamp, c])).values()
           ).sort((a, b) => a.timestamp - b.timestamp);
           
-          // If we have enough data from cache, return it
-          if (uniqueCandles.length >= 10 || uniqueCandles.some(c => c.timestamp >= startTime && c.timestamp <= actualEndTime)) {
-            return uniqueCandles;
-          }
+          // Merge cache data with file data (don't return early - files are the source of truth)
+          // Cache candles will be merged with file data later
+          allCandles.push(...uniqueCandles);
         }
       }
     } else {
       // For daily candles, use the exact key match (original behavior)
+      // NOTE: We don't return early from cache - we always load from files first
+      // Cache is used to supplement file data, not replace it
+      // This ensures we always have the most up-to-date data from files
       const cacheKey = getCacheKey(symbol, interval, startTime, endTime);
       const cached = await redis.get(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached) as PriceCandle[];
-        // If we have enough data from cache, return it
-        if (parsed.length >= 50 || parsed.some(c => c.timestamp >= startTime && c.timestamp <= endTime)) {
-          return parsed;
+        
+        // Merge cache data with file data (don't return early - files are the source of truth)
+        // Cache candles will be merged later in the function
+        const cacheCandles = parsed.filter(c => 
+          c.timestamp >= startTime && c.timestamp <= actualEndTime
+        );
+        if (cacheCandles.length > 0) {
+          allCandles.push(...cacheCandles);
         }
       }
     }
@@ -1136,15 +1144,15 @@ export async function fetchPriceCandles(
     // 2. endDate is in the past AND we have complete coverage (historical data already in files, no need for API)
     //    BUT: If we don't have complete coverage, we should still fetch from API even for historical periods
     // 3. We have synthetic data (for assets like BTC that only have synthetic data, don't try API)
+    //    NOTE: Synthetic data is identified by LOCATION (synthetic/ directory), NOT by date
+    //    When allowSyntheticData=false, the synthetic/ directory is never accessed, so allCandles only contains real data
     // 4. We have enough data (>=50 candles) and it's a very large historical range (incomplete coverage expected)
     const isHistoricalPeriod = endTime < Date.now();
     const isLargeHistoricalRange = (endTime - startTime) > 365 * 24 * 60 * 60 * 1000; // More than 1 year
     const hasEnoughData = allCandles.length >= 50 || allCandles.some(c => c.timestamp >= startTime && c.timestamp <= endTime);
-    const hasSyntheticData = allCandles.length > 0 && allCandles.some(c => {
-      // Check if any candle is from synthetic data (dates >= 2026-01-01 for BTC/ETH synthetic)
-      const candleDate = new Date(c.timestamp);
-      return candleDate >= new Date('2026-01-01');
-    });
+    // NOTE: We can't detect synthetic data by date - synthetic data is identified by location (synthetic/ directory)
+    // When allowSyntheticData=false, synthetic data is never loaded, so hasSyntheticData is always false
+    const hasSyntheticData = false; // Synthetic data detection removed - synthetic is identified by location, not date
     
     // Don't fetch from API if we have enough data and it's a large historical range (incomplete coverage is expected)
     const shouldSkipAPIFetchForLargeRange = isLargeHistoricalRange && hasEnoughData && !hasCompleteCoverage;
@@ -1299,25 +1307,13 @@ export async function fetchPriceCandles(
               }
               
               // If we have file data, use it instead of failing
-              // CRITICAL: Filter out any synthetic data if allowSyntheticData=false
-              let fileCandles = allCandles;
-              if (!allowSyntheticData) {
-                // Remove any candles that look like synthetic data (dates >= 2026-01-01)
-                const syntheticCutoff = new Date('2026-01-01').getTime();
-                fileCandles = allCandles.filter(c => c.timestamp < syntheticCutoff);
-                
-                // If we filtered out candles, log a warning
-                if (fileCandles.length < allCandles.length) {
-                  const removed = allCandles.length - fileCandles.length;
-                  console.warn(`⚠️  Filtered out ${removed} synthetic candles (allowSyntheticData=false) - paper trading must NEVER use synthetic data`);
-                }
-              }
-              
-              if (fileCandles.length > 0) {
+              // NOTE: Synthetic data is identified by LOCATION (synthetic/ directory), NOT by date
+              // When allowSyntheticData=false, the synthetic/ directory is never accessed, so allCandles only contains real data
+              if (allCandles.length > 0) {
                 const dataSource = allowSyntheticData ? 'file/synthetic data' : 'file data';
-                console.log(`ℹ️ All APIs failed but we have ${fileCandles.length} candles from ${dataSource} - using that instead`);
+                console.log(`ℹ️ All APIs failed but we have ${allCandles.length} candles from ${dataSource} - using that instead`);
                 candles = Array.from(
-                  new Map(fileCandles.map(c => [c.timestamp, c])).values()
+                  new Map(allCandles.map(c => [c.timestamp, c])).values()
                 ).sort((a, b) => a.timestamp - b.timestamp);
               } else {
                 throw new Error(`No real API data available for ${interval} candles in requested range - cannot use synthetic data for trading`);
@@ -1332,20 +1328,10 @@ export async function fetchPriceCandles(
   // Merge API data with file data
   // Always start with file data (allCandles) as the base, then merge in API data
   // This ensures we preserve all candles from files, even if API doesn't return them
-  // CRITICAL: Filter out synthetic data if allowSyntheticData=false BEFORE merging
-  let fileCandles = allCandles;
-  if (!allowSyntheticData && allCandles.length > 0) {
-    // Remove any candles that look like synthetic data (dates >= 2026-01-01)
-    const syntheticCutoff = new Date('2026-01-01').getTime();
-    const beforeCount = allCandles.length;
-    fileCandles = allCandles.filter(c => c.timestamp < syntheticCutoff);
-    
-    // If we filtered out candles, log a warning
-    if (fileCandles.length < beforeCount) {
-      const removed = beforeCount - fileCandles.length;
-      console.warn(`⚠️  Filtered out ${removed} synthetic candles (allowSyntheticData=false) - paper trading must NEVER use synthetic data`);
-    }
-  }
+  // NOTE: Synthetic data is identified by LOCATION (synthetic/ directory), NOT by date
+  // Real data can be from any date, including 2026 and beyond
+  // When allowSyntheticData=false, the synthetic/ directory is never accessed, so allCandles only contains real data
+  const fileCandles = allCandles;
   
   if (fileCandles.length > 0) {
     const existingMap = new Map(fileCandles.map(c => [c.timestamp, c]));
@@ -1640,17 +1626,23 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
       // Cache write failed - non-critical
     }
     
-    // Update historical data with latest price (non-blocking)
-    // Update daily, hourly, 8-hour, 12-hour, and 5-minute candles
-    // This builds real candle data from actual price points (not synthetic)
+    // Update historical data with latest price
+    // CRITICAL: For 8h timeframe (primary trading timeframe), await completion to ensure candle is available
+    // Other timeframes can be updated in background
+    const criticalTimeframe = '8h';
+    try {
+      await updateTodayCandle(symbol, price, criticalTimeframe);
+    } catch (err) {
+      console.warn(`Failed to update ${criticalTimeframe} candle with latest price:`, err);
+      // Non-critical for other timeframes, but log warning
+    }
+    
+    // Update other timeframes in background (non-blocking)
     updateTodayCandle(symbol, price, '1d').catch(err => {
       console.warn('Failed to update daily candle with latest price:', err);
     });
     updateTodayCandle(symbol, price, '1h').catch(err => {
       console.warn('Failed to update hourly candle with latest price:', err);
-    });
-    updateTodayCandle(symbol, price, '8h').catch(err => {
-      console.warn('Failed to update 8-hour candle with latest price:', err);
     });
     updateTodayCandle(symbol, price, '12h').catch(err => {
       console.warn('Failed to update 12-hour candle with latest price:', err);
@@ -1680,10 +1672,15 @@ export async function fetchLatestPrice(symbol: string = 'ETHUSDT'): Promise<numb
         const cachedPrice = parseFloat(cached);
         if (cachedPrice > 0) {
           console.warn(`⚠️ Using stale cached price: $${cachedPrice.toFixed(2)} (APIs rate limited)`);
-          // Still try to update today's candles with cached price
+          // CRITICAL: For 8h timeframe (primary trading timeframe), await completion
+          try {
+            await updateTodayCandle(symbol, cachedPrice, '8h');
+          } catch (err) {
+            console.warn('Failed to update 8h candle with cached price:', err);
+          }
+          // Update other timeframes in background
           updateTodayCandle(symbol, cachedPrice, '1d').catch(() => {});
           updateTodayCandle(symbol, cachedPrice, '1h').catch(() => {});
-          updateTodayCandle(symbol, cachedPrice, '8h').catch(() => {});
           updateTodayCandle(symbol, cachedPrice, '12h').catch(() => {});
           updateTodayCandle(symbol, cachedPrice, '5m').catch(() => {});
           return cachedPrice;

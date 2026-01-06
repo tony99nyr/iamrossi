@@ -97,24 +97,30 @@ export async function fetchCryptoCompareCandles(
     
     // Calculate limit for this request
     // When aggregating (e.g., 8h from hourly), we need enough hourly candles to cover the time range
-    // Add a small buffer (1 extra period) to ensure we have complete coverage
+    // OPTIMIZATION: Only request what's needed, not the full 2000 limit
     let remainingPoints: number;
     if (endpoint === 'histohour') {
       const hoursNeeded = Math.ceil((currentEndTime - startTimeSeconds) / 3600);
       // If aggregating, we need enough hourly candles for the target timeframe
-      // For 8h: if we need 2 8h candles (16h), we need 16-24 hourly candles (with buffer)
+      // For 8h: if we need 1 8h candle (8h), we only need 8-16 hourly candles (with small buffer)
       if (aggregate > 1) {
         // Calculate how many target-interval candles we need, then multiply by aggregate
         const targetIntervalHours = aggregate;
         const targetCandlesNeeded = Math.ceil(hoursNeeded / targetIntervalHours);
-        // Request hourly candles: target candles * aggregate + 1 period buffer
-        remainingPoints = (targetCandlesNeeded * targetIntervalHours) + targetIntervalHours;
+        // Request hourly candles: target candles * aggregate + small buffer (max 1 period)
+        // This ensures we have enough for aggregation without requesting 2000 when only 1 candle is needed
+        const bufferHours = Math.min(targetIntervalHours, 8); // Max 8 hour buffer
+        const calculatedPoints = (targetCandlesNeeded * targetIntervalHours) + bufferHours;
+        // OPTIMIZATION: Cap at what's actually needed based on the time range, not the full 2000
+        // This prevents fetching 2000 hourly candles when only 1 candle is missing
+        remainingPoints = Math.min(calculatedPoints, hoursNeeded + bufferHours);
       } else {
         remainingPoints = hoursNeeded;
       }
     } else {
       remainingPoints = Math.ceil((currentEndTime - startTimeSeconds) / 86400);
     }
+    // OPTIMIZATION: Cap at what's actually needed, not the full 2000 limit
     const limit = Math.min(remainingPoints, maxPointsPerRequest);
     
     const url = new URL(`${CRYPTOCOMPARE_API_URL}/${endpoint}`);

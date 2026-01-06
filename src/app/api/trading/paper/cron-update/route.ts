@@ -157,33 +157,85 @@ export async function GET(request: NextRequest) {
             });
             
             if (recentGaps.length > 0) {
-              // Extract only the missing timestamps - fetch ONLY these specific candles
-              const missingTimestamps = recentGaps.map(g => g.expected);
+              // CRITICAL: Verification loop - fill gaps and verify they were actually filled
+              const maxGapFillRetries = 2; // Fewer retries for cron (to avoid long execution)
+              let gapFillAttempt = 0;
+              let remainingGaps = [...recentGaps];
+              let totalFilled = 0;
               
-              console.log(`📊 [Cron] Detected ${missingTimestamps.length} missing ${timeframe} candles for ${config.displayName}, fetching only missing candles...`);
+              while (remainingGaps.length > 0 && gapFillAttempt < maxGapFillRetries) {
+                gapFillAttempt++;
+                const missingTimestamps = remainingGaps.map(g => g.expected);
+                
+                console.log(`📊 [Cron] Gap fill attempt ${gapFillAttempt}/${maxGapFillRetries}: Detected ${missingTimestamps.length} missing ${timeframe} candles for ${config.displayName}...`);
+                
+                try {
+                  // Fetch ONLY the missing candles (not entire date ranges)
+                  const filledCandles = await fetchMissingCandles(symbol, timeframe, missingTimestamps);
+                  
+                  if (filledCandles.length > 0) {
+                    totalFilled += filledCandles.length;
+                    console.log(`✅ [Cron] Filled ${filledCandles.length} candles (attempt ${gapFillAttempt}, total: ${totalFilled})`);
+                    
+                    // VERIFICATION: Re-detect gaps to verify they were filled
+                    // Wait a moment for Redis to update
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // Re-load candles and re-detect gaps
+                    const updatedCandles = await fetchPriceCandles(symbol, timeframe, startDate, endDate, undefined, false, false);
+                    const verifyGapInfo = detectGaps(updatedCandles, timeframe, startTime, endTime);
+                    const stillMissing = verifyGapInfo.missingCandles.filter(m => {
+                      const gapAge = Date.now() - m.expected;
+                      const maxGapAge = 7 * 24 * 60 * 60 * 1000;
+                      return gapAge > 0 && gapAge < maxGapAge && 
+                             remainingGaps.some(original => Math.abs(original.expected - m.expected) < 1000);
+                    });
+                    
+                    if (stillMissing.length === 0) {
+                      console.log(`✅ [Cron] All ${recentGaps.length} gaps successfully filled and verified for ${config.displayName}!`);
+                      remainingGaps = [];
+                      break; // All gaps filled
+                    } else {
+                      remainingGaps = stillMissing;
+                      console.warn(`⚠️ [Cron] ${stillMissing.length} gaps still remain after attempt ${gapFillAttempt} for ${config.displayName}`);
+                      
+                      if (gapFillAttempt < maxGapFillRetries) {
+                        const retryDelay = Math.pow(2, gapFillAttempt - 1) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                      }
+                    }
+                  } else {
+                    console.warn(`⚠️ [Cron] Gap filling attempt ${gapFillAttempt} did not add any candles for ${config.displayName}`);
+                    if (gapFillAttempt < maxGapFillRetries) {
+                      const retryDelay = Math.pow(2, gapFillAttempt - 1) * 1000;
+                      await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    }
+                  }
+                } catch (fillError) {
+                  const errorMsg = fillError instanceof Error ? fillError.message : String(fillError);
+                  console.warn(`⚠️ [Cron] Gap filling attempt ${gapFillAttempt} failed for ${config.displayName}: ${errorMsg}`);
+                  if (gapFillAttempt < maxGapFillRetries) {
+                    const retryDelay = Math.pow(2, gapFillAttempt - 1) * 1000;
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                  }
+                }
+              }
               
-              // Fetch ONLY the missing candles (not entire date ranges)
-              const filledCandles = await fetchMissingCandles(symbol, timeframe, missingTimestamps);
+              // Record results
+              gapFillingResults[asset][timeframe] = {
+                detected: recentGaps.length,
+                filled: totalFilled,
+              };
               
-              if (filledCandles.length > 0) {
-                gapFillingResults[asset][timeframe] = {
-                  detected: recentGaps.length,
-                  filled: filledCandles.length,
-                };
-                console.log(`✅ [Cron] Filled ${filledCandles.length} of ${missingTimestamps.length} missing ${timeframe} candles for ${config.displayName}`);
-              } else {
-                gapFillingResults[asset][timeframe] = {
-                  detected: recentGaps.length,
-                  filled: 0,
-                };
-                // Send Discord alert if gap filling didn't add any candles
+              if (remainingGaps.length > 0) {
+                // Some gaps remain - send alert
                 if (isNotificationsEnabled()) {
-                  const missingStart = Math.min(...missingTimestamps);
-                  const missingEnd = Math.max(...missingTimestamps);
+                  const missingStart = Math.min(...remainingGaps.map(g => g.expected));
+                  const missingEnd = Math.max(...remainingGaps.map(g => g.expected));
                   const missingStartDate = new Date(missingStart).toISOString().split('T')[0];
                   const missingEndDate = new Date(missingEnd).toISOString().split('T')[0];
                   await trackDataQualityIssue(
-                    `Gap filling failed to add candles: ${recentGaps.length} recent gaps remain`,
+                    `Gap filling incomplete after ${maxGapFillRetries} attempts: ${remainingGaps.length} gaps remain`,
                     `[Cron] ${config.displayName} ${timeframe}, Missing timestamps: ${missingStartDate} to ${missingEndDate}`
                   ).catch(err => {
                     console.warn('[Cron] Failed to send Discord alert:', err);
