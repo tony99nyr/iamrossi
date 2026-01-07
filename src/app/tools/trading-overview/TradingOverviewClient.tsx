@@ -6,6 +6,8 @@ import { css } from '@styled-system/css';
 import { stack, flex } from '@styled-system/patterns';
 import type { EnhancedPaperTradingSession } from '@/lib/paper-trading-enhanced';
 import { getAssetConfig } from '@/lib/asset-config';
+import { isTradingBlocked } from '@/lib/risk-management-utils';
+import { getNextAction } from '@/lib/next-action-utils';
 import PinEntryModal from '@/components/rehab/PinEntryModal';
 import PerformanceMetricsPanel from './components/PerformanceMetricsPanel';
 import CorrelationIndicator from './components/CorrelationIndicator';
@@ -172,6 +174,8 @@ export default function TradingOverviewClient() {
   const combinedValue = (overview.eth?.portfolio.totalValue || 0) + (overview.btc?.portfolio.totalValue || 0);
   const ethReturn = overview.eth?.portfolio.totalReturn || 0;
   const btcReturn = overview.btc?.portfolio.totalReturn || 0;
+  const ethNextAction = getNextAction(overview.eth);
+  const btcNextAction = getNextAction(overview.btc);
 
   return (
     <div className={containerStyles}>
@@ -226,6 +230,80 @@ export default function TradingOverviewClient() {
             </div>
           </div>
         </div>
+
+        {/* Risk Management Status */}
+        {(isTradingBlocked(overview.eth) || isTradingBlocked(overview.btc)) && (
+          <div className={css({
+            padding: '16px',
+            bg: 'rgba(248, 81, 73, 0.1)',
+            border: '1px solid rgba(248, 81, 73, 0.3)',
+            borderRadius: '8px',
+          })}>
+            <h2 className={css({ fontSize: 'lg', fontWeight: 'semibold', marginBottom: '12px', color: '#f85149' })}>
+              ⚠️ Trading Blocked by Risk Management
+            </h2>
+            <div className={stack({ gap: '8px' })}>
+              {isTradingBlocked(overview.eth) && (
+                <div className={css({ color: '#f85149', fontSize: 'sm' })}>
+                  • {ethConfig.displayName}: Trading is currently blocked by risk management filters
+                </div>
+              )}
+              {isTradingBlocked(overview.btc) && (
+                <div className={css({ color: '#f85149', fontSize: 'sm' })}>
+                  • {btcConfig.displayName}: Trading is currently blocked by risk management filters
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Next Actions */}
+        {(ethNextAction || btcNextAction) && (
+          <div className={css({
+            display: 'grid',
+            gridTemplateColumns: { base: '1fr', md: 'repeat(2, 1fr)' },
+            gap: '16px',
+          })}>
+            {ethNextAction && (
+              <div className={css({
+                padding: '12px',
+                bg: ethNextAction.bgColor,
+                border: `1px solid ${ethNextAction.borderColor}`,
+                borderRadius: '8px',
+              })}>
+                <div className={css({ fontSize: 'xs', color: '#7d8590', marginBottom: '4px' })}>
+                  {ethConfig.displayName} - Next Action
+                </div>
+                <div className={css({ 
+                  fontSize: 'sm', 
+                  fontWeight: 'semibold',
+                  color: ethNextAction.color,
+                })}>
+                  {ethNextAction.message}
+                </div>
+              </div>
+            )}
+            {btcNextAction && (
+              <div className={css({
+                padding: '12px',
+                bg: btcNextAction.bgColor,
+                border: `1px solid ${btcNextAction.borderColor}`,
+                borderRadius: '8px',
+              })}>
+                <div className={css({ fontSize: 'xs', color: '#7d8590', marginBottom: '4px' })}>
+                  {btcConfig.displayName} - Next Action
+                </div>
+                <div className={css({ 
+                  fontSize: 'sm', 
+                  fontWeight: 'semibold',
+                  color: btcNextAction.color,
+                })}>
+                  {btcNextAction.message}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Asset Health Cards */}
         <div className={css({

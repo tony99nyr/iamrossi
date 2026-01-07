@@ -47,6 +47,15 @@ function formatDate(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
+function getTodayDate(): string {
+    // Get today's date in local timezone, normalized to midnight
+    // This ensures we always get the correct local date regardless of timezone
+    const now = new Date();
+    // Create a new date at midnight in local timezone
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return formatDate(today);
+}
+
 function formatMonthYear(startDate: Date, endDate: Date): string {
     const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
     const endMonth = endDate.toLocaleDateString('en-US', { month: 'short' });
@@ -72,7 +81,7 @@ export default function WeeklyCalendar({
     heartRates = {},
 }: WeeklyCalendarProps) {
     const weekDates = getWeekDates(currentDate);
-    const today = formatDate(new Date());
+    const today = getTodayDate();
 
     const { onTouchStart, onTouchMove, onTouchEnd } = useSwipe({
         onSwipeLeft: onNextWeek,

@@ -64,7 +64,8 @@ export async function scrapePriceChartingForCard(
 
   logDebug(`[Pokemon] Scraping PriceCharting for card ${card.name} (${card.id}) -> ${url}`);
 
-  const MAX_RETRIES = 3;
+  // Increased retries for better reliability with network issues
+  const MAX_RETRIES = 5;
   let lastError: Error | null = null;
 
   // Retry logic with exponential backoff
@@ -1228,6 +1229,27 @@ export async function refreshTodaySnapshots(
     }
   };
 
+  // Helper function to find the most recent available price for a card (fallback mechanism)
+  const findMostRecentPrice = (cardId: string, conditionType: 'ungraded' | 'psa10' | 'both'): Omit<PokemonCardPriceSnapshot, 'cardId' | 'date'> | null => {
+    // Find all snapshots for this card, sorted by date (most recent first)
+    const cardSnapshots = validSnapshots
+      .filter(snap => snap.cardId === cardId && snap.date < today)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    
+    // Look for the most recent snapshot with the required price(s)
+    for (const snap of cardSnapshots) {
+      if (conditionType === 'ungraded' && snap.ungradedPrice !== undefined) {
+        return { ungradedPrice: snap.ungradedPrice, psa10Price: snap.psa10Price, source: snap.source, currency: snap.currency };
+      } else if (conditionType === 'psa10' && snap.psa10Price !== undefined) {
+        return { ungradedPrice: snap.ungradedPrice, psa10Price: snap.psa10Price, source: snap.source, currency: snap.currency };
+      } else if (conditionType === 'both' && (snap.ungradedPrice !== undefined || snap.psa10Price !== undefined)) {
+        return { ungradedPrice: snap.ungradedPrice, psa10Price: snap.psa10Price, source: snap.source, currency: snap.currency };
+      }
+    }
+    
+    return null;
+  };
+
   // Wrap the entire loop in try-catch to ensure we save partial results even if there's an unexpected error
   try {
     for (let i = 0; i < settings.cards.length; i++) {
@@ -1334,14 +1356,88 @@ export async function refreshTodaySnapshots(
         scrapedCount++;
         const scraped = await scrapePriceChartingForCard(card);
         
+        // Validate scraped prices (must be positive numbers if present)
+        const isValidPrice = (price: number | undefined): boolean => {
+          if (price === undefined) return true; // undefined is valid (missing price)
+          return Number.isFinite(price) && price > 0 && price < 1000000; // Reasonable upper bound ($1M)
+        };
+        
+        const hasValidUngraded = scraped.ungradedPrice === undefined || isValidPrice(scraped.ungradedPrice);
+        const hasValidPsa10 = scraped.psa10Price === undefined || isValidPrice(scraped.psa10Price);
+        
+        if (!hasValidUngraded || !hasValidPsa10) {
+          const invalidPrices = [];
+          if (!hasValidUngraded) invalidPrices.push(`ungraded=${scraped.ungradedPrice}`);
+          if (!hasValidPsa10) invalidPrices.push(`psa10=${scraped.psa10Price}`);
+          logDebug(`[Pokemon] Warning: Invalid prices scraped for card ${card.id} (${card.name}): ${invalidPrices.join(', ')}`);
+          errorCount++;
+          failedCards.push({ cardId: card.id, cardName: card.name, error: `Invalid prices: ${invalidPrices.join(', ')}` });
+          
+          // Try fallback
+          const fallbackPrice = findMostRecentPrice(card.id, card.conditionType);
+          if (fallbackPrice) {
+            const hasRequiredPrice = 
+              (card.conditionType === 'ungraded' && fallbackPrice.ungradedPrice !== undefined) ||
+              (card.conditionType === 'psa10' && fallbackPrice.psa10Price !== undefined) ||
+              (card.conditionType === 'both' && (fallbackPrice.ungradedPrice !== undefined || fallbackPrice.psa10Price !== undefined));
+            
+            if (hasRequiredPrice) {
+              logDebug(`[Pokemon] Using fallback price for ${card.id} (${card.name}) - invalid prices scraped`);
+              const snapshot: PokemonCardPriceSnapshot = {
+                cardId: card.id,
+                date: today,
+                ...fallbackPrice,
+                source: 'fallback',
+              };
+              updated.push(snapshot);
+              byCardAndDate.set(key, snapshot);
+              addedToday = true;
+              await saveIncremental();
+              continue;
+            }
+          }
+          
+          logDebug(`[Pokemon] Not creating snapshot for ${card.id} - invalid prices, will retry on next run`);
+          continue;
+        }
+        
         // Check if we got any prices
         if (!scraped.ungradedPrice && !scraped.psa10Price) {
           logDebug(`[Pokemon] Warning: No prices scraped for card ${card.id} (${card.name}) - both ungraded and psa10 are undefined`);
           errorCount++;
           failedCards.push({ cardId: card.id, cardName: card.name, error: 'No prices found on page' });
-          // Don't add a snapshot with undefined prices - this ensures we'll retry on the next run
-          // Instead, log the failure and continue to the next card
-          // This is better than creating a snapshot that might prevent retries
+          
+          // Try to use fallback price from most recent available snapshot
+          const fallbackPrice = findMostRecentPrice(card.id, card.conditionType);
+          
+          if (fallbackPrice) {
+            const hasRequiredPrice = 
+              (card.conditionType === 'ungraded' && fallbackPrice.ungradedPrice !== undefined) ||
+              (card.conditionType === 'psa10' && fallbackPrice.psa10Price !== undefined) ||
+              (card.conditionType === 'both' && (fallbackPrice.ungradedPrice !== undefined || fallbackPrice.psa10Price !== undefined));
+            
+            if (hasRequiredPrice) {
+              logDebug(`[Pokemon] Using fallback price for ${card.id} (${card.name}) - no prices found on page`);
+              const snapshot: PokemonCardPriceSnapshot = {
+                cardId: card.id,
+                date: today,
+                ...fallbackPrice,
+                source: 'fallback',
+              };
+              updated.push(snapshot);
+              byCardAndDate.set(key, snapshot);
+              addedToday = true;
+              logDebug(`[Pokemon] ✅ Created fallback snapshot for ${card.id}: ungraded=$${fallbackPrice.ungradedPrice || 'N/A'}, psa10=$${fallbackPrice.psa10Price || 'N/A'}`);
+              
+              // Save incrementally
+              await saveIncremental();
+              
+              // Continue to next card - we've handled this one with fallback
+              continue;
+            }
+          }
+          
+          // No fallback available - don't add a snapshot so we can retry on the next run
           logDebug(`[Pokemon] Not creating snapshot for ${card.id} - will retry on next run`);
           continue;
         }
@@ -1370,10 +1466,49 @@ export async function refreshTodaySnapshots(
         logDebug(`[Pokemon] ❌ Error details (${Math.round(elapsed / 1000)}s elapsed): ${errorMsg}`);
         failedCards.push({ cardId: card.id, cardName: card.name, error: errorMsg });
         
-        // Check if this is a retryable error - if so, don't create a snapshot so we can retry
+        // Check if this is a retryable error
         const isRetryable = isRetryableError(error);
+        logDebug(`[Pokemon] Scrape error for ${card.id}: retryable=${isRetryable}, error=${errorMsg}`);
+        
+        // Try to use fallback price from most recent available snapshot
+        const fallbackPrice = findMostRecentPrice(card.id, card.conditionType);
+        
+        if (fallbackPrice) {
+          // We have a fallback price - use it to ensure continuity of data
+          const hasRequiredPrice = 
+            (card.conditionType === 'ungraded' && fallbackPrice.ungradedPrice !== undefined) ||
+            (card.conditionType === 'psa10' && fallbackPrice.psa10Price !== undefined) ||
+            (card.conditionType === 'both' && (fallbackPrice.ungradedPrice !== undefined || fallbackPrice.psa10Price !== undefined));
+          
+          if (hasRequiredPrice) {
+            logDebug(`[Pokemon] 🔄 Using fallback price for ${card.id} (${card.name}) due to scrape failure (${isRetryable ? 'retryable' : 'non-retryable'} error)`);
+            const snapshot: PokemonCardPriceSnapshot = {
+              cardId: card.id,
+              date: today,
+              ...fallbackPrice,
+              // Mark source as fallback to indicate it's not fresh data
+              source: 'fallback',
+            };
+            updated.push(snapshot);
+            byCardAndDate.set(key, snapshot);
+            addedToday = true;
+            logDebug(`[Pokemon] ✅ Created fallback snapshot for ${card.id}: ungraded=$${fallbackPrice.ungradedPrice || 'N/A'}, psa10=$${fallbackPrice.psa10Price || 'N/A'}`);
+            
+            // Save incrementally
+            await saveIncremental();
+            
+            // Continue to next card - we've handled this one with fallback
+            continue;
+          } else {
+            logDebug(`[Pokemon] Fallback price found for ${card.id} but doesn't have required price for conditionType=${card.conditionType}`);
+          }
+        } else {
+          logDebug(`[Pokemon] No fallback price available for ${card.id} (${card.name})`);
+        }
+        
+        // No fallback available or fallback doesn't have required price
         if (isRetryable) {
-          logDebug(`[Pokemon] Error is retryable (${errorMsg}), not creating snapshot - will retry on next run`);
+          logDebug(`[Pokemon] Error is retryable (${errorMsg}), no fallback available - will retry on next run`);
           // Don't add a snapshot - this ensures we'll retry on the next run
           continue;
         }
@@ -1381,7 +1516,7 @@ export async function refreshTodaySnapshots(
         // For non-retryable errors (e.g., card not found, page structure changed), 
         // we still don't want to create a snapshot with undefined prices as it might prevent future retries
         // Instead, log the error and continue
-        logDebug(`[Pokemon] Non-retryable error for ${card.id}, not creating snapshot - manual intervention may be needed`);
+        logDebug(`[Pokemon] Non-retryable error for ${card.id}, no fallback available - manual intervention may be needed`);
         // Continue with other cards even if one fails
       }
     }

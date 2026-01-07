@@ -279,7 +279,7 @@ export interface StatSession {
 // Pokemon Price Index Types
 // ============================================================================
 
-export type PokemonPriceSource = 'pricecharting';
+export type PokemonPriceSource = 'pricecharting' | 'fallback';
 
 export type PokemonConditionType = 'ungraded' | 'psa10' | 'both';
 

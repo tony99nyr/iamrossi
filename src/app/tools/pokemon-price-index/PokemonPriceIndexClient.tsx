@@ -24,28 +24,30 @@ export default function PokemonPriceIndexClient({
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [snapshots, setSnapshots] = useState<PokemonCardPriceSnapshot[]>([]);
     
-    // Initialize state from URL params, with defaults
-    const getInitialView = (): 'chart' | 'table' => {
-        if (typeof window === 'undefined') return 'chart';
+    // Initialize state with defaults (same on server and client to avoid hydration mismatch)
+    // We'll sync from URL params in useEffect after hydration
+    const [activeView, setActiveView] = useState<'chart' | 'table'>('chart');
+    const [timeRange, setTimeRange] = useState<'all' | 'ytd' | '6m' | '3m' | '1m'>('all');
+    
+    // Sync state from URL params after hydration (client-side only)
+    useEffect(() => {
         const params = new URLSearchParams(window.location.search);
+        
+        // Read view from URL
         const view = params.get('view');
-        return (view === 'chart' || view === 'table') ? view : 'chart';
-    };
-    
-    const getInitialTimeRange = (): 'all' | 'ytd' | '6m' | '3m' | '1m' => {
-        if (typeof window === 'undefined') return 'all';
-        const params = new URLSearchParams(window.location.search);
+        if (view === 'chart' || view === 'table') {
+            setActiveView(view);
+        }
+        
+        // Read range from URL
         const range = params.get('range');
-        return (range === 'all' || range === 'ytd' || range === '6m' || range === '3m' || range === '1m') ? range : 'all';
-    };
-    
-    const [activeView, setActiveView] = useState<'chart' | 'table'>(getInitialView);
-    const [timeRange, setTimeRange] = useState<'all' | 'ytd' | '6m' | '3m' | '1m'>(getInitialTimeRange);
+        if (range === 'all' || range === 'ytd' || range === '6m' || range === '3m' || range === '1m') {
+            setTimeRange(range);
+        }
+    }, []); // Only run once on mount
     
     // Update URL when view or time range changes
     useEffect(() => {
-        if (typeof window === 'undefined') return;
-        
         const params = new URLSearchParams(window.location.search);
         
         // Update view param

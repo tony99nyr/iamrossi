@@ -10,7 +10,11 @@ interface UseRehabStateProps {
 export function useRehabState({ initialExercises, initialEntries }: UseRehabStateProps) {
     const [exercises, setExercises] = useState<Exercise[]>(initialExercises);
     const [entries, setEntries] = useState<RehabEntry[]>(initialEntries);
-    const [currentWeekStart, setCurrentWeekStart] = useState(new Date());
+    // Initialize with today's date normalized to midnight in local timezone
+    const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    });
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false);
 
@@ -124,6 +128,17 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
         return `${year}-${month}-${day}`;
     };
 
+    // Get today's date in local timezone, normalized to midnight
+    // This ensures we always get the correct local date regardless of timezone
+    const getToday = (): Date => {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    };
+
+    const getTodayStr = (): string => {
+        return formatDate(getToday());
+    };
+
     // Fetch Oura scores for the current week when week changes
     useEffect(() => {
         const fetchOuraScores = async () => {
@@ -140,8 +155,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
                 const scores: Record<string, OuraScores> = {};
                 
                 // Only fetch for past and current dates, not future
-                const today = new Date();
-                const todayStr = formatDate(today);
+                const todayStr = getTodayStr();
 
                 // Fetch scores for each day in parallel (only past/current dates)
                 await Promise.all(
@@ -184,8 +198,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
                 const weekDates = getWeekDates(currentWeekStart);
                 
                 // Only fetch for past and current dates, not future
-                const today = new Date();
-                const todayStr = formatDate(today);
+                const todayStr = getTodayStr();
 
                 // Fetch heart rate for each day in parallel (only past/current dates)
                 // Don't skip rest days - we should still try to fetch (API will return empty if no workouts)
@@ -257,8 +270,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
                 const status = await statusResponse.json();
                 if (!status.configured) return;
 
-                const today = new Date();
-                const todayStr = formatDate(today);
+                const todayStr = getTodayStr();
                 
                 // Skip future dates
                 if (selectedDate > todayStr) return;
@@ -825,13 +837,13 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
     };
 
     const handleGoToToday = useCallback(() => {
-        const today = new Date();
+        const today = getToday();
         setCurrentWeekStart(today);
         setSelectedDate(null);
         
         // Scroll to today's card after a brief delay to allow rendering
         setTimeout(() => {
-            const todayStr = formatDate(today);
+            const todayStr = getTodayStr();
             const todayCard = document.querySelector(`[data-date="${todayStr}"]`);
             if (todayCard) {
                 todayCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
