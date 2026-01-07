@@ -130,14 +130,15 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
 
     // Get today's date in local timezone, normalized to midnight
     // This ensures we always get the correct local date regardless of timezone
-    const getToday = (): Date => {
+    // Wrapped in useCallback to provide stable reference for dependency arrays
+    const getToday = useCallback((): Date => {
         const now = new Date();
         return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    };
+    }, []);
 
-    const getTodayStr = (): string => {
+    const getTodayStr = useCallback((): string => {
         return formatDate(getToday());
-    };
+    }, [getToday]);
 
     // Fetch Oura scores for the current week when week changes
     useEffect(() => {
@@ -181,7 +182,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
             }
         };
         fetchOuraScores();
-    }, [currentWeekStart]);
+    }, [currentWeekStart, getTodayStr]);
 
     // Fetch Google Fit heart rate data for the current week when week changes
     useEffect(() => {
@@ -250,7 +251,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
             }
         };
         fetchHeartRates();
-    }, [currentWeekStart, entries]);
+    }, [currentWeekStart, entries, getTodayStr]);
 
     // Fetch heart rate data for selected date if not already loaded
     useEffect(() => {
@@ -849,7 +850,7 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
                 todayCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }, 100);
-    }, []);
+    }, [getToday, getTodayStr]);
 
     return {
         exercises,
