@@ -136,14 +136,31 @@ All persistent data is stored in Redis (Vercel KV):
 - **API**: Google Fit API v1 (OAuth2 refresh token)
 - **Endpoints**: `/api/google-fit/heart-rate`, `/api/google-fit/status`
 - **Data**: Heart rate (avg/max BPM) from workout sessions
-- **Caching**: Daily heart rate data cached in Redis (24 hours for past days, 15 minutes for today)
+- **Caching**: 
+  - **Past days**: Cached in Redis for **1 year** (365 days) - ensures historical data remains available even when refresh token expires
+  - **Today**: Cached for 15 minutes (data may update throughout the day)
+  - **Fallback**: If API fails (e.g., token expired), cached data is automatically returned for historical dates
 - **Authentication**: Required for all endpoints
 - **Credentials**: Uses same OAuth2 credentials as Google Drive (`GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`)
 
 ##### Google Fit Token Expiration
 **Important**: If your Google OAuth app is in "Testing" mode, refresh tokens expire after **7 days**. To get longer-lasting refresh tokens (valid until revoked, not used for 6 months, or password changed), you must publish your app to "Production" status.
 
-**Steps to Publish Your App to Production:**
+**Automated Token Refresh:**
+Since Google Fit scopes may require verification (which can be difficult for personal apps), there's an automated token refresh script:
+- `pnpm run google-fit:auto-token` - Interactive script that guides you through token refresh
+  - Opens the OAuth URL automatically
+  - Accepts either the full redirect URL or just the authorization code
+  - Automatically extracts the code and exchanges it for a new refresh token
+  - Provides copy-paste commands to update `.env.local`
+
+**Manual Token Refresh:**
+- `pnpm run google-fit:exchange-token` - Original manual token exchange script
+
+**Token Status Check:**
+- `GET /api/google-fit/status` - Check if token is valid and configured
+
+**Steps to Publish Your App to Production (Optional):**
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Navigate to **APIs & Services** → **OAuth consent screen**
 3. Ensure all required fields are filled:
@@ -153,7 +170,7 @@ All persistent data is stored in Redis (Vercel KV):
    - Authorized domains (if applicable)
 4. If your app uses sensitive scopes (like Google Fit), you may need to submit for verification
 5. Change the publishing status from **"Testing"** to **"In production"**
-6. After publishing, generate a new refresh token using `pnpm run exchange-google-fit-token` (old tokens will still expire)
+6. After publishing, generate a new refresh token using `pnpm run google-fit:auto-token` (old tokens will still expire)
 
 **Note**: Production refresh tokens last much longer but can still be revoked if:
 - The user revokes access

@@ -356,22 +356,25 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
   // Check cache first - but skip cache for today's data or if forceRefresh is true
   const cacheKey = `google-fit:heart-rate:${date}`;
   
-  if (!isToday && !forceRefresh) {
+  // Helper function to get and validate cached data
+  const getCachedData = async (): Promise<GoogleFitHeartRate | null> => {
     try {
       const cached = await kvGet<GoogleFitHeartRate>(cacheKey);
-      if (cached) {
-        // Only return cached data if it has actual HR values
-        // If cache has empty data (no avgBpm/maxBpm), we should re-fetch in case data was added
-        if (cached.avgBpm !== undefined || cached.maxBpm !== undefined) {
-          console.log(`[Google Fit] Using cached HR data for ${date}: avg=${cached.avgBpm}, max=${cached.maxBpm}, samples=${cached.sampleCount || 0}`);
-          return cached;
-        } else {
-          console.log(`[Google Fit] Cached data for ${date} is empty (no HR values), re-fetching...`);
-          // Don't return empty cached data - re-fetch to see if data is now available
-        }
+      if (cached && (cached.avgBpm !== undefined || cached.maxBpm !== undefined)) {
+        return cached;
       }
     } catch (error) {
       console.error('[Google Fit] Cache read error:', error);
+    }
+    return null;
+  };
+  
+  // For past days, check cache first (unless forceRefresh)
+  if (!isToday && !forceRefresh) {
+    const cached = await getCachedData();
+    if (cached) {
+      console.log(`[Google Fit] Using cached HR data for ${date}: avg=${cached.avgBpm}, max=${cached.maxBpm}, samples=${cached.sampleCount || 0}`);
+      return cached;
     }
   }
 
@@ -452,8 +455,9 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
 
     // Determine cache duration based on whether this is today's data
     // Today's data: 15 minutes (data may update throughout the day)
-    // Past days: 24 hours (data won't change)
-    const cacheDuration = isToday ? 15 * 60 : 24 * 60 * 60;
+    // Past days: 1 year (365 days) - historical data doesn't change, keep it available even if token expires
+    // This ensures we have access to historical data even when refresh token expires
+    const cacheDuration = isToday ? 15 * 60 : 365 * 24 * 60 * 60;
 
     // Cache with appropriate duration
     try {
@@ -466,12 +470,25 @@ export async function getDailyHeartRate(date: string, forceRefresh = false): Pro
   } catch (error) {
     console.error('[Google Fit] Error fetching heart rate data:', error);
     
-    // If it's a token error, log more details but still return empty data
+    // If it's a token error, log more details
     if (error instanceof GoogleFitTokenError) {
       console.error(`[Google Fit] Token error (${error.code}): ${error.message}`);
+      console.log(`[Google Fit] Attempting to use cached data as fallback...`);
     }
     
-    // Return empty data structure on error (don't throw)
+    // On any error (especially token expiration), try to return cached data as fallback
+    // This ensures historical data remains available even when token expires
+    const cached = await getCachedData();
+    if (cached) {
+      console.log(`[Google Fit] Using cached HR data as fallback for ${date}: avg=${cached.avgBpm}, max=${cached.maxBpm}, samples=${cached.sampleCount || 0}`);
+      // Add a note that this is cached data due to API error
+      return {
+        ...cached,
+        // Keep original lastSynced to show when data was actually fetched
+      };
+    }
+    
+    // If no cached data available, return empty data structure (don't throw)
     return {
       date,
       lastSynced: new Date().toISOString(),
