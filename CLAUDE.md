@@ -140,6 +140,26 @@ All persistent data is stored in Redis (Vercel KV):
 - **Authentication**: Required for all endpoints
 - **Credentials**: Uses same OAuth2 credentials as Google Drive (`GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`)
 
+##### Google Fit Token Expiration
+**Important**: If your Google OAuth app is in "Testing" mode, refresh tokens expire after **7 days**. To get longer-lasting refresh tokens (valid until revoked, not used for 6 months, or password changed), you must publish your app to "Production" status.
+
+**Steps to Publish Your App to Production:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Navigate to **APIs & Services** → **OAuth consent screen**
+3. Ensure all required fields are filled:
+   - App name
+   - User support email
+   - Developer contact information
+   - Authorized domains (if applicable)
+4. If your app uses sensitive scopes (like Google Fit), you may need to submit for verification
+5. Change the publishing status from **"Testing"** to **"In production"**
+6. After publishing, generate a new refresh token using `pnpm run exchange-google-fit-token` (old tokens will still expire)
+
+**Note**: Production refresh tokens last much longer but can still be revoked if:
+- The user revokes access
+- The token is not used for 6 months
+- The user changes their password
+
 ## Environment Variables
 Required environment variables (see `.env.example`):
 - `ADMIN_SECRET`: Admin dashboard authentication token

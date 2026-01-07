@@ -27,6 +27,13 @@ function requireEnv(value: string | undefined, name: string) {
   return value;
 }
 
+/**
+ * Build OAuth2 authorization URL
+ * 
+ * Note: If your app is in "Testing" mode, refresh tokens expire after 7 days.
+ * To get longer-lasting tokens, publish your app to "Production" in Google Cloud Console.
+ * See CLAUDE.md for detailed instructions.
+ */
 function buildAuthUrl(scopes: string[], redirectUri: string, clientId: string) {
   const scopeParam = encodeURIComponent(scopes.join(' '));
   const encodedRedirect = encodeURIComponent(redirectUri);

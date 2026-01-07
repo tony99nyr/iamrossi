@@ -109,8 +109,8 @@ export async function getAccessToken(): Promise<string> {
     
     if (errorCode === 'invalid_grant') {
       const message = errorDescription?.includes('expired') || errorDescription?.includes('revoked')
-        ? 'Google Fit refresh token has expired or been revoked. Please generate a new refresh token using: pnpm run exchange-google-fit-token'
-        : `Google Fit refresh token error: ${errorDescription || 'Token has been expired or revoked'}. Please generate a new refresh token using: pnpm run exchange-google-fit-token`;
+        ? 'Google Fit refresh token has expired or been revoked. If your app is in "Testing" mode, refresh tokens expire after 7 days. To get longer-lasting tokens, publish your app to "Production" in Google Cloud Console (see CLAUDE.md for instructions). Then generate a new refresh token using: pnpm run exchange-google-fit-token'
+        : `Google Fit refresh token error: ${errorDescription || 'Token has been expired or revoked'}. If your app is in "Testing" mode, refresh tokens expire after 7 days. To get longer-lasting tokens, publish your app to "Production" in Google Cloud Console (see CLAUDE.md for instructions). Then generate a new refresh token using: pnpm run exchange-google-fit-token`;
       throw new GoogleFitTokenError(message, 'invalid_grant', data);
     }
     
