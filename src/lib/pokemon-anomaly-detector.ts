@@ -2,6 +2,7 @@
  * Detects and marks price anomalies in Pokemon card snapshots
  */
 
+import { EASTERN_TIME_ZONE } from '@/lib/timezone';
 import type { PokemonCardPriceSnapshot } from '@/types';
 
 /**
@@ -100,14 +101,24 @@ export function isPriceAnomaly(snapshot: PokemonCardPriceSnapshot, allSnapshots:
 }
 
 /**
- * Get today's date in YYYY-MM-DD format (local timezone)
+ * Get today's date in YYYY-MM-DD format (Eastern Time)
+ * Uses Eastern Time to ensure consistent date handling regardless of server timezone
  */
 function todayIsoDate(): string {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: EASTERN_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  
+  const lookup: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') lookup[part.type] = part.value;
+  }
+  
+  return `${lookup.year}-${lookup.month}-${lookup.day}`;
 }
 
 /**

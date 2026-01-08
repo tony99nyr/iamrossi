@@ -1,6 +1,7 @@
 import { chromium } from 'playwright-core';
 import chromiumPkg from '@sparticuz/chromium-min';
 import { logDebug } from '@/lib/logger';
+import { EASTERN_TIME_ZONE } from '@/lib/timezone';
 import type {
   PokemonCardConfig,
   PokemonCardPriceSnapshot,
@@ -15,12 +16,23 @@ import {
 } from '@/lib/kv';
 
 function todayIsoDate(): string {
-  // Use local timezone, not UTC, to get the actual current date
+  // Use Eastern Time to get the actual current date
+  // This ensures consistent date handling regardless of server timezone (Vercel runs in UTC)
+  // When cronjob runs at 3 AM UTC, it's still the previous day in Eastern Time
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: EASTERN_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  
+  const lookup: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') lookup[part.type] = part.value;
+  }
+  
+  return `${lookup.year}-${lookup.month}-${lookup.day}`;
 }
 
 
