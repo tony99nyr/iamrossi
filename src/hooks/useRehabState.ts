@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import type { Exercise, RehabEntry, ExerciseEntry, RehabSettings, OuraScores, GoogleFitHeartRate } from '@/types';
 import { ROSSI_SHAKE, ROSSI_VITAMINS } from '@/data/rehab-defaults';
 
@@ -8,6 +9,10 @@ interface UseRehabStateProps {
 }
 
 export function useRehabState({ initialExercises, initialEntries }: UseRehabStateProps) {
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+    
     const [exercises, setExercises] = useState<Exercise[]>(initialExercises);
     const [entries, setEntries] = useState<RehabEntry[]>(initialEntries);
     // Initialize with today's date normalized to midnight in local timezone
@@ -43,17 +48,15 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
         entriesRef.current = entries;
     }, [entries]);
 
-    // Check for date in URL params on mount
+    // Check for date in URL params on mount and when searchParams change
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const params = new URLSearchParams(window.location.search);
-            const dateParam = params.get('date');
+        const dateParam = searchParams.get('date');
+        setSelectedDate(currentSelectedDate => {
             if (dateParam) {
                 // Validate date format (YYYY-MM-DD)
                 if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
-                    // Use setTimeout to avoid synchronous setState in effect
-                    setTimeout(() => {
-                        setSelectedDate(dateParam);
+                    // Only update if different from current selected date
+                    if (dateParam !== currentSelectedDate) {
                         // Set week start to the week containing this date
                         const date = new Date(`${dateParam}T00:00:00`);
                         const day = date.getDay();
@@ -61,11 +64,18 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
                         const weekStart = new Date(date);
                         weekStart.setDate(diff);
                         setCurrentWeekStart(weekStart);
-                    }, 0);
+                        return dateParam;
+                    }
+                    return currentSelectedDate;
                 }
+                return currentSelectedDate;
+            } else {
+                // If URL has no date param, clear selected date
+                // This handles browser back/forward navigation
+                return currentSelectedDate ? null : currentSelectedDate;
             }
-        }
-    }, []);
+        });
+    }, [searchParams]);
 
     // Check for existing auth cookie on mount
     useEffect(() => {
@@ -371,9 +381,18 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
         // Require auth when selecting a day (simplified auth flow)
         requireAuth(async () => {
             if (date === selectedDate) {
+                // Deselecting - remove from URL
                 setSelectedDate(null);
+                const params = new URLSearchParams(searchParams.toString());
+                params.delete('date');
+                const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+                router.push(newUrl, { scroll: false });
             } else {
+                // Selecting - update URL
                 setSelectedDate(date);
+                const params = new URLSearchParams(searchParams.toString());
+                params.set('date', date);
+                router.push(`${pathname}?${params.toString()}`, { scroll: false });
                 // Reset unsaved notes flag when switching dates
                 setHasUnsavedNotes(false);
                 // Scroll to top to show the day view
@@ -384,6 +403,11 @@ export function useRehabState({ initialExercises, initialEntries }: UseRehabStat
 
     const handleBackToCalendar = () => {
         setSelectedDate(null);
+        // Remove date from URL
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('date');
+        const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+        router.push(newUrl, { scroll: false });
         // Reset unsaved notes flag when going back to calendar
         setHasUnsavedNotes(false);
     };
