@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Image from 'next/image';
 import { css } from '@styled-system/css';
 import { cx } from '@styled-system/css';
 import type { InstagramSavedPost, InstagramLabel } from '@/types';
@@ -13,7 +14,7 @@ interface InstagramClientProps {
 
 export default function InstagramClient({ initialPosts, initialLabels }: InstagramClientProps) {
   const [posts, setPosts] = useState<InstagramSavedPost[]>(initialPosts);
-  const [labels, setLabels] = useState<InstagramLabel[]>(initialLabels);
+  const [labels] = useState<InstagramLabel[]>(initialLabels);
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -282,7 +283,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         throw new Error('Failed to sync posts');
       }
 
-      const data = await response.json();
+      await response.json();
       
       const postsResponse = await fetch('/api/instagram/posts?archived=false', {
         credentials: 'include',
@@ -298,7 +299,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     }
   }, []);
 
-  const togglePostLabel = useCallback(async (shortcode: string, labelId: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _togglePostLabel = useCallback(async (shortcode: string, labelId: string) => {
     const post = posts.find(p => p.shortcode === shortcode);
     if (!post) return;
 
@@ -414,7 +416,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     }
   }, []);
 
-  const unarchivePost = useCallback(async (shortcode: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _unarchivePost = useCallback(async (shortcode: string) => {
     try {
       const response = await fetch('/api/instagram/posts/archive', {
         method: 'POST',
@@ -755,11 +758,13 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                       </>
                     ) : (
                       currentMedia?.imageUrl && (
-                        <img
+                        <Image
                           src={currentMedia.imageUrl}
                           alt={post.caption || 'Instagram post'}
+                          fill
                           className={imageStyle}
-                          loading={isActive ? 'eager' : 'lazy'}
+                          priority={isActive}
+                          unoptimized
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -904,11 +909,13 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                   </>
                 ) : (
                   currentMedia?.imageUrl && (
-                    <img
+                    <Image
                       src={currentMedia.imageUrl}
                       alt={post.caption || 'Instagram post'}
+                      fill
                       className={imageStyle}
-                      loading={isActive ? 'eager' : 'lazy'}
+                      priority={isActive}
+                      unoptimized
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();

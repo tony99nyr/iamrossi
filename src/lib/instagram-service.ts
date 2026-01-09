@@ -11,6 +11,19 @@ import type { InstagramSavedPost, InstagramSavedPostsResponse } from '@/types';
  * Use at your own risk. Consider using Instagram's official data export instead.
  */
 
+type InstagramCarouselEdge = {
+  node: {
+    display_url?: string;
+    is_video?: boolean;
+    video_url?: string;
+    video_versions?: Array<{
+      url: string;
+      width: number;
+      height: number;
+    }>;
+  };
+};
+
 interface InstagramPostNode {
   node: {
     id?: string; // Instagram post ID
@@ -24,18 +37,7 @@ interface InstagramPostNode {
       height: number;
     }>;
     edge_sidecar_to_children?: {
-      edges?: Array<{
-        node: {
-          display_url?: string;
-          is_video?: boolean;
-          video_url?: string;
-          video_versions?: Array<{
-            url: string;
-            width: number;
-            height: number;
-          }>;
-        };
-      }>;
+      edges?: Array<InstagramCarouselEdge>;
     };
     edge_media_to_caption?: {
       edges: Array<{
@@ -777,7 +779,7 @@ export async function fetchInstagramSavedPosts(
                     isCarousel = true;
                     debugInfo.isCarousel = true;
                     debugInfo.carouselItemsCount = media.edge_sidecar_to_children.edges.length;
-                    mediaItems = media.edge_sidecar_to_children.edges.map((edge: any) => {
+                    mediaItems = media.edge_sidecar_to_children.edges.map((edge: InstagramCarouselEdge) => {
                       const itemVideoUrl = edge.node.video_url || (edge.node.video_versions && edge.node.video_versions.length > 0
                         ? edge.node.video_versions[0].url
                         : undefined);

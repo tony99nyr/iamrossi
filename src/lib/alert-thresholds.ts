@@ -122,6 +122,7 @@ export async function checkWinRateThreshold(
  * is now included in the daily summary instead.
  */
 export async function checkNoTradeThreshold(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _session: EnhancedPaperTradingSession
 ): Promise<void> {
   // Alert disabled - no-trade periods are normal and will be reported in daily summary

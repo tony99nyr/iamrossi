@@ -112,12 +112,15 @@ function getHealthStatus(session: EnhancedPaperTradingSession | null): {
   return { status, color, issues };
 }
 
-function formatAssetSummary(session: EnhancedPaperTradingSession | null, asset: TradingAsset): string {
+function formatAssetSummary(
+  session: EnhancedPaperTradingSession | null,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _asset: TradingAsset
+): string {
   if (!session || !session.isActive) {
     return `**Status**: Inactive\n**No active session**`;
   }
 
-  const config = ASSET_CONFIGS[asset];
   const health = getHealthStatus(session);
   const nextAction = getNextAction(session);
   const winRate = calculateWinRate(session);
