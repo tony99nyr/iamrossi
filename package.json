@@ -59,7 +59,11 @@
     "redis:analyze": "npx tsx scripts/analyze-redis-memory.ts",
     "google-fit:exchange-token": "npx tsx scripts/exchange-google-fit-token.ts",
     "google-fit:auto-token": "npx tsx scripts/auto-exchange-google-fit-token.ts",
-    "generate-token": "npx tsx scripts/generate-token.ts"
+    "generate-token": "npx tsx scripts/generate-token.ts",
+    "instagram:import": "npx tsx scripts/import-instagram-posts.ts",
+    "instagram:clear": "npx tsx scripts/clear-instagram-data.ts",
+    "instagram:test-video": "npx tsx scripts/test-video-extraction.ts",
+    "instagram:test-post": "npx tsx scripts/test-specific-post.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

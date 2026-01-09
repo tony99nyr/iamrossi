@@ -31,6 +31,9 @@ import type {
   PokemonCardPriceSnapshot,
   PokemonIndexPoint,
   StickAndPuckSession,
+  InstagramSavedPostsResponse,
+  InstagramSavedPost,
+  InstagramLabel,
 } from '@/types';
 import type { EnhancedAdaptiveStrategyConfig } from './adaptive-strategy-enhanced';
 import { statSessionSchema } from '@/lib/validation';
@@ -161,6 +164,9 @@ const KV_KEYS = {
   BTC_ADAPTIVE_STRATEGY_CONFIG: 'btc:adaptive:strategy:config',
   BTC_PAPER_SESSION_ACTIVE: 'btc:paper:session:active',
   STICK_AND_PUCK_SESSIONS: 'stick-and-puck:sessions',
+  INSTAGRAM_SAVED_POSTS: 'instagram:saved-posts',
+  INSTAGRAM_POSTS: 'instagram:posts', // Individual posts keyed by shortcode
+  INSTAGRAM_LABELS: 'instagram:labels', // All labels
 } as const;
 
 // Exercise operations
@@ -860,6 +866,116 @@ export async function setStickAndPuckSessions(sessions: StickAndPuckSession[]): 
   await ensureConnected();
   // Cache for 24 hours (86400 seconds)
   await redis.setEx(KV_KEYS.STICK_AND_PUCK_SESSIONS, 86400, JSON.stringify(sessions));
+}
+
+// ============================================================================
+// Instagram Saved Posts operations
+// ============================================================================
+
+export async function getInstagramSavedPosts(): Promise<InstagramSavedPostsResponse | null> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.INSTAGRAM_SAVED_POSTS);
+  return data ? JSON.parse(data) : null;
+}
+
+export async function setInstagramSavedPosts(posts: InstagramSavedPostsResponse): Promise<void> {
+  await ensureConnected();
+  // Cache for 1 hour (3600 seconds) - saved posts don't change frequently
+  await redis.setEx(KV_KEYS.INSTAGRAM_SAVED_POSTS, 3600, JSON.stringify(posts));
+}
+
+// ============================================================================
+// Instagram Posts operations (individual posts stored by shortcode)
+// ============================================================================
+
+export async function getAllInstagramPosts(): Promise<InstagramSavedPost[]> {
+  await ensureConnected();
+  const keys = await redis.keys(`${KV_KEYS.INSTAGRAM_POSTS}:*`);
+  if (keys.length === 0) return [];
+  
+  const posts: InstagramSavedPost[] = [];
+  for (const key of keys) {
+    const data = await redis.get(key);
+    if (data) {
+      posts.push(JSON.parse(data));
+    }
+  }
+  return posts;
+}
+
+export async function getInstagramPost(shortcode: string): Promise<InstagramSavedPost | null> {
+  await ensureConnected();
+  const data = await redis.get(`${KV_KEYS.INSTAGRAM_POSTS}:${shortcode}`);
+  return data ? JSON.parse(data) : null;
+}
+
+export async function setInstagramPost(post: InstagramSavedPost): Promise<void> {
+  await ensureConnected();
+  // Store posts permanently (no expiration)
+  await redis.set(`${KV_KEYS.INSTAGRAM_POSTS}:${post.shortcode}`, JSON.stringify(post));
+}
+
+export async function setInstagramPosts(posts: InstagramSavedPost[]): Promise<void> {
+  await ensureConnected();
+  // Use pipeline for better performance
+  const pipeline = redis.multi();
+  for (const post of posts) {
+    pipeline.set(`${KV_KEYS.INSTAGRAM_POSTS}:${post.shortcode}`, JSON.stringify(post));
+  }
+  await pipeline.exec();
+}
+
+export async function deleteInstagramPost(shortcode: string): Promise<void> {
+  await ensureConnected();
+  await redis.del(`${KV_KEYS.INSTAGRAM_POSTS}:${shortcode}`);
+}
+
+// ============================================================================
+// Instagram Labels operations
+// ============================================================================
+
+export async function getAllInstagramLabels(): Promise<InstagramLabel[]> {
+  await ensureConnected();
+  const data = await redis.get(KV_KEYS.INSTAGRAM_LABELS);
+  return data ? JSON.parse(data) : [];
+}
+
+export async function setInstagramLabels(labels: InstagramLabel[]): Promise<void> {
+  await ensureConnected();
+  await redis.set(KV_KEYS.INSTAGRAM_LABELS, JSON.stringify(labels));
+}
+
+export async function addInstagramLabel(label: InstagramLabel): Promise<void> {
+  await ensureConnected();
+  const labels = await getAllInstagramLabels();
+  labels.push(label);
+  await setInstagramLabels(labels);
+}
+
+export async function updateInstagramLabel(labelId: string, updates: Partial<InstagramLabel>): Promise<void> {
+  await ensureConnected();
+  const labels = await getAllInstagramLabels();
+  const index = labels.findIndex(l => l.id === labelId);
+  if (index !== -1) {
+    labels[index] = { ...labels[index], ...updates };
+    await setInstagramLabels(labels);
+  }
+}
+
+export async function deleteInstagramLabel(labelId: string): Promise<void> {
+  await ensureConnected();
+  const labels = await getAllInstagramLabels();
+  const filtered = labels.filter(l => l.id !== labelId);
+  await setInstagramLabels(filtered);
+  
+  // Remove label from all posts
+  const posts = await getAllInstagramPosts();
+  for (const post of posts) {
+    if (post.labels?.includes(labelId)) {
+      post.labels = post.labels.filter(l => l !== labelId);
+      await setInstagramPost(post);
+    }
+  }
 }
 
 // ============================================================================

@@ -538,3 +538,53 @@ export interface StickAndPuckSession {
   isFull?: boolean; // Whether registration is full
 }
 
+// ============================================================================
+// Instagram Integration Types
+// ============================================================================
+
+export interface InstagramMediaItem {
+  imageUrl?: string; // Image URL
+  videoUrl?: string; // Video URL (if this item is a video)
+  isVideo?: boolean; // Whether this item is a video
+}
+
+export interface InstagramSavedPost {
+  id: string; // Instagram post ID
+  shortcode: string; // Post shortcode (used in URLs)
+  url: string; // Full post URL
+  caption?: string; // Post caption
+  imageUrl?: string; // Main image/video thumbnail URL (for single media posts)
+  videoUrl?: string; // Video URL (for single video posts)
+  mediaItems?: InstagramMediaItem[]; // Array of media items for carousel/slideshow posts
+  isCarousel?: boolean; // Whether post is a carousel/slideshow
+  authorUsername?: string; // Post author username
+  authorFullName?: string; // Post author full name
+  savedAt?: string; // ISO timestamp when post was saved (if available)
+  postedAt?: string; // ISO timestamp when post was originally posted
+  isVideo?: boolean; // Whether post is a video (for single media posts)
+  likesCount?: number; // Number of likes
+  commentsCount?: number; // Number of comments
+  labels?: string[]; // Array of label IDs assigned to this post
+  archived?: boolean; // Whether post is archived (deleted from UI)
+  importedAt?: string; // ISO timestamp when post was imported to Redis
+}
+
+export interface InstagramSavedPostsResponse {
+  posts: InstagramSavedPost[];
+  lastSynced?: string; // ISO timestamp of last sync
+  totalCount?: number; // Total number of saved posts
+}
+
+export interface InstagramLabel {
+  id: string; // Unique label ID
+  name: string; // Label name
+  color?: string; // Optional color for the label
+  createdAt: string; // ISO timestamp when label was created
+}
+
+export interface InstagramPostsFilter {
+  labelId?: string; // Filter by label ID
+  archived?: boolean; // Filter by archived status (undefined = all, true = archived only, false = not archived)
+  authorUsername?: string; // Filter by author username
+}
+

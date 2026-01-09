@@ -7,8 +7,9 @@ export default function ConditionalFooter() {
     const pathname = usePathname();
     const isGameRoute = pathname.startsWith('/games');
     const isHomepage = pathname === '/';
+    const isInstagramTool = pathname.startsWith('/tools/instagram');
 
-    if (isGameRoute || isHomepage) {
+    if (isGameRoute || isHomepage || isInstagramTool) {
         return null;
     }
 

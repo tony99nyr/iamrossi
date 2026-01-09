@@ -92,6 +92,16 @@ export default async function HomePage() {
                             </Link>
                         </li>
 
+                        <li>
+                            <Link href="/tools/instagram" className={toolLinkStyle}>
+                                <span className={toolIconStyle}>📸</span>
+                                <div className={css({ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 })}>
+                                    <strong className={toolNameStyle}>Instagram Saved Posts</strong>
+                                    <span className={toolDescStyle}>Browse and organize your saved Instagram posts</span>
+                                </div>
+                            </Link>
+                        </li>
+
                        
                     </ul>
                 </section>

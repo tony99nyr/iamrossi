@@ -116,59 +116,16 @@ export async function checkWinRateThreshold(
 
 /**
  * Check no trade threshold
+ * 
+ * DISABLED: No-trade alerts have been disabled as it's normal to have no trades
+ * for extended periods (7+ days) in certain market conditions. This information
+ * is now included in the daily summary instead.
  */
 export async function checkNoTradeThreshold(
-  session: EnhancedPaperTradingSession
+  _session: EnhancedPaperTradingSession
 ): Promise<void> {
-  // Don't alert for inactive or emergency-stopped sessions
-  if (!session.isActive || session.isEmergencyStopped) return;
-  
-  const lastTrade = session.trades.length > 0 
-    ? session.trades[session.trades.length - 1] 
-    : null;
-  
-  // Get asset name safely (handle undefined)
-  const assetName = session.asset || 'unknown';
-  
-  if (!lastTrade) {
-    // No trades at all - check session age
-    // Don't alert for normal waiting periods - only alert if session is extremely old (7+ days)
-    // This suggests a potential system issue, not just normal waiting for conditions
-    const sessionAgeHours = (Date.now() - session.startedAt) / (1000 * 60 * 60);
-    const EXTREME_NO_TRADE_HOURS = 7 * 24; // 7 days
-    if (sessionAgeHours > EXTREME_NO_TRADE_HOURS) {
-      const alertKey = `notrade-extreme-${session.id}`;
-      if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
-        await sendErrorAlert({
-          type: 'system_error',
-          severity: 'medium', // Medium severity only for extreme cases (7+ days)
-          message: `[${assetName.toUpperCase()}] No trades since session start (${sessionAgeHours.toFixed(1)} hours / ${(sessionAgeHours / 24).toFixed(1)} days). This may indicate a system issue.`,
-          context: `Session: ${session.name || session.id}, Asset: ${assetName}, Started: ${new Date(session.startedAt).toISOString()}. Verify signals are being generated and check risk management filters.`,
-          timestamp: Date.now(),
-        });
-      }
-    }
-    return;
-  }
-  
-  const hoursSinceLastTrade = (Date.now() - lastTrade.timestamp) / (1000 * 60 * 60);
-  
-  // Don't alert for no trades - this is normal when waiting for good market conditions
-  // The strategy is designed to wait for high-confidence signals, so periods without trades are expected
-  // Only alert if it's been an extremely long time (7 days) which might indicate a system issue
-  const EXTREME_NO_TRADE_HOURS = 7 * 24; // 7 days
-  if (hoursSinceLastTrade > EXTREME_NO_TRADE_HOURS) {
-    const alertKey = `notrade-extreme-${session.id}`;
-    if (shouldSendAlert(alertKey) && isNotificationsEnabled()) {
-      await sendErrorAlert({
-        type: 'system_error',
-        severity: 'medium', // Medium severity only for extreme cases (7+ days)
-        message: `[${assetName.toUpperCase()}] No trades in ${hoursSinceLastTrade.toFixed(1)} hours (${(hoursSinceLastTrade / 24).toFixed(1)} days). This may indicate a system issue.`,
-        context: `Session: ${session.name || session.id}, Asset: ${assetName}, Last trade: ${new Date(lastTrade.timestamp).toISOString()}. Verify signals are being generated and check risk management filters.`,
-        timestamp: Date.now(),
-      });
-    }
-  }
+  // Alert disabled - no-trade periods are normal and will be reported in daily summary
+  return;
 }
 
 /**

@@ -1,0 +1,73 @@
+name: Daily Trading Summary
+
+on:
+  schedule:
+    # Run daily at 12pm Eastern Time (17:00 UTC)
+    # Note: Eastern Time is UTC-5 (EST) or UTC-4 (EDT)
+    # Using 17:00 UTC covers both (12pm EST = 17:00 UTC, 12pm EDT = 16:00 UTC)
+    # For EDT, adjust to 16:00 UTC if needed
+    - cron: '0 17 * * *'
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  send-daily-summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Call Daily Summary API
+        env:
+          VERCEL_URL: ${{ secrets.VERCEL_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Ensure VERCEL_URL doesn't have protocol prefix
+          VERCEL_URL="${VERCEL_URL#https://}"
+          VERCEL_URL="${VERCEL_URL#http://}"
+          
+          # Add https:// prefix
+          API_URL="https://${VERCEL_URL}/api/trading/daily-summary"
+          
+          echo "📊 Sending daily trading summary..."
+          echo "🔗 Endpoint: ${API_URL}"
+          
+          # Retry logic for network failures
+          MAX_RETRIES=3
+          RETRY_DELAY=5
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i/$MAX_RETRIES..."
+            
+            HTTP_CODE=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
+              -X GET \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              "${API_URL}")
+            
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Daily summary sent successfully"
+              cat /tmp/response.txt
+              exit 0
+            elif [ "$HTTP_CODE" -eq 401 ]; then
+              echo "❌ Authentication failed (401)"
+              echo "   Check that CRON_SECRET is set correctly in GitHub Secrets"
+              cat /tmp/response.txt
+              exit 1
+            elif [ "$HTTP_CODE" -eq 500 ]; then
+              echo "⚠️  Server error (500) - attempt $i/$MAX_RETRIES"
+              if [ $i -lt $MAX_RETRIES ]; then
+                echo "   Retrying in ${RETRY_DELAY} seconds..."
+                sleep $RETRY_DELAY
+                RETRY_DELAY=$((RETRY_DELAY * 2))
+              else
+                echo "❌ Failed after $MAX_RETRIES attempts"
+                cat /tmp/response.txt
+                exit 1
+              fi
+            else
+              echo "❌ Unexpected error: HTTP $HTTP_CODE"
+              cat /tmp/response.txt
+              exit 1
+            fi
+          done
+
