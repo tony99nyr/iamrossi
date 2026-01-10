@@ -33,6 +33,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   const [labelPickerPostId, setLabelPickerPostId] = useState<string | null>(null);
   const [newLabelName, setNewLabelName] = useState('');
   const [labels, setLabels] = useState<InstagramLabel[]>(initialLabels);
+  const [isDraggingScrollbar, setIsDraggingScrollbar] = useState(false);
+  const scrollTrackRef = useRef<HTMLDivElement>(null);
 
   // Check authentication on mount
   useEffect(() => {
@@ -575,6 +577,75 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       console.error('Failed to create label:', error);
     }
   }, []);
+
+  // Scroll indicator handlers
+  const calculateIndexFromPosition = useCallback((clientY: number) => {
+    if (!scrollTrackRef.current || filteredPosts.length === 0) return 0;
+    const rect = scrollTrackRef.current.getBoundingClientRect();
+    const relativeY = clientY - rect.top;
+    const percentage = Math.max(0, Math.min(1, relativeY / rect.height));
+    return Math.round(percentage * (filteredPosts.length - 1));
+  }, [filteredPosts.length]);
+
+  const handleScrollbarInteraction = useCallback((clientY: number) => {
+    const newIndex = calculateIndexFromPosition(clientY);
+    if (newIndex !== currentPostIndex && newIndex >= 0 && newIndex < filteredPosts.length) {
+      setCurrentPostIndex(newIndex);
+      // Scroll to the post
+      if (containerRef.current) {
+        const postHeight = window.innerHeight;
+        containerRef.current.scrollTo({
+          top: newIndex * postHeight,
+          behavior: 'auto', // instant for dragging
+        });
+      }
+    }
+  }, [calculateIndexFromPosition, currentPostIndex, filteredPosts.length]);
+
+  const handleScrollbarMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingScrollbar(true);
+    handleScrollbarInteraction(e.clientY);
+  }, [handleScrollbarInteraction]);
+
+  const handleScrollbarTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    setIsDraggingScrollbar(true);
+    if (e.touches.length > 0) {
+      handleScrollbarInteraction(e.touches[0].clientY);
+    }
+  }, [handleScrollbarInteraction]);
+
+  // Handle drag events globally when dragging
+  useEffect(() => {
+    if (!isDraggingScrollbar) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      handleScrollbarInteraction(e.clientY);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        handleScrollbarInteraction(e.touches[0].clientY);
+      }
+    };
+
+    const handleEnd = () => {
+      setIsDraggingScrollbar(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleEnd);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleEnd);
+    };
+  }, [isDraggingScrollbar, handleScrollbarInteraction]);
 
   // Don't render UI until authenticated
   if (isLoading) {
@@ -1394,6 +1465,77 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
           );
         })}
       </div>
+
+      {/* Scroll Position Indicator */}
+      {filteredPosts.length > 1 && (
+        <div
+          ref={scrollTrackRef}
+          className={css({
+            position: 'fixed',
+            right: '8px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            height: '60vh',
+            width: '6px',
+            background: 'rgba(255, 255, 255, 0.1)',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            zIndex: 50,
+            transition: isDraggingScrollbar ? 'none' : 'opacity 0.2s',
+            opacity: isDraggingScrollbar ? 1 : 0.6,
+            _hover: {
+              opacity: 1,
+              width: '10px',
+            },
+          })}
+          onMouseDown={handleScrollbarMouseDown}
+          onTouchStart={handleScrollbarTouchStart}
+        >
+          {/* Thumb */}
+          <div
+            className={css({
+              position: 'absolute',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '14px',
+              height: '40px',
+              background: isDraggingScrollbar 
+                ? 'rgba(88, 166, 255, 0.9)' 
+                : 'rgba(255, 255, 255, 0.8)',
+              borderRadius: '7px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              transition: isDraggingScrollbar ? 'none' : 'all 0.15s ease-out',
+              pointerEvents: 'none',
+            })}
+            style={{
+              top: `calc(${(currentPostIndex / Math.max(1, filteredPosts.length - 1)) * 100}% - 20px)`,
+            }}
+          />
+          {/* Current position indicator */}
+          <div
+            className={css({
+              position: 'absolute',
+              right: '20px',
+              transform: 'translateY(-50%)',
+              background: 'rgba(0, 0, 0, 0.8)',
+              color: '#f5f5f5',
+              padding: '4px 10px',
+              borderRadius: '4px',
+              fontSize: '12px',
+              fontWeight: '500',
+              whiteSpace: 'nowrap',
+              opacity: isDraggingScrollbar ? 1 : 0,
+              transition: 'opacity 0.2s',
+              pointerEvents: 'none',
+            })}
+            style={{
+              top: `calc(${(currentPostIndex / Math.max(1, filteredPosts.length - 1)) * 100}%)`,
+            }}
+          >
+            {currentPostIndex + 1} / {filteredPosts.length}
+          </div>
+        </div>
+      )}
 
       {/* Toolbar for filters and sync */}
       <div className={toolbarStyle}>
