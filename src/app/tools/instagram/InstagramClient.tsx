@@ -35,6 +35,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   const [labels, setLabels] = useState<InstagramLabel[]>(initialLabels);
   const [isDraggingScrollbar, setIsDraggingScrollbar] = useState(false);
   const scrollTrackRef = useRef<HTMLDivElement>(null);
+  const userPausedRef = useRef(false); // Track if user manually paused
 
   // Check authentication on mount
   useEffect(() => {
@@ -129,6 +130,11 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     const currentVideoKey = `${currentPost.shortcode}-${carouselIndex}`;
     const postOrCarouselChanged = prevPostIndexRef.current !== currentPostIndex || 
                                    prevVideoKeyRef.current !== currentVideoKey;
+    
+    // Reset userPaused when switching to a new post (new post = fresh start)
+    if (postOrCarouselChanged) {
+      userPausedRef.current = false;
+    }
     
     // ALWAYS pause ALL videos except the current one (defensive)
     videoRefs.current.forEach((video, key) => {
@@ -405,6 +411,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     if (video) {
       console.log('[Video] Current state - paused:', video.paused, 'readyState:', video.readyState, 'src:', video.src);
       if (video.paused) {
+        // User is resuming playback
+        userPausedRef.current = false;
         // Ensure video is ready to play
         if (video.readyState >= 2) {
           console.log('[Video] Video ready, attempting to play');
@@ -433,7 +441,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
           video.load();
         }
       } else {
-        console.log('[Video] Video is playing, pausing');
+        // User is manually pausing
+        console.log('[Video] Video is playing, pausing (user initiated)');
+        userPausedRef.current = true;
         video.pause();
         setIsPlaying(false);
       }
@@ -886,7 +896,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
             if (el) {
               videoRefs.current.set(videoKey, el);
               // Auto-play if this is the active post and video is ready
-              if (isActive && el.readyState >= 2 && el.paused) {
+              // BUT respect user's manual pause
+              if (isActive && el.readyState >= 2 && el.paused && !userPausedRef.current) {
                 el.muted = isMuted;
                 el.play().then(() => setIsPlaying(true)).catch(console.error);
               } else if (isActive && el.readyState < 2) {
@@ -948,8 +959,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                           }}
                           onCanPlay={(e) => {
                             // Auto-play when video becomes ready if this is the active post
+                            // BUT respect user's manual pause
                             const video = e.currentTarget;
-                            if (isActive && video.paused) {
+                            if (isActive && video.paused && !userPausedRef.current) {
                               video.play().then(() => setIsPlaying(true)).catch(console.error);
                             }
                           }}
@@ -1070,8 +1082,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                       }}
                       onCanPlay={(e) => {
                         // Auto-play when video becomes ready if this is the active post
+                        // BUT respect user's manual pause
                         const video = e.currentTarget;
-                        if (isActive && video.paused) {
+                        if (isActive && video.paused && !userPausedRef.current) {
                           video.play().then(() => setIsPlaying(true)).catch(console.error);
                         }
                       }}
