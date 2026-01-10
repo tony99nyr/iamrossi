@@ -112,63 +112,65 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
   // No automatic sync on mount - user must click refresh button
 
-  // Handle video playback when post becomes active
+  // Track the previous post index to only pause when post changes
+  const prevPostIndexRef = useRef(currentPostIndex);
+  const prevCarouselIndexRef = useRef<string>('');
+
+  // Handle video playback when post or carousel item becomes active
   useEffect(() => {
     const currentPost = filteredPosts[currentPostIndex];
     if (!currentPost) return;
 
-    // Pause all videos
-    videoRefs.current.forEach((video) => {
-      if (video) {
-        video.pause();
-      }
-    });
+    const carouselIndex = carouselIndices.get(currentPost.shortcode) || 0;
+    const currentVideoKey = `${currentPost.shortcode}-${carouselIndex}`;
+    const postOrCarouselChanged = prevPostIndexRef.current !== currentPostIndex || 
+                                   prevCarouselIndexRef.current !== currentVideoKey;
+    
+    // Update refs
+    prevPostIndexRef.current = currentPostIndex;
+    prevCarouselIndexRef.current = currentVideoKey;
+
+    // Only pause OTHER videos when post/carousel changes (not when isPlaying toggles)
+    if (postOrCarouselChanged) {
+      videoRefs.current.forEach((video, key) => {
+        if (video && key !== currentVideoKey) {
+          video.pause();
+        }
+      });
+    }
 
     // Play current video if it's a video
-    const carouselIndex = carouselIndices.get(currentPost.shortcode) || 0;
     const isCarousel = currentPost.isCarousel && currentPost.mediaItems && currentPost.mediaItems.length > 0;
     const currentMedia = isCarousel 
       ? currentPost.mediaItems?.[carouselIndex]
       : { isVideo: currentPost.isVideo, videoUrl: currentPost.videoUrl };
     
     if ((currentMedia?.isVideo && currentMedia?.videoUrl) || (currentPost.isVideo && currentPost.videoUrl)) {
-      // Video refs are always stored with the carousel index suffix
-      const videoKey = `${currentPost.shortcode}-${carouselIndex}`;
-      const video = videoRefs.current.get(videoKey);
+      const video = videoRefs.current.get(currentVideoKey);
       if (video) {
-        console.log('[Video] Auto-play check for', videoKey, 'isPlaying:', isPlaying, 'readyState:', video.readyState);
-        
         // Always ensure video is loaded when post becomes active
-        // This ensures the video starts loading immediately, not just on click
         if (video.readyState === 0) {
-          // Video hasn't started loading yet - load it now
           video.load();
         }
         
-        // Wait for video to be ready before playing
-        const attemptPlay = () => {
-          if (isPlaying && video.readyState >= 2) {
-            video.play().catch((err) => {
-              console.error('[Video] Auto-play failed:', err);
-            });
-          }
-        };
-        
-        if (video.readyState >= 2) {
-          // Video is already loaded - play immediately
-          attemptPlay();
-        } else {
-          // Wait for video to load
-          const canPlayHandler = () => {
-            console.log('[Video] Can play for auto-play', videoKey);
-            attemptPlay();
-          };
-          video.addEventListener('canplay', canPlayHandler, { once: true });
-          video.addEventListener('loadedmetadata', canPlayHandler, { once: true });
-        }
         video.muted = isMuted;
-      } else {
-        console.warn('[Video] Video element not found for auto-play:', videoKey);
+        
+        // Only auto-play if isPlaying is true and we just switched to this post/carousel
+        if (isPlaying && postOrCarouselChanged) {
+          const attemptPlay = () => {
+            if (video.readyState >= 2) {
+              video.play().catch((err) => {
+                console.error('[Video] Auto-play failed:', err);
+              });
+            }
+          };
+          
+          if (video.readyState >= 2) {
+            attemptPlay();
+          } else {
+            video.addEventListener('canplay', attemptPlay, { once: true });
+          }
+        }
       }
     }
   }, [currentPostIndex, filteredPosts, isPlaying, isMuted, carouselIndices]);
@@ -261,6 +263,37 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     setTouchStartX(null);
   }, [touchStartY, touchStartX, currentPostIndex, filteredPosts, carouselIndices]);
 
+  // Handle trackpad/wheel horizontal gestures for carousel navigation
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const currentPost = filteredPosts[currentPostIndex];
+      if (!currentPost) return;
+      
+      const isCarousel = currentPost.isCarousel && currentPost.mediaItems && currentPost.mediaItems.length > 1;
+      if (!isCarousel) return;
+      
+      const currentCarouselIndex = carouselIndices.get(currentPost.shortcode) || 0;
+      const threshold = 30; // Minimum delta to trigger navigation
+      
+      // Only handle horizontal swipes
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > threshold) {
+        e.preventDefault();
+        
+        if (e.deltaX > 0 && currentCarouselIndex < (currentPost.mediaItems?.length || 0) - 1) {
+          // Swipe left (scroll right) - next carousel item
+          setCarouselIndices(prev => new Map(prev).set(currentPost.shortcode, currentCarouselIndex + 1));
+        } else if (e.deltaX < 0 && currentCarouselIndex > 0) {
+          // Swipe right (scroll left) - previous carousel item
+          setCarouselIndices(prev => new Map(prev).set(currentPost.shortcode, currentCarouselIndex - 1));
+        }
+      }
+    };
+    
+    // Add wheel listener with passive: false to allow preventDefault
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, [currentPostIndex, filteredPosts, carouselIndices]);
+
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -293,7 +326,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPostIndex, filteredPosts.length]);
+  }, [currentPostIndex, filteredPosts, carouselIndices]);
 
   const syncPosts = useCallback(async () => {
     setIsSyncing(true);
@@ -356,8 +389,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     }
   }, [posts]);
 
-  const handleVideoClick = useCallback((shortcode: string, carouselIndex?: number) => {
-    const videoKey = carouselIndex !== undefined ? `${shortcode}-${carouselIndex}` : shortcode;
+  const handleVideoClick = useCallback((shortcode: string, carouselIndex: number = 0) => {
+    // Video refs are always stored with the carousel index suffix (e.g., "shortcode-0")
+    const videoKey = `${shortcode}-${carouselIndex}`;
     const video = videoRefs.current.get(videoKey);
     console.log('[Video] Click handler called for', videoKey, 'video found:', !!video);
     if (video) {
@@ -770,8 +804,12 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                               }
                             }
                           }}
-                          onPlay={() => setIsPlaying(true)}
-                          onPause={() => setIsPlaying(false)}
+                        onPlay={() => {
+                          if (isActive) setIsPlaying(true);
+                        }}
+                        onPause={() => {
+                          if (isActive) setIsPlaying(false);
+                        }}
                           onError={(e) => {
                             console.error('Video error:', e);
                             console.log('Video URL:', currentMedia.videoUrl);
@@ -884,8 +922,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        const carouselIndex = carouselIndices.get(post.shortcode) || 0;
-                        handleVideoClick(post.shortcode, isCarousel ? carouselIndex : undefined);
+                        const idx = carouselIndices.get(post.shortcode) || 0;
+                        handleVideoClick(post.shortcode, idx);
                       }}
                       onLoadedMetadata={() => {
                         console.log('[Video] Loaded metadata for', post.shortcode, 'URL:', currentMedia?.videoUrl || post.videoUrl);
@@ -922,12 +960,19 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         }
                       }}
                       onPlay={() => {
-                        console.log('[Video] Playing', post.shortcode);
-                        setIsPlaying(true);
+                        // Only update global state if this is the active video
+                        if (isActive) {
+                          console.log('[Video] Playing (active)', post.shortcode);
+                          setIsPlaying(true);
+                        }
                       }}
                       onPause={() => {
-                        console.log('[Video] Paused', post.shortcode);
-                        setIsPlaying(false);
+                        // Only update global state if this is the active video
+                        // This prevents feedback loops when we pause other videos
+                        if (isActive) {
+                          console.log('[Video] Paused (active)', post.shortcode);
+                          setIsPlaying(false);
+                        }
                       }}
                       onError={(e) => {
                         console.error('[Video] Error for', post.shortcode, e);
@@ -948,8 +993,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          const carouselIndex = carouselIndices.get(post.shortcode) || 0;
-                          handleVideoClick(post.shortcode, isCarousel ? carouselIndex : undefined);
+                          const idx = carouselIndices.get(post.shortcode) || 0;
+                          handleVideoClick(post.shortcode, idx);
                         }}
                         style={{
                           position: 'absolute',
