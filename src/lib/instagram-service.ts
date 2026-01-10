@@ -145,7 +145,7 @@ export async function fetchInstagramSavedPosts(
 
     // Wait for content to load - Instagram can be slow
     logDebug('[Instagram] Waiting for page to load...');
-    await page.waitForTimeout(5000);
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     // Check if we're logged in (look for login redirect or saved posts content)
     const currentUrl = page.url();
@@ -165,14 +165,18 @@ export async function fetchInstagramSavedPosts(
       // Look for saved posts query
       if (postData && postData.includes('saved')) {
         try {
+          logDebug('[Instagram] Intercepting GraphQL saved posts query');
           const response = await route.fetch();
           const json = await response.json() as InstagramGraphQLResponse;
           
           if (json && json.data && json.data.user && json.data.user.saved) {
             savedPostsDataRef.data = json;
+            logDebug(`[Instagram] Captured GraphQL data: ${json.data.user.saved.edges?.length || 0} posts`);
+          } else {
+            logDebug('[Instagram] GraphQL response missing saved data', { hasData: !!json?.data, hasUser: !!json?.data?.user, hasSaved: !!json?.data?.user?.saved });
           }
         } catch (error) {
-          console.error('[Instagram] Error intercepting GraphQL response:', error);
+          logDebug('[Instagram] Error intercepting GraphQL response:', { error: error instanceof Error ? error.message : String(error) });
         }
       }
       
@@ -180,7 +184,7 @@ export async function fetchInstagramSavedPosts(
     });
 
     // Wait a bit more for content to fully render
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
     // Scroll to trigger loading more posts
     let scrollAttempts = 0;
@@ -192,7 +196,7 @@ export async function fetchInstagramSavedPosts(
         window.scrollTo(0, document.body.scrollHeight);
       });
       
-      await page.waitForTimeout(2000);
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Try to extract posts from the page
       const posts = await page.evaluate((maxCount) => {
@@ -483,9 +487,9 @@ export async function fetchInstagramSavedPosts(
                   authorFullName: node.owner?.full_name,
                   likesCount: node.edge_liked_by?.count,
                   commentsCount: node.edge_media_to_comment?.count,
-                  savedAt: node.taken_at_timestamp 
-                    ? new Date(node.taken_at_timestamp * 1000).toISOString()
-                    : undefined,
+                  // Note: Instagram doesn't provide saved date in API, so savedAt is left undefined
+                  // The importedAt field (set later) represents the saved order (newest saved first)
+                  savedAt: undefined,
                   postedAt: node.taken_at_timestamp 
                     ? new Date(node.taken_at_timestamp * 1000).toISOString()
                     : undefined,
@@ -498,535 +502,128 @@ export async function fetchInstagramSavedPosts(
     // Limit to maxPosts
     allPosts = allPosts.slice(0, maxPosts);
 
-    // Enrich posts with account names and video URLs by visiting each post page
-    logDebug(`[Instagram] Enriching posts with account names and video URLs...`);
+    // Enrich posts with account names and video URLs by visiting embed pages
+    // Using /embed/ URLs bypasses rate limiting that affects direct post URLs
+    logDebug(`[Instagram] Enriching posts with video URLs using embed pages...`);
     for (let i = 0; i < allPosts.length; i++) {
       const post = allPosts[i];
-      // Visit ALL post pages to extract video URLs (even if account name is already known)
-      // This ensures we get video URLs for all video posts
       if (post.url) {
+        let postPage;
         try {
-          // Visit the post page to get account name
-          const postPage = await context.newPage();
-          await postPage.goto(post.url, {
-            waitUntil: 'domcontentloaded',
-            timeout: 20000,
-          });
+          postPage = await context.newPage();
           
-          // Wait for content to load (videos need more time to load)
-          await postPage.waitForTimeout(3000);
+          // Use embed URL instead of direct post URL to avoid 429 rate limiting
+          const embedUrl = post.url.endsWith('/') ? `${post.url}embed/` : `${post.url}/embed/`;
           
-          // Wait for video elements to potentially load
-          try {
-            await postPage.waitForSelector('video', { timeout: 2000 }).catch(() => {
-              // Video element might not exist (for image posts), that's OK
+          // Process embed page with timeout
+          const postProcessPromise = (async () => {
+            await postPage.goto(embedUrl, {
+              waitUntil: 'networkidle',
+              timeout: 20000,
             });
             
-            // Wait for video to load and get actual CDN URL (not blob URL)
-            // Instagram initially loads videos as blob URLs, then replaces them with CDN URLs
-            // We need to wait and poll until we get the actual CDN URL
-            try {
-              await postPage.evaluate(() => {
-                return new Promise<void>((resolve) => {
-                  const video = document.querySelector('video');
-                  if (!video) {
-                    resolve();
-                    return;
-                  }
-                  
-                  const vidEl = video as HTMLVideoElement;
-                  
-                  // Check if we already have a non-blob URL
-                  const checkUrl = () => {
-                    // Check currentSrc first (most reliable)
-                    if (vidEl.currentSrc && !vidEl.currentSrc.startsWith('blob:') && 
-                        (vidEl.currentSrc.includes('.mp4') || vidEl.currentSrc.includes('cdninstagram'))) {
-                      return true;
-                    }
-                    // Check src
-                    if (vidEl.src && !vidEl.src.startsWith('blob:') && 
-                        (vidEl.src.includes('.mp4') || vidEl.src.includes('cdninstagram'))) {
-                      return true;
-                    }
-                    // Check source element
-                    const source = video.querySelector('source');
-                    if (source) {
-                      const sourceEl = source as HTMLSourceElement;
-                      if (sourceEl.src && !sourceEl.src.startsWith('blob:') && 
-                          (sourceEl.src.includes('.mp4') || sourceEl.src.includes('cdninstagram'))) {
-                        return true;
-                      }
-                    }
-                    return false;
-                  };
-                  
-                  if (checkUrl()) {
-                    resolve();
-                    return;
-                  }
-                  
-                  // Poll for non-blob URL (check every 500ms, up to 15 seconds)
-                  let attempts = 0;
-                  const maxAttempts = 30;
-                  const poll = setInterval(() => {
-                    attempts++;
-                    if (checkUrl() || attempts >= maxAttempts) {
-                      clearInterval(poll);
-                      resolve();
-                    }
-                  }, 500);
-                  
-                  // Also listen for loadedmetadata event
-                  const onLoadedMetadata = () => {
-                    video.removeEventListener('loadedmetadata', onLoadedMetadata);
-                    // Give it a moment for URL to update
-                    setTimeout(() => {
-                      if (checkUrl()) {
-                        clearInterval(poll);
-                        resolve();
-                      }
-                    }, 1000);
-                  };
-                  
-                  video.addEventListener('loadedmetadata', onLoadedMetadata);
-                  
-                  // Timeout after 15 seconds
-                  setTimeout(() => {
-                    clearInterval(poll);
-                    video.removeEventListener('loadedmetadata', onLoadedMetadata);
-                    resolve();
-                  }, 15000);
-                });
-              });
-            } catch {
-              // Ignore errors
-            }
-          } catch {
-            // Ignore - not all posts have videos
-          }
+            // Wait for video element to load
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          })();
           
-          // Check if we're still on the post page (not redirected)
+          // Hard timeout after 25 seconds per post
+          await Promise.race([
+            postProcessPromise,
+            new Promise((resolve) => {
+              setTimeout(() => {
+                logDebug(`[Instagram] Timeout for post ${i + 1}/${allPosts.length} (${post.shortcode}) - continuing`);
+                resolve(undefined);
+              }, 25000);
+            })
+          ]).catch(() => {
+            // Ignore errors, continue to next post
+          });
+          
+          // Check if embed page loaded properly
           const currentUrl = postPage.url();
-          if (!currentUrl.includes('/p/') && !currentUrl.includes('/reel/')) {
-            logDebug(`[Instagram] Post ${i + 1} redirected to ${currentUrl}, skipping account name extraction`);
+          if (currentUrl.includes('/accounts/login')) {
+            logDebug(`[Instagram] Post ${i + 1} redirected to login, skipping`);
             await postPage.close();
             continue;
           }
-          
-          // Extract account name and post ID from the post page
-          const pageData = await postPage.evaluate(() => {
-            let username: string | null = null;
-            let postId: string | null = null;
-            
-            // Method 1: Look for username in meta tags (og:url) - most reliable
-            const ogUrlTags = document.querySelectorAll('meta[property="og:url"]');
-            for (const meta of Array.from(ogUrlTags)) {
-              const content = meta.getAttribute('content');
-              if (content) {
-                // Match pattern: instagram.com/username/p/...
-                const match = content.match(/instagram\.com\/([a-zA-Z0-9._]+)\/p\//);
-                if (match && match[1]) {
-                  const foundUsername = match[1];
-                  // Filter out common non-username paths
-                  if (foundUsername !== 'reels' && 
-                      foundUsername !== 'saved' && 
-                      foundUsername !== 'explore' &&
-                      foundUsername !== 'accounts' &&
-                      foundUsername.length > 1) {
-                    username = foundUsername;
+
+          // Extract video URL from embed page - simple DOM extraction
+          // The embed page has video URLs directly in <video> elements (no GraphQL needed)
+          try {
+            const videoData = await postPage.evaluate(() => {
+              let videoUrl: string | null = null;
+              const debugInfo: Record<string, unknown> = {};
+              
+              // Get video URL from video element - embed pages have the CDN URL directly
+              const videoElements = document.querySelectorAll('video');
+              debugInfo.videoElementsCount = videoElements.length;
+              
+              for (const videoElement of Array.from(videoElements)) {
+                const vidEl = videoElement as HTMLVideoElement;
+                
+                // Check src first - embed pages have the actual CDN URL here
+                if (vidEl.src && !vidEl.src.startsWith('blob:') && 
+                    (vidEl.src.includes('.mp4') || vidEl.src.includes('cdninstagram'))) {
+                  videoUrl = vidEl.src;
+                  debugInfo.videoUrlSource = 'video element src';
+                  break;
+                }
+                
+                // Check currentSrc
+                if (vidEl.currentSrc && !vidEl.currentSrc.startsWith('blob:') && 
+                    (vidEl.currentSrc.includes('.mp4') || vidEl.currentSrc.includes('cdninstagram'))) {
+                  videoUrl = vidEl.currentSrc;
+                  debugInfo.videoUrlSource = 'video element currentSrc';
+                  break;
+                }
+              }
+              
+              // Get thumbnail from image if no video
+              let thumbnailUrl: string | null = null;
+              if (!videoUrl) {
+                const imgs = document.querySelectorAll('img[src*="cdninstagram"]');
+                for (const img of Array.from(imgs)) {
+                  const src = (img as HTMLImageElement).src;
+                  if (src && !src.includes('profile') && !src.includes('avatar')) {
+                    thumbnailUrl = src;
                     break;
                   }
                 }
               }
-            }
-            
-            // Method 2: Look for username in page title
-            if (!username) {
-              const title = document.title;
-              const titleMatch = title.match(/([a-zA-Z0-9._]+) on Instagram/);
-              if (titleMatch && titleMatch[1]) {
-                const foundUsername = titleMatch[1];
-                if (foundUsername !== 'reels' && foundUsername !== 'saved' && foundUsername.length > 1) {
-                  username = foundUsername;
-                }
-              }
-            }
-            
-            // Method 3: Look for username in article header
-            if (!username) {
-              const article = document.querySelector('article');
-              if (article) {
-                const headerLinks = article.querySelectorAll('header a[href^="/"]');
-                for (const link of Array.from(headerLinks)) {
-                  const href = link.getAttribute('href');
-                  if (href && href.startsWith('/') && 
-                      !href.includes('/p/') && 
-                      !href.includes('/reel/') &&
-                      !href.includes('/explore/') &&
-                      !href.includes('/accounts/') &&
-                      href !== '/') {
-                    const userMatch = href.match(/\/([a-zA-Z0-9._]+)\/?$/);
-                    if (userMatch && userMatch[1]) {
-                      const foundUsername = userMatch[1];
-                      if (foundUsername !== 'p' && 
-                          foundUsername !== 'reel' && 
-                          foundUsername !== 'explore' &&
-                          foundUsername !== 'accounts' &&
-                          foundUsername !== 'reels' &&
-                          foundUsername !== 'saved' &&
-                          foundUsername.length > 1) {
-                        username = foundUsername;
-                        break;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            
-            // Extract post ID - Method 1: Look for post ID in window._sharedData (most reliable)
-            try {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const sharedData = (window as any)._sharedData;
-              // Try to get the actual media ID from the post page data
-              if (sharedData?.entry_data?.PostPage?.[0]?.graphql?.shortcode_media) {
-                const media = sharedData.entry_data.PostPage[0].graphql.shortcode_media;
-                // The ID should be the media ID, not the owner ID
-                if (media.id && String(media.id).length > 10) {
-                  postId = String(media.id);
-                }
-              }
-            } catch {
-              // Ignore errors
-            }
-            
-            // Method 2: Look for post ID in script tags (JSON-LD)
-            if (!postId) {
-              const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-              for (const script of Array.from(scripts)) {
-                try {
-                  const data = JSON.parse(script.textContent || '');
-                  if (data.mainEntityOfPage && data.mainEntityOfPage['@id']) {
-                    const idMatch = data.mainEntityOfPage['@id'].match(/\/(\d+)\//);
-                    if (idMatch) {
-                      postId = idMatch[1];
-                      break;
-                    }
-                  }
-                } catch {
-                  // Ignore JSON parse errors
-                }
-              }
-            }
-            
-            // Method 3: Look for post ID in meta tags
-            if (!postId) {
-              const idMetaTags = document.querySelectorAll('meta[property*="id"]');
-              for (const meta of Array.from(idMetaTags)) {
-                const content = meta.getAttribute('content');
-                if (content && /^\d+$/.test(content)) {
-                  postId = content;
-                  break;
-                }
-              }
-            }
-            
-            return { username, postId };
-          });
-          
-          if (pageData.username) {
-            post.authorUsername = pageData.username;
-            logDebug(`[Instagram] Found account name for post ${i + 1}/${allPosts.length}: @${pageData.username}`);
-          }
-          
-          if (pageData.postId && pageData.postId !== post.id) {
-            post.id = pageData.postId;
-            logDebug(`[Instagram] Found post ID for post ${i + 1}/${allPosts.length}: ${pageData.postId}`);
-          }
-
-          // Extract video URL, carousel media, and postedAt from the post page
-          // NOTE: This extraction is wrapped in try-catch to handle serialization errors
-          try {
-            let pageData: { videoUrl: string | null; postedAt: string | null; mediaItems: Array<{ imageUrl?: string; videoUrl?: string; isVideo?: boolean }> | null; isCarousel: boolean; debugInfo: Record<string, unknown> } | null = null;
-            try {
-              pageData = await postPage.evaluate(() => {
-              let videoUrl: string | null = null;
-              let postedAt: string | null = null;
-              let mediaItems: Array<{ imageUrl?: string; videoUrl?: string; isVideo?: boolean }> | null = null;
-              let isCarousel = false;
-              const debugInfo: Record<string, unknown> = {};
               
-              // Method 1: Extract from _sharedData (GraphQL data) - most reliable
-              try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const sharedData = (window as any)._sharedData;
-                debugInfo.hasSharedData = !!sharedData;
-                debugInfo.hasEntryData = !!sharedData?.entry_data;
-                debugInfo.hasPostPage = !!sharedData?.entry_data?.PostPage?.[0];
-                debugInfo.hasGraphQL = !!sharedData?.entry_data?.PostPage?.[0]?.graphql;
-                
-                if (sharedData?.entry_data?.PostPage?.[0]?.graphql?.shortcode_media) {
-                  const media = sharedData.entry_data.PostPage[0].graphql.shortcode_media;
-                  debugInfo.isVideo = media.is_video;
-                  debugInfo.hasVideoUrl = !!media.video_url;
-                  debugInfo.hasVideoVersions = !!(media.video_versions && media.video_versions.length > 0);
-                  debugInfo.videoUrlValue = media.video_url;
-                  debugInfo.videoVersionsCount = media.video_versions?.length || 0;
-                  debugInfo.videoVersionsFirstUrl = media.video_versions?.[0]?.url;
-                  
-                  // Check if it's a carousel
-                  if (media.edge_sidecar_to_children?.edges && media.edge_sidecar_to_children.edges.length > 0) {
-                    isCarousel = true;
-                    debugInfo.isCarousel = true;
-                    debugInfo.carouselItemsCount = media.edge_sidecar_to_children.edges.length;
-                    mediaItems = media.edge_sidecar_to_children.edges.map((edge: InstagramCarouselEdge) => {
-                      const itemVideoUrl = edge.node.video_url || (edge.node.video_versions && edge.node.video_versions.length > 0
-                        ? edge.node.video_versions[0].url
-                        : undefined);
-                      return {
-                        imageUrl: edge.node.display_url,
-                        videoUrl: itemVideoUrl,
-                        isVideo: edge.node.is_video || false,
-                      };
-                    });
-                    debugInfo.carouselVideoUrls = mediaItems ? mediaItems.map(item => item.videoUrl).filter(Boolean) : [];
-                  } else {
-                    // Single media post
-                    // Get video URL - prioritize video_versions (higher quality)
-                    if (media.is_video) {
-                      if (media.video_versions && media.video_versions.length > 0) {
-                        // Get the highest quality video (first in array is usually highest)
-                        videoUrl = media.video_versions[0].url;
-                        debugInfo.videoUrlSource = 'video_versions[0]';
-                      } else if (media.video_url && !media.video_url.startsWith('blob:')) {
-                        // Fallback to video_url if available and not a blob URL
-                        videoUrl = media.video_url;
-                        debugInfo.videoUrlSource = 'video_url';
-                      } else {
-                        debugInfo.videoUrlSource = 'none (blob URL or missing)';
-                      }
-                    }
-                  }
-                  
-                  // Get postedAt timestamp
-                  if (media.taken_at_timestamp) {
-                    postedAt = new Date(media.taken_at_timestamp * 1000).toISOString();
-                  }
-                } else {
-                  debugInfo.reason = 'No shortcode_media in GraphQL';
-                }
-              } catch (error) {
-                debugInfo.graphqlError = error instanceof Error ? error.message : String(error);
-              }
-              
-              // Method 2: Extract video URL from video element (fallback)
-              // NOTE: Skip blob URLs - they're temporary and won't work after page closes
-              // IMPORTANT: If GraphQL didn't work, check DOM video element - it often has the actual CDN URL
-              // We need to wait for the blob URL to be replaced with the actual CDN URL
-              if (!videoUrl && !isCarousel) {
-                const videoElement = document.querySelector('video');
-                debugInfo.hasVideoElement = !!videoElement;
-                if (videoElement) {
-                  const vidEl = videoElement as HTMLVideoElement;
-                  
-                  // Check all possible sources for a non-blob URL
-                  const checkForUrl = () => {
-                    // Check currentSrc first (most reliable)
-                    if (vidEl.currentSrc && !vidEl.currentSrc.startsWith('blob:') && 
-                        (vidEl.currentSrc.includes('.mp4') || vidEl.currentSrc.includes('cdninstagram'))) {
-                      return vidEl.currentSrc;
-                    }
-                    // Check src
-                    if (vidEl.src && !vidEl.src.startsWith('blob:') && 
-                        (vidEl.src.includes('.mp4') || vidEl.src.includes('cdninstagram'))) {
-                      return vidEl.src;
-                    }
-                    // Check source element
-                    const source = videoElement.querySelector('source');
-                    if (source) {
-                      const sourceEl = source as HTMLSourceElement;
-                      if (sourceEl.src && !sourceEl.src.startsWith('blob:') && 
-                          (sourceEl.src.includes('.mp4') || sourceEl.src.includes('cdninstagram'))) {
-                        return sourceEl.src;
-                      }
-                    }
-                    return null;
-                  };
-                  
-                  // Try to get URL immediately
-                  const foundUrl = checkForUrl();
-                  if (foundUrl) {
-                    videoUrl = foundUrl;
-                    debugInfo.videoUrlSource = 'video element (immediate)';
-                    if (!debugInfo.isVideo) {
-                      debugInfo.isVideo = true;
-                    }
-                  } else {
-                    // Store initial state for debugging
-                    debugInfo.videoElementSrc = vidEl.src;
-                    debugInfo.videoElementCurrentSrc = vidEl.currentSrc;
-                    const source = videoElement.querySelector('source');
-                    debugInfo.videoSourceSrc = source ? (source as HTMLSourceElement).src : null;
-                    debugInfo.videoSrcIsBlob = vidEl.src.startsWith('blob:');
-                    debugInfo.currentSrcIsBlob = vidEl.currentSrc.startsWith('blob:');
-                  }
-                  
-                  // Also check for video in nested containers (skip blob URLs)
-                  if (!videoUrl) {
-                    const allVideos = document.querySelectorAll('video');
-                    debugInfo.allVideosCount = allVideos.length;
-                    for (const vid of Array.from(allVideos)) {
-                      const vidSrc = (vid as HTMLVideoElement).src;
-                      const vidSource = vid.querySelector('source');
-                      const sourceSrc = vidSource ? (vidSource as HTMLSourceElement).src : null;
-                      if (sourceSrc && !sourceSrc.startsWith('blob:') && (sourceSrc.includes('.mp4') || sourceSrc.includes('cdninstagram'))) {
-                        videoUrl = sourceSrc;
-                        debugInfo.videoUrlSource = 'nested video source';
-                        break;
-                      } else if (vidSrc && !vidSrc.startsWith('blob:') && (vidSrc.includes('.mp4') || vidSrc.includes('cdninstagram'))) {
-                        videoUrl = vidSrc;
-                        debugInfo.videoUrlSource = 'nested video src';
-                        break;
-                      }
-                    }
-                  }
-                  
-                  // If we found a video URL from DOM but GraphQL didn't mark it as video, mark it now
-                  if (videoUrl && !debugInfo.isVideo) {
-                    debugInfo.isVideo = true;
-                  }
-                }
-              }
-              
-              // Method 3: Extract carousel from DOM (fallback)
-              if (!isCarousel) {
-                // Look for carousel indicators
-                const carouselIndicators = document.querySelectorAll('[role="button"][aria-label*="carousel"], [role="button"][aria-label*="slide"]');
-                if (carouselIndicators.length > 1) {
-                  isCarousel = true;
-                  // Try to extract all media items from the carousel
-                  const carouselItems: Array<{ imageUrl?: string; videoUrl?: string; isVideo?: boolean }> = [];
-                  const carouselContainer = document.querySelector('article');
-                  if (carouselContainer) {
-                    const images = carouselContainer.querySelectorAll('img[src*="instagram"]');
-                    const videos = carouselContainer.querySelectorAll('video');
-                    
-                    // Collect unique image URLs
-                    const imageUrls = new Set<string>();
-                    images.forEach((img) => {
-                      const src = (img as HTMLImageElement).src;
-                      if (src && src.includes('instagram') && !src.includes('profile')) {
-                        imageUrls.add(src);
-                      }
-                    });
-                    
-                    // Collect video URLs
-                    videos.forEach((video) => {
-                      const src = (video as HTMLVideoElement).src;
-                      const source = video.querySelector('source');
-                      const videoSrc = source ? (source as HTMLSourceElement).src : src;
-                      if (videoSrc) {
-                        carouselItems.push({
-                          videoUrl: videoSrc,
-                          isVideo: true,
-                        });
-                      }
-                    });
-                    
-                    // Add images that aren't videos
-                    imageUrls.forEach((url) => {
-                      if (!carouselItems.some(item => item.imageUrl === url)) {
-                        carouselItems.push({ imageUrl: url });
-                      }
-                    });
-                    
-                    if (carouselItems.length > 0) {
-                      mediaItems = carouselItems;
-                    }
-                  }
-                }
-              }
-              
-              // Method 4: Look for time element with datetime attribute
-              if (!postedAt) {
-                const timeElement = document.querySelector('time[datetime]');
-                if (timeElement) {
-                  const datetime = timeElement.getAttribute('datetime');
-                  if (datetime) {
-                    postedAt = new Date(datetime).toISOString();
-                  }
-                }
-              }
-              
-              return { videoUrl, postedAt, mediaItems, isCarousel, debugInfo };
-            });
-          } catch (evalError) {
-            // Handle serialization errors (e.g., __name is not defined)
-            logDebug(`[Instagram] Error in page.evaluate for post ${i + 1}/${allPosts.length} (${post.shortcode}): ${evalError instanceof Error ? evalError.message : String(evalError)}`);
-            pageData = { videoUrl: null, postedAt: null, mediaItems: null, isCarousel: false, debugInfo: { error: evalError instanceof Error ? evalError.message : String(evalError) } };
-          }
-          
-          if (pageData) {
-            // Always log video extraction results for debugging
-            logDebug(`[Instagram] Video extraction for post ${i + 1}/${allPosts.length} (${post.shortcode})`, {
-              foundVideoUrl: !!pageData.videoUrl,
-              isVideo: pageData.debugInfo?.isVideo,
-              isCarousel: pageData.isCarousel,
-              videoUrlSource: pageData.debugInfo?.videoUrlSource,
-              videoUrlPreview: pageData.videoUrl ? pageData.videoUrl.substring(0, 80) : null,
-              hasSharedData: pageData.debugInfo?.hasSharedData,
-              hasGraphQL: pageData.debugInfo?.hasGraphQL,
-              hasVideoVersions: pageData.debugInfo?.hasVideoVersions,
-              videoVersionsCount: pageData.debugInfo?.videoVersionsCount,
-              hasVideoElement: pageData.debugInfo?.hasVideoElement,
-              videoElementSrc: pageData.debugInfo?.videoElementSrc ? (pageData.debugInfo.videoElementSrc as string).substring(0, 80) : null,
-              videoSrcIsBlob: pageData.debugInfo?.videoSrcIsBlob,
+              return { videoUrl, thumbnailUrl, debugInfo };
             });
             
-            if (pageData.isCarousel && pageData.mediaItems) {
-              post.isCarousel = true;
-              post.mediaItems = pageData.mediaItems;
-              logDebug(`[Instagram] Found carousel with ${pageData.mediaItems.length} items for post ${i + 1}/${allPosts.length}`);
-            } else if (pageData.videoUrl && !pageData.videoUrl.startsWith('blob:')) {
-              // Found a video URL - mark as video and set URL (skip blob URLs)
-              post.videoUrl = pageData.videoUrl;
+            if (videoData.videoUrl) {
+              post.videoUrl = videoData.videoUrl;
               post.isVideo = true;
-              logDebug(`[Instagram] Found video URL for post ${i + 1}/${allPosts.length}: ${pageData.videoUrl.substring(0, 50)}...`);
-            } else if (pageData.debugInfo?.isVideo && !pageData.videoUrl) {
-              // Detected as video from DOM but no URL extracted
-              logDebug(`[Instagram] Warning: Post ${i + 1} detected as video from DOM but no video URL extracted`);
-            } else if (post.isVideo && !post.videoUrl) {
-              // If marked as video but no URL found, try one more time to extract
-              logDebug(`[Instagram] Warning: Post ${i + 1} marked as video but no video URL extracted (or only blob URL found)`);
-            } else if (pageData.videoUrl && pageData.videoUrl.startsWith('blob:')) {
-              // Found blob URL - skip it, it won't work
-              logDebug(`[Instagram] Skipping blob URL for post ${i + 1}/${allPosts.length} - need actual CDN URL`);
-            }
-            
-            // If debugInfo shows isVideo but we didn't set it, check if we should
-            if (pageData.debugInfo?.isVideo && !post.isVideo && pageData.videoUrl) {
-              post.isVideo = true;
-              logDebug(`[Instagram] Marking post ${i + 1} as video based on DOM detection`);
-            }
-            
-            if (pageData.postedAt && !post.postedAt) {
-              post.postedAt = pageData.postedAt;
-            }
+              logDebug(`[Instagram] ✅ Found video URL for post ${i + 1}/${allPosts.length} (${post.shortcode}): ${videoData.videoUrl.substring(0, 80)}...`);
             } else {
-              // pageData is null due to error - log it
-              logDebug(`[Instagram] Skipping video extraction for post ${i + 1}/${allPosts.length} (${post.shortcode}) due to evaluation error`);
+              logDebug(`[Instagram] No video in embed page for post ${i + 1}/${allPosts.length} (${post.shortcode}) - videoElements: ${videoData.debugInfo.videoElementsCount}`);
             }
           } catch (error) {
-            // Ignore errors extracting video URL and date
-            logDebug(`[Instagram] Error extracting video URL/date/carousel for post ${i + 1}: ${error}`);
+            logDebug(`[Instagram] Error extracting from embed page for post ${i + 1}: ${error instanceof Error ? error.message : String(error)}`);
           }
           
-          await postPage.close();
+          // Always close the page, even on error
+          try {
+            await postPage.close();
+          } catch (closeError) {
+            // Ignore close errors
+          }
           
           // Small delay to avoid rate limiting
-          await page.waitForTimeout(500);
+          await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (error) {
-          console.error(`[Instagram] Error fetching account name for post ${post.url}:`, error);
+          logDebug(`[Instagram] Error processing post ${i + 1}/${allPosts.length} (${post.shortcode}): ${error instanceof Error ? error.message : String(error)}`);
+          // Try to close page even on error
+          if (postPage) {
+            try {
+              await postPage.close().catch(() => {});
+            } catch {
+              // Ignore
+            }
+          }
           // Continue with next post even if this one fails
         }
       }

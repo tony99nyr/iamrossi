@@ -22,7 +22,7 @@ async function main() {
     process.exit(1);
   }
 
-  const testUrl = 'https://www.instagram.com/p/DTBLIe6ETg8/';
+  const testUrl = process.argv[2] || 'https://www.instagram.com/p/DTFjQWuEv_x/';
   console.log(`📥 Testing post: ${testUrl}\n`);
 
   const browser = await chromium.launch({
@@ -59,8 +59,73 @@ async function main() {
     ]);
 
     console.log('🔍 Navigating to post page...\n');
+    
+    // Capture network requests to find video URLs
+    const videoUrls: string[] = [];
+    page.on('response', (response) => {
+      const url = response.url();
+      if (url.includes('.mp4') || (url.includes('cdninstagram') && url.includes('video'))) {
+        videoUrls.push(url);
+      }
+    });
+    
     await page.goto(testUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    
+    // Check if we're on the right page or redirected
+    const currentUrl = page.url();
+    console.log(`📍 Current URL: ${currentUrl}\n`);
+    
+    if (currentUrl.includes('/accounts/login') || currentUrl.includes('/accounts/')) {
+      console.error('❌ ERROR: Redirected to login page. Session cookie may be invalid.\n');
+      await browser.close();
+      process.exit(1);
+    }
+    
+    // Wait for page content to load
+    try {
+      // Wait for article or main content
+      await page.waitForSelector('article', { timeout: 10000 }).catch(() => {});
+    } catch {
+      // Ignore
+    }
+    
     await page.waitForTimeout(3000);
+
+    // Try to find and click play button if video exists
+    try {
+      const playButton = await page.$('button[aria-label*="Play"], button[aria-label*="play"], [role="button"][aria-label*="video"]');
+      if (playButton) {
+        console.log('▶️  Found play button, clicking...\n');
+        await playButton.click();
+        await page.waitForTimeout(3000);
+      }
+    } catch {
+      // Ignore
+    }
+
+    // Wait for video to potentially load
+    try {
+      await page.waitForSelector('video', { timeout: 10000 }).catch(() => {
+        // Video might not exist, that's OK
+      });
+    } catch {
+      // Ignore
+    }
+
+    // Wait a bit more for video URLs to resolve from blob to CDN
+    await page.waitForTimeout(5000);
+    
+    // Check page HTML structure
+    const pageHtml = await page.content();
+    const hasVideoTag = pageHtml.includes('<video');
+    const hasSharedData = pageHtml.includes('_sharedData');
+    console.log(`📄 Page HTML check: hasVideoTag=${hasVideoTag}, hasSharedData=${hasSharedData}\n`);
+    
+    console.log(`📡 Found ${videoUrls.length} video URLs in network requests:\n`);
+    videoUrls.forEach((url, i) => {
+      console.log(`   ${i + 1}. ${url.substring(0, 100)}...`);
+    });
+    console.log('');
 
     console.log('📊 Extracting data from page...\n');
     const pageData = await page.evaluate(() => {
@@ -68,39 +133,63 @@ async function main() {
       let videoUrl: string | null = null;
       let isVideo = false;
       
-      // Method 1: Extract from _sharedData (GraphQL data)
+      // Method 1: Check all possible window data structures
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const sharedData = (window as any)._sharedData;
-        debugInfo.hasSharedData = !!sharedData;
-        debugInfo.hasEntryData = !!sharedData?.entry_data;
-        debugInfo.hasPostPage = !!sharedData?.entry_data?.PostPage?.[0];
-        debugInfo.hasGraphQL = !!sharedData?.entry_data?.PostPage?.[0]?.graphql;
+        const win = window as any;
+        debugInfo.hasSharedData = !!win._sharedData;
+        debugInfo.hasAdditionalData = !!win.__additionalDataLoaded;
+        debugInfo.hasXDT = !!win.xdt;
+        debugInfo.windowKeys = Object.keys(win).filter(k => k.includes('shared') || k.includes('data') || k.includes('graphql'));
         
-        if (sharedData?.entry_data?.PostPage?.[0]?.graphql?.shortcode_media) {
-          const media = sharedData.entry_data.PostPage[0].graphql.shortcode_media;
-          debugInfo.isVideo = media.is_video;
-          debugInfo.hasVideoUrl = !!media.video_url;
-          debugInfo.hasVideoVersions = !!(media.video_versions && media.video_versions.length > 0);
-          debugInfo.videoUrlValue = media.video_url;
-          debugInfo.videoVersionsCount = media.video_versions?.length || 0;
-          debugInfo.videoVersionsFirstUrl = media.video_versions?.[0]?.url;
-          debugInfo.shortcode = media.shortcode;
+        // Try to find data in script tags
+        const scripts = document.querySelectorAll('script');
+        debugInfo.scriptTagsCount = scripts.length;
+        const scriptContents: string[] = [];
+        scripts.forEach((script, i) => {
+          const text = script.textContent || '';
+          if (text.includes('shortcode_media') || text.includes('video_url') || text.includes('video_versions')) {
+            scriptContents.push(`Script ${i}: ${text.substring(0, 200)}...`);
+          }
+        });
+        debugInfo.relevantScripts = scriptContents;
+        
+        // Try _sharedData first
+        if (win._sharedData) {
+          const sharedData = win._sharedData;
+          debugInfo.hasEntryData = !!sharedData.entry_data;
+          debugInfo.hasPostPage = !!sharedData.entry_data?.PostPage?.[0];
+          debugInfo.hasGraphQL = !!sharedData.entry_data?.PostPage?.[0]?.graphql;
           
-          if (media.is_video) {
-            isVideo = true;
-            if (media.video_versions && media.video_versions.length > 0) {
-              videoUrl = media.video_versions[0].url;
-              debugInfo.videoUrlSource = 'video_versions[0]';
-            } else if (media.video_url && !media.video_url.startsWith('blob:')) {
-              videoUrl = media.video_url;
-              debugInfo.videoUrlSource = 'video_url';
-            } else {
-              debugInfo.videoUrlSource = 'none (blob URL or missing)';
+          if (sharedData?.entry_data?.PostPage?.[0]?.graphql?.shortcode_media) {
+            const media = sharedData.entry_data.PostPage[0].graphql.shortcode_media;
+            debugInfo.isVideo = media.is_video;
+            debugInfo.hasVideoUrl = !!media.video_url;
+            debugInfo.hasVideoVersions = !!(media.video_versions && media.video_versions.length > 0);
+            debugInfo.videoUrlValue = media.video_url;
+            debugInfo.videoVersionsCount = media.video_versions?.length || 0;
+            debugInfo.videoVersionsFirstUrl = media.video_versions?.[0]?.url;
+            debugInfo.shortcode = media.shortcode;
+            
+            if (media.is_video) {
+              isVideo = true;
+              if (media.video_versions && media.video_versions.length > 0) {
+                videoUrl = media.video_versions[0].url;
+                debugInfo.videoUrlSource = 'video_versions[0]';
+              } else if (media.video_url && !media.video_url.startsWith('blob:')) {
+                videoUrl = media.video_url;
+                debugInfo.videoUrlSource = 'video_url';
+              } else {
+                debugInfo.videoUrlSource = 'none (blob URL or missing)';
+              }
+            }
+          } else {
+            debugInfo.reason = 'No shortcode_media in GraphQL';
+            // Try to see what's actually in entry_data
+            if (sharedData.entry_data) {
+              debugInfo.entryDataKeys = Object.keys(sharedData.entry_data);
             }
           }
-        } else {
-          debugInfo.reason = 'No shortcode_media in GraphQL';
         }
       } catch (error) {
         debugInfo.graphqlError = error instanceof Error ? error.message : String(error);
@@ -108,29 +197,83 @@ async function main() {
       
       // Method 2: Check DOM for video element (if GraphQL didn't work)
       if (!videoUrl) {
-        const videoElement = document.querySelector('video');
-        debugInfo.hasVideoElement = !!videoElement;
-        if (videoElement) {
-          debugInfo.videoElementSrc = videoElement.src;
+        const videoElements = document.querySelectorAll('video');
+        debugInfo.videoElementsCount = videoElements.length;
+        debugInfo.hasVideoElement = videoElements.length > 0;
+        
+        for (const videoElement of Array.from(videoElements)) {
+          const vidEl = videoElement as HTMLVideoElement;
+          debugInfo.videoElementSrc = vidEl.src;
+          debugInfo.videoElementCurrentSrc = vidEl.currentSrc;
           const source = videoElement.querySelector('source');
-          debugInfo.videoSourceSrc = source ? source.src : null;
-          debugInfo.videoSrcIsBlob = videoElement.src.startsWith('blob:');
+          debugInfo.videoSourceSrc = source ? (source as HTMLSourceElement).src : null;
+          debugInfo.videoSrcIsBlob = vidEl.src.startsWith('blob:');
+          debugInfo.currentSrcIsBlob = vidEl.currentSrc.startsWith('blob:');
           
-          // Extract video URL from video element
-          if (source && source.src && !source.src.startsWith('blob:')) {
-            videoUrl = source.src;
+          // Check currentSrc first (most reliable)
+          if (vidEl.currentSrc && !vidEl.currentSrc.startsWith('blob:') && 
+              (vidEl.currentSrc.includes('.mp4') || vidEl.currentSrc.includes('cdninstagram'))) {
+            videoUrl = vidEl.currentSrc;
             isVideo = true;
-            debugInfo.videoUrlSource = 'video element source';
-          } else if (videoElement.src && !videoElement.src.startsWith('blob:')) {
-            videoUrl = videoElement.src;
+            debugInfo.videoUrlSource = 'video element currentSrc';
+            break;
+          }
+          
+          // Check source element
+          if (source) {
+            const sourceEl = source as HTMLSourceElement;
+            if (sourceEl.src && !sourceEl.src.startsWith('blob:') && 
+                (sourceEl.src.includes('.mp4') || sourceEl.src.includes('cdninstagram'))) {
+              videoUrl = sourceEl.src;
+              isVideo = true;
+              debugInfo.videoUrlSource = 'video element source';
+              break;
+            }
+          }
+          
+          // Check src as last resort
+          if (vidEl.src && !vidEl.src.startsWith('blob:') && 
+              (vidEl.src.includes('.mp4') || vidEl.src.includes('cdninstagram'))) {
+            videoUrl = vidEl.src;
             isVideo = true;
             debugInfo.videoUrlSource = 'video element src';
+            break;
+          }
+        }
+      }
+      
+      // Method 3: Look for video URLs in script tags (JSON-LD or other embedded data)
+      if (!videoUrl) {
+        const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        debugInfo.jsonLdScriptsCount = scripts.length;
+        for (const script of Array.from(scripts)) {
+          try {
+            const data = JSON.parse(script.textContent || '');
+            if (data.contentUrl && data.contentUrl.includes('.mp4')) {
+              videoUrl = data.contentUrl;
+              isVideo = true;
+              debugInfo.videoUrlSource = 'JSON-LD script';
+              break;
+            }
+          } catch {
+            // Ignore parse errors
           }
         }
       }
       
       return { videoUrl, isVideo, debugInfo };
     });
+
+    // Use network request video URL if found
+    if (!pageData.videoUrl && videoUrls.length > 0) {
+      // Filter out blob URLs and get the first valid CDN URL
+      const validUrl = videoUrls.find(url => !url.startsWith('blob:') && (url.includes('.mp4') || url.includes('cdninstagram')));
+      if (validUrl) {
+        pageData.videoUrl = validUrl;
+        pageData.isVideo = true;
+        pageData.debugInfo.videoUrlSource = 'network request';
+      }
+    }
 
     console.log('📋 Results:\n');
     console.log(JSON.stringify(pageData, null, 2));
@@ -145,8 +288,12 @@ async function main() {
     if (pageData.videoUrl) {
       console.log(`✅ Video URL extracted: ${pageData.videoUrl.substring(0, 100)}...`);
       console.log(`   Is blob URL: ${pageData.videoUrl.startsWith('blob:')}`);
+      console.log(`   Source: ${pageData.debugInfo.videoUrlSource || 'unknown'}`);
     } else {
       console.log('❌ No video URL extracted');
+      if (videoUrls.length > 0) {
+        console.log(`   But found ${videoUrls.length} video URLs in network requests (may be blob URLs)`);
+      }
     }
     
     console.log('\n✅ Test complete!');

@@ -97,10 +97,11 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       return true;
     })
     .sort((a, b) => {
-      // Sort by importedAt (when we first saw it - most recent first)
-      // This represents when the post was saved to Instagram (relative to when we scraped)
-      const dateA = a.importedAt || a.postedAt || a.savedAt || '';
-      const dateB = b.importedAt || b.postedAt || b.savedAt || '';
+      // Sort by saved date (newest saved first)
+      // importedAt represents the order posts were saved (newest saved first on Instagram)
+      // This is the best proxy for saved date since Instagram doesn't provide it in the API
+      const dateA = a.importedAt || a.savedAt || a.postedAt || '';
+      const dateB = b.importedAt || b.savedAt || b.postedAt || '';
       if (dateA && dateB) {
         return new Date(dateB).getTime() - new Date(dateA).getTime();
       }
@@ -131,28 +132,39 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       : { isVideo: currentPost.isVideo, videoUrl: currentPost.videoUrl };
     
     if ((currentMedia?.isVideo && currentMedia?.videoUrl) || (currentPost.isVideo && currentPost.videoUrl)) {
-      const videoKey = isCarousel ? `${currentPost.shortcode}-${carouselIndex}` : currentPost.shortcode;
+      // Video refs are always stored with the carousel index suffix
+      const videoKey = `${currentPost.shortcode}-${carouselIndex}`;
       const video = videoRefs.current.get(videoKey);
       if (video) {
         console.log('[Video] Auto-play check for', videoKey, 'isPlaying:', isPlaying, 'readyState:', video.readyState);
+        
+        // Always ensure video is loaded when post becomes active
+        // This ensures the video starts loading immediately, not just on click
+        if (video.readyState === 0) {
+          // Video hasn't started loading yet - load it now
+          video.load();
+        }
+        
         // Wait for video to be ready before playing
-        if (video.readyState >= 2) {
-          if (isPlaying) {
+        const attemptPlay = () => {
+          if (isPlaying && video.readyState >= 2) {
             video.play().catch((err) => {
               console.error('[Video] Auto-play failed:', err);
             });
           }
+        };
+        
+        if (video.readyState >= 2) {
+          // Video is already loaded - play immediately
+          attemptPlay();
         } else {
+          // Wait for video to load
           const canPlayHandler = () => {
             console.log('[Video] Can play for auto-play', videoKey);
-            if (isPlaying) {
-              video.play().catch((err) => {
-                console.error('[Video] Auto-play failed after canplay:', err);
-              });
-            }
+            attemptPlay();
           };
           video.addEventListener('canplay', canPlayHandler, { once: true });
-          video.load();
+          video.addEventListener('loadedmetadata', canPlayHandler, { once: true });
         }
         video.muted = isMuted;
       } else {
@@ -697,14 +709,27 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                     {currentMedia?.isVideo && currentMedia.videoUrl ? (
                       <>
                         <video
-                          ref={videoRef}
+                          ref={(el) => {
+                            videoRef(el);
+                            // If this is the active post, load the video immediately
+                            if (el && isActive && currentMedia.videoUrl) {
+                              // Ensure video loads immediately when active
+                              if (el.readyState === 0) {
+                                el.load();
+                              }
+                              // Try to play if ready
+                              if (el.readyState >= 2 && isPlaying) {
+                                el.play().catch(console.error);
+                              }
+                            }
+                          }}
                           src={currentMedia.videoUrl}
                           poster={currentMedia.imageUrl}
                           className={videoStyle}
                           playsInline
                           muted={isMuted}
                           loop
-                          preload="auto"
+                          preload={isActive ? "auto" : "metadata"}
                           controls={false}
                           style={{
                             display: 'block',
@@ -720,7 +745,17 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                           onLoadedMetadata={() => {
                             if (isActive && isPlaying) {
                               const video = videoRefs.current.get(`${post.shortcode}-${carouselIndex}`);
-                              video?.play().catch(console.error);
+                              if (video) {
+                                video.play().catch(console.error);
+                              }
+                            }
+                          }}
+                          onCanPlay={() => {
+                            if (isActive && isPlaying) {
+                              const video = videoRefs.current.get(`${post.shortcode}-${carouselIndex}`);
+                              if (video) {
+                                video.play().catch(console.error);
+                              }
                             }
                           }}
                           onPlay={() => setIsPlaying(true)}
@@ -806,14 +841,27 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                 ) : ((currentMedia?.isVideo && currentMedia.videoUrl) || (post.isVideo && post.videoUrl)) ? (
                   <>
                     <video
-                      ref={videoRef}
+                      ref={(el) => {
+                        videoRef(el);
+                        // If this is the active post, load the video immediately
+                        if (el && isActive && (currentMedia?.videoUrl || post.videoUrl)) {
+                          // Ensure video loads immediately when active
+                          if (el.readyState === 0) {
+                            el.load();
+                          }
+                          // Try to play if ready
+                          if (el.readyState >= 2 && isPlaying) {
+                            el.play().catch(console.error);
+                          }
+                        }
+                      }}
                       src={currentMedia?.videoUrl || post.videoUrl}
                       poster={currentMedia?.imageUrl || post.imageUrl}
                       className={videoStyle}
                       playsInline
                       muted={isMuted}
                       loop
-                      preload="auto"
+                      preload={isActive ? "auto" : "metadata"}
                       controls={false}
                       style={{
                         display: 'block',
@@ -831,7 +879,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         console.log('[Video] Loaded metadata for', post.shortcode, 'URL:', currentMedia?.videoUrl || post.videoUrl);
                         if (isActive && isPlaying) {
                           const carouselIndex = carouselIndices.get(post.shortcode) || 0;
-                          const videoKey = isCarousel ? `${post.shortcode}-${carouselIndex}` : post.shortcode;
+                          // Video refs are always stored with the carousel index suffix
+                          const videoKey = `${post.shortcode}-${carouselIndex}`;
                           const video = videoRefs.current.get(videoKey);
                           if (video) {
                             console.log('[Video] Attempting to play', videoKey, 'readyState:', video.readyState);
@@ -850,7 +899,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         console.log('[Video] Can play', post.shortcode);
                         if (isActive && isPlaying) {
                           const carouselIndex = carouselIndices.get(post.shortcode) || 0;
-                          const videoKey = isCarousel ? `${post.shortcode}-${carouselIndex}` : post.shortcode;
+                          // Video refs are always stored with the carousel index suffix
+                          const videoKey = `${post.shortcode}-${carouselIndex}`;
                           const video = videoRefs.current.get(videoKey);
                           if (video) {
                             video.play().catch((err) => {

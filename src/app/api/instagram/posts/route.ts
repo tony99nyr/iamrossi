@@ -49,11 +49,12 @@ export async function GET(request: NextRequest) {
       posts = posts.filter(p => p.authorUsername === filter.authorUsername);
     }
 
-    // Sort by importedAt (newest first) - this represents when we first saw the post
-    // which is closest to when it was saved on Instagram
+    // Sort by saved date (newest saved first)
+    // importedAt represents the order posts were saved (newest saved first on Instagram)
+    // This is the best proxy for saved date since Instagram doesn't provide it in the API
     posts.sort((a, b) => {
-      const dateA = a.importedAt || a.postedAt || a.savedAt || '';
-      const dateB = b.importedAt || b.postedAt || b.savedAt || '';
+      const dateA = a.importedAt || a.savedAt || a.postedAt || '';
+      const dateB = b.importedAt || b.savedAt || b.postedAt || '';
       if (dateA && dateB) {
         return new Date(dateB).getTime() - new Date(dateA).getTime();
       }

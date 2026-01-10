@@ -29,7 +29,6 @@ async function main() {
 
     if (keys.length === 0) {
       console.log('✅ No Instagram data found in Redis');
-      await client.quit();
       return;
     }
 
@@ -40,11 +39,12 @@ async function main() {
     }
 
     console.log('\n✅ All Instagram data cleared from Redis!');
-    await client.quit();
   } catch (error) {
     console.error('❌ Error:', error);
-    await client.quit();
     process.exit(1);
+  } finally {
+    // Always close Redis connection
+    await client.quit();
   }
 }
 
