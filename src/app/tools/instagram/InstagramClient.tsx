@@ -112,9 +112,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
   // No automatic sync on mount - user must click refresh button
 
-  // Track the previous post index to only pause when post changes
+  // Track the previous post index and video key to pause when leaving
   const prevPostIndexRef = useRef(currentPostIndex);
-  const prevCarouselIndexRef = useRef<string>('');
+  const prevVideoKeyRef = useRef<string>('');
 
   // Handle video playback when post or carousel item becomes active
   useEffect(() => {
@@ -124,13 +124,22 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     const carouselIndex = carouselIndices.get(currentPost.shortcode) || 0;
     const currentVideoKey = `${currentPost.shortcode}-${carouselIndex}`;
     const postOrCarouselChanged = prevPostIndexRef.current !== currentPostIndex || 
-                                   prevCarouselIndexRef.current !== currentVideoKey;
+                                   prevVideoKeyRef.current !== currentVideoKey;
     
-    // Update refs
+    // Pause the PREVIOUS video explicitly when switching posts
+    if (postOrCarouselChanged && prevVideoKeyRef.current) {
+      const prevVideo = videoRefs.current.get(prevVideoKeyRef.current);
+      if (prevVideo) {
+        prevVideo.pause();
+        console.log('[Video] Paused previous video:', prevVideoKeyRef.current);
+      }
+    }
+    
+    // Update refs AFTER checking for changes
     prevPostIndexRef.current = currentPostIndex;
-    prevCarouselIndexRef.current = currentVideoKey;
+    prevVideoKeyRef.current = currentVideoKey;
 
-    // Only pause OTHER videos when post/carousel changes (not when isPlaying toggles)
+    // Also pause any other videos that might be playing (defensive)
     if (postOrCarouselChanged) {
       videoRefs.current.forEach((video, key) => {
         if (video && key !== currentVideoKey) {
