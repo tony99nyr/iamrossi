@@ -294,9 +294,11 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   // Use Intersection Observer to detect which post is visible
   // This is more reliable than scroll events with scroll-snap
   const postRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const observerRef = useRef<IntersectionObserver | null>(null);
   
+  // Create observer once
   useEffect(() => {
-    const observer = new IntersectionObserver(
+    observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
@@ -315,13 +317,25 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       }
     );
 
-    // Observe all post elements
-    postRefs.current.forEach((el) => {
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, [filteredPosts.length]); // Only recreate when number of posts changes
+    return () => {
+      observerRef.current?.disconnect();
+    };
+  }, []); // Create once on mount
+  
+  // Function to register/unregister post elements with observer
+  const registerPostRef = useCallback((index: number, el: HTMLDivElement | null) => {
+    if (el) {
+      postRefs.current.set(index, el);
+      observerRef.current?.observe(el);
+      console.log('[Observer] Now observing post', index);
+    } else {
+      const oldEl = postRefs.current.get(index);
+      if (oldEl) {
+        observerRef.current?.unobserve(oldEl);
+      }
+      postRefs.current.delete(index);
+    }
+  }, []);
 
   // Snap to current post index (only on programmatic changes, not scroll)
   useEffect(() => {
@@ -1126,13 +1140,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
               key={post.shortcode} 
               className={postContainerStyle}
               data-index={index}
-              ref={(el) => {
-                if (el) {
-                  postRefs.current.set(index, el);
-                } else {
-                  postRefs.current.delete(index);
-                }
-              }}
+              ref={(el) => registerPostRef(index, el)}
             >
               {/* Debug indicator */}
               <div style={{
