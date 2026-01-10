@@ -175,7 +175,13 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     
     // Only log when something changes
     if (postOrCarouselChanged) {
-      console.log('[Video] Post changed - from:', prevVideoKeyRef.current, 'to:', currentVideoKey);
+      console.log('[Video] ====== POST CHANGED ======');
+      console.log('[Video] Previous:', prevVideoKeyRef.current);
+      console.log('[Video] Current:', currentVideoKey);
+      console.log('[Video] currentPostIndex:', currentPostIndex);
+      console.log('[Video] currentPostIndexRef.current:', currentPostIndexRef.current);
+      console.log('[Video] Post shortcode:', currentPost.shortcode);
+      console.log('[Video] ===========================');
     }
     
     // Reset userPaused when switching to a new post (new post = fresh start)
@@ -263,12 +269,16 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       const carouselIndex = carouselIndices.get(currentPost.shortcode) || 0;
       const expectedKey = `${currentPost.shortcode}-${carouselIndex}`;
       
+      console.log('[Video] Global play event - video:', playingVideoKey, 'expected:', expectedKey, 'currentPostIndexRef:', currentPostIndexRef.current);
+      
       // If this video shouldn't be playing, stop it immediately
       if (playingVideoKey && playingVideoKey !== expectedKey) {
-        console.log('[Video] Global handler: stopping unauthorized video:', playingVideoKey, 'expected:', expectedKey);
+        console.log('[Video] ❌ STOPPING unauthorized video:', playingVideoKey);
         video.pause();
         video.muted = true;
         video.currentTime = 0;
+      } else if (playingVideoKey === expectedKey) {
+        console.log('[Video] ✅ Allowed video playing:', playingVideoKey);
       }
     };
     
@@ -293,6 +303,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       const newIndex = Math.round(scrollTop / postHeight);
       
       if (newIndex !== currentPostIndex && newIndex >= 0 && newIndex < filteredPosts.length) {
+        console.log('[Scroll] Index changing from', currentPostIndex, 'to', newIndex);
         setCurrentPostIndex(newIndex);
       }
     };
@@ -1105,6 +1116,21 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
           return (
             <div key={post.shortcode} className={postContainerStyle}>
+              {/* Debug indicator */}
+              <div style={{
+                position: 'absolute',
+                top: '60px',
+                left: '10px',
+                background: isActive ? 'rgba(0,255,0,0.8)' : 'rgba(255,0,0,0.8)',
+                color: 'white',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                zIndex: 1000,
+              }}>
+                {isActive ? '✓ ACTIVE' : '✗ INACTIVE'} | idx:{index} | ref:{currentPostIndexRef.current}
+              </div>
               <div 
                 className={mediaContainerStyle}
                 style={{ cursor: currentMedia?.isVideo ? 'pointer' : 'default' }}
