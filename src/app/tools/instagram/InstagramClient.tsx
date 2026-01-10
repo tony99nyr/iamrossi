@@ -14,7 +14,6 @@ interface InstagramClientProps {
 
 export default function InstagramClient({ initialPosts, initialLabels }: InstagramClientProps) {
   const [posts, setPosts] = useState<InstagramSavedPost[]>(initialPosts);
-  const [labels] = useState<InstagramLabel[]>(initialLabels);
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -31,6 +30,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [labelPickerPostId, setLabelPickerPostId] = useState<string | null>(null);
+  const [newLabelName, setNewLabelName] = useState('');
+  const [labels, setLabels] = useState<InstagramLabel[]>(initialLabels);
 
   // Check authentication on mount
   useEffect(() => {
@@ -505,6 +507,69 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     } catch (error) {
       console.error('Failed to unarchive post:', error);
       alert('Failed to unarchive post. Please try again.');
+    }
+  }, []);
+
+  // Toggle a label on a post
+  const toggleLabel = useCallback(async (shortcode: string, labelId: string) => {
+    const post = posts.find(p => p.shortcode === shortcode);
+    if (!post) return;
+
+    const currentLabels = post.labels || [];
+    const newLabels = currentLabels.includes(labelId)
+      ? currentLabels.filter(id => id !== labelId)
+      : [...currentLabels, labelId];
+
+    try {
+      const response = await fetch('/api/instagram/posts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ shortcode, labels: newLabels }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update labels');
+      }
+
+      setPosts(prev =>
+        prev.map(p =>
+          p.shortcode === shortcode ? { ...p, labels: newLabels } : p
+        )
+      );
+    } catch (error) {
+      console.error('Failed to update labels:', error);
+    }
+  }, [posts]);
+
+  // Create a new label
+  const createLabel = useCallback(async (name: string) => {
+    console.log('[Labels] Creating label with name:', name);
+    if (!name.trim()) {
+      console.log('[Labels] Name is empty, returning');
+      return;
+    }
+
+    try {
+      console.log('[Labels] Sending POST request to /api/instagram/labels');
+      const response = await fetch('/api/instagram/labels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name: name.trim() }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        alert(data.error || 'Failed to create label');
+        return;
+      }
+
+      const { label } = await response.json();
+      setLabels(prev => [...prev, label]);
+      setNewLabelName('');
+    } catch (error) {
+      console.error('Failed to create label:', error);
     }
   }, []);
 
@@ -1092,36 +1157,233 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                       </div>
                     )}
                     
-                    {/* Archive button - small and subtle */}
-                    {!post.archived && (
+                    {/* Post actions row */}
+                    <div style={{ 
+                      display: 'flex', 
+                      gap: '8px', 
+                      marginTop: '8px',
+                      alignItems: 'flex-start',
+                      position: 'relative',
+                    }}>
+                      {/* Label picker button */}
                       <button
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          archivePost(post.shortcode);
+                          setLabelPickerPostId(labelPickerPostId === post.shortcode ? null : post.shortcode);
                         }}
                         className={css({
-                          marginTop: '4px',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          background: 'rgba(148, 163, 184, 0.1)',
-                          border: '1px solid rgba(148, 163, 184, 0.2)',
-                          color: '#94a3b8',
-                          fontSize: '11px',
-                          fontWeight: '400',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          background: post.labels && post.labels.length > 0 
+                            ? 'rgba(88, 166, 255, 0.2)' 
+                            : 'rgba(148, 163, 184, 0.1)',
+                          border: post.labels && post.labels.length > 0
+                            ? '1px solid rgba(88, 166, 255, 0.4)'
+                            : '1px solid rgba(148, 163, 184, 0.2)',
+                          color: post.labels && post.labels.length > 0 ? '#88a6ff' : '#94a3b8',
+                          fontSize: '12px',
                           cursor: 'pointer',
                           transition: 'all 0.2s',
-                          alignSelf: 'flex-end',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
                           _hover: {
-                            background: 'rgba(148, 163, 184, 0.2)',
-                            borderColor: 'rgba(148, 163, 184, 0.3)',
+                            background: 'rgba(88, 166, 255, 0.3)',
+                            borderColor: 'rgba(88, 166, 255, 0.5)',
                           },
                         })}
-                        title="Archive post"
+                        title="Add labels"
                       >
-                        Archive
+                        🏷️ {post.labels?.length || 0}
                       </button>
-                    )}
+
+                      {/* Label picker dropdown */}
+                      {labelPickerPostId === post.shortcode && (
+                        <div 
+                          className={css({
+                            position: 'absolute',
+                            bottom: '100%',
+                            left: '0',
+                            marginBottom: '8px',
+                            background: 'rgba(15, 23, 42, 0.95)',
+                            border: '1px solid rgba(148, 163, 184, 0.3)',
+                            borderRadius: '12px',
+                            padding: '12px',
+                            minWidth: '200px',
+                            maxWidth: '280px',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                            backdropFilter: 'blur(16px)',
+                            zIndex: 100,
+                          })}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div style={{ 
+                            fontSize: '13px', 
+                            fontWeight: '600', 
+                            color: '#f8fafc', 
+                            marginBottom: '10px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}>
+                            <span>Labels</span>
+                            <button
+                              onClick={() => setLabelPickerPostId(null)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#94a3b8',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                padding: '0',
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+
+                          {/* Existing labels */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+                            {labels.map(label => {
+                              const isSelected = post.labels?.includes(label.id);
+                              return (
+                                <button
+                                  key={label.id}
+                                  onClick={() => toggleLabel(post.shortcode, label.id)}
+                                  className={css({
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    background: isSelected 
+                                      ? 'rgba(88, 166, 255, 0.25)' 
+                                      : 'rgba(148, 163, 184, 0.1)',
+                                    border: isSelected
+                                      ? '1px solid rgba(88, 166, 255, 0.5)'
+                                      : '1px solid rgba(148, 163, 184, 0.2)',
+                                    color: isSelected ? '#cbd5f5' : '#e2e8f0',
+                                    fontSize: '13px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s',
+                                    textAlign: 'left',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    _hover: {
+                                      background: isSelected 
+                                        ? 'rgba(88, 166, 255, 0.35)' 
+                                        : 'rgba(148, 163, 184, 0.2)',
+                                    },
+                                  })}
+                                >
+                                  <span style={{ 
+                                    width: '18px', 
+                                    height: '18px', 
+                                    borderRadius: '4px',
+                                    border: isSelected ? 'none' : '2px solid rgba(148, 163, 184, 0.4)',
+                                    background: isSelected ? '#58a6ff' : 'transparent',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '12px',
+                                    flexShrink: 0,
+                                  }}>
+                                    {isSelected && '✓'}
+                                  </span>
+                                  {label.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Create new label */}
+                          <div style={{ 
+                            borderTop: '1px solid rgba(148, 163, 184, 0.2)', 
+                            paddingTop: '10px',
+                            display: 'flex',
+                            gap: '6px',
+                          }}>
+                            <input
+                              type="text"
+                              value={newLabelName}
+                              onChange={(e) => setNewLabelName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  createLabel(newLabelName);
+                                }
+                              }}
+                              placeholder="New label..."
+                              className={css({
+                                flex: 1,
+                                padding: '8px 10px',
+                                borderRadius: '6px',
+                                background: 'rgba(148, 163, 184, 0.1)',
+                                border: '1px solid rgba(148, 163, 184, 0.2)',
+                                color: '#f5f5f5',
+                                fontSize: '12px',
+                                outline: 'none',
+                                _focus: {
+                                  borderColor: 'rgba(88, 166, 255, 0.5)',
+                                },
+                                _placeholder: {
+                                  color: '#64748b',
+                                },
+                              })}
+                            />
+                            <button
+                              onClick={() => createLabel(newLabelName)}
+                              disabled={!newLabelName.trim()}
+                              className={css({
+                                padding: '8px 12px',
+                                borderRadius: '6px',
+                                background: newLabelName.trim() 
+                                  ? 'rgba(88, 166, 255, 0.3)' 
+                                  : 'rgba(148, 163, 184, 0.1)',
+                                border: '1px solid rgba(88, 166, 255, 0.4)',
+                                color: newLabelName.trim() ? '#f5f5f5' : '#64748b',
+                                fontSize: '12px',
+                                cursor: newLabelName.trim() ? 'pointer' : 'not-allowed',
+                                transition: 'all 0.2s',
+                                _hover: newLabelName.trim() ? {
+                                  background: 'rgba(88, 166, 255, 0.4)',
+                                } : {},
+                              })}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Archive button */}
+                      {!post.archived && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            archivePost(post.shortcode);
+                          }}
+                          className={css({
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(148, 163, 184, 0.1)',
+                            border: '1px solid rgba(148, 163, 184, 0.2)',
+                            color: '#94a3b8',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            _hover: {
+                              background: 'rgba(148, 163, 184, 0.2)',
+                              borderColor: 'rgba(148, 163, 184, 0.3)',
+                            },
+                          })}
+                          title="Archive post"
+                        >
+                          Archive
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
