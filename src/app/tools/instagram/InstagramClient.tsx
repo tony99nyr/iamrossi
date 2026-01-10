@@ -264,12 +264,24 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const currentPost = filteredPosts[currentPostIndex];
+      const isCarousel = currentPost?.isCarousel && currentPost?.mediaItems && currentPost.mediaItems.length > 1;
+      const currentCarouselIndex = carouselIndices.get(currentPost?.shortcode || '') || 0;
+      
       if (e.key === 'ArrowDown' && currentPostIndex < filteredPosts.length - 1) {
         e.preventDefault();
         setCurrentPostIndex(prev => prev + 1);
       } else if (e.key === 'ArrowUp' && currentPostIndex > 0) {
         e.preventDefault();
         setCurrentPostIndex(prev => prev - 1);
+      } else if (e.key === 'ArrowRight' && isCarousel && currentCarouselIndex < (currentPost.mediaItems?.length || 0) - 1) {
+        // Navigate carousel right
+        e.preventDefault();
+        setCarouselIndices(prev => new Map(prev).set(currentPost.shortcode, currentCarouselIndex + 1));
+      } else if (e.key === 'ArrowLeft' && isCarousel && currentCarouselIndex > 0) {
+        // Navigate carousel left
+        e.preventDefault();
+        setCarouselIndices(prev => new Map(prev).set(currentPost.shortcode, currentCarouselIndex - 1));
       } else if (e.key === ' ') {
         e.preventDefault();
         setIsPlaying(prev => !prev);

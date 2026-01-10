@@ -547,59 +547,139 @@ export async function fetchInstagramSavedPosts(
             continue;
           }
 
-          // Extract video URL from embed page - simple DOM extraction
-          // The embed page has video URLs directly in <video> elements (no GraphQL needed)
+          // Extract media from embed page - handles both single posts and carousels
           try {
-            const videoData = await postPage.evaluate(() => {
-              let videoUrl: string | null = null;
-              const debugInfo: Record<string, unknown> = {};
+            // First, check if this is a carousel by looking for Next button
+            const nextButtonLocator = postPage.locator('[aria-label*="Next"], [aria-label*="next"]').first();
+            const isCarouselEmbed = await nextButtonLocator.isVisible().catch(() => false);
+            
+            if (isCarouselEmbed) {
+              // It's a carousel - collect all media items by clicking through slides
+              const mediaItems: Array<{ imageUrl?: string; videoUrl?: string; isVideo: boolean }> = [];
+              let lastMediaUrl = '';
+              let noChangeCount = 0;
               
-              // Get video URL from video element - embed pages have the CDN URL directly
-              const videoElements = document.querySelectorAll('video');
-              debugInfo.videoElementsCount = videoElements.length;
-              
-              for (const videoElement of Array.from(videoElements)) {
-                const vidEl = videoElement as HTMLVideoElement;
+              for (let slideIndex = 0; slideIndex < 20; slideIndex++) {
+                // Wait for slide content to load/change
+                await new Promise(r => setTimeout(r, 2000));
                 
-                // Check src first - embed pages have the actual CDN URL here
-                if (vidEl.src && !vidEl.src.startsWith('blob:') && 
-                    (vidEl.src.includes('.mp4') || vidEl.src.includes('cdninstagram'))) {
-                  videoUrl = vidEl.src;
-                  debugInfo.videoUrlSource = 'video element src';
-                  break;
+                // Extract current slide's media
+                const slideMedia = await postPage.evaluate(() => {
+                  const video = document.querySelector('video');
+                  if (video) {
+                    const vidEl = video as HTMLVideoElement;
+                    const videoUrl = vidEl.src && !vidEl.src.startsWith('blob:') ? vidEl.src : 
+                                    (vidEl.currentSrc && !vidEl.currentSrc.startsWith('blob:') ? vidEl.currentSrc : null);
+                    
+                    // Also get image URL as thumbnail
+                    const imgs = document.querySelectorAll('img[src*="cdninstagram"]');
+                    let imageUrl: string | null = null;
+                    for (const img of Array.from(imgs)) {
+                      const src = (img as HTMLImageElement).src;
+                      if (src && !src.includes('profile') && !src.includes('avatar')) {
+                        imageUrl = src;
+                        break;
+                      }
+                    }
+                    
+                    return { videoUrl, imageUrl, isVideo: true };
+                  }
+                  
+                  // No video, get image
+                  const imgs = document.querySelectorAll('img[src*="cdninstagram"]');
+                  for (const img of Array.from(imgs)) {
+                    const src = (img as HTMLImageElement).src;
+                    if (src && !src.includes('profile') && !src.includes('avatar')) {
+                      return { imageUrl: src, videoUrl: null, isVideo: false };
+                    }
+                  }
+                  
+                  return null;
+                });
+                
+                const currentMediaUrl = slideMedia?.videoUrl || slideMedia?.imageUrl || '';
+                
+                // Check if content changed
+                if (currentMediaUrl === lastMediaUrl) {
+                  noChangeCount++;
+                  if (noChangeCount >= 2) break; // No change after 2 attempts
+                } else {
+                  noChangeCount = 0;
+                  lastMediaUrl = currentMediaUrl;
+                  
+                  if (slideMedia && currentMediaUrl) {
+                    // Check if we've looped back to first slide
+                    if (mediaItems.length > 0) {
+                      const firstItem = mediaItems[0];
+                      if ((slideMedia.videoUrl && firstItem.videoUrl === slideMedia.videoUrl) ||
+                          (!slideMedia.videoUrl && slideMedia.imageUrl && firstItem.imageUrl === slideMedia.imageUrl)) {
+                        break; // Looped back to first
+                      }
+                    }
+                    
+                    mediaItems.push({
+                      imageUrl: slideMedia.imageUrl || undefined,
+                      videoUrl: slideMedia.videoUrl || undefined,
+                      isVideo: slideMedia.isVideo,
+                    });
+                  }
                 }
                 
-                // Check currentSrc
-                if (vidEl.currentSrc && !vidEl.currentSrc.startsWith('blob:') && 
-                    (vidEl.currentSrc.includes('.mp4') || vidEl.currentSrc.includes('cdninstagram'))) {
-                  videoUrl = vidEl.currentSrc;
-                  debugInfo.videoUrlSource = 'video element currentSrc';
-                  break;
-                }
+                // Try to click Next using Playwright locator
+                const isNextVisible = await nextButtonLocator.isVisible().catch(() => false);
+                if (!isNextVisible) break;
+                
+                await nextButtonLocator.click().catch(() => {});
               }
               
-              // Get thumbnail from image if no video
-              let thumbnailUrl: string | null = null;
-              if (!videoUrl) {
+              if (mediaItems.length > 0) {
+                post.isCarousel = true;
+                post.mediaItems = mediaItems;
+                // Set first video URL as main videoUrl if any
+                const firstVideo = mediaItems.find(m => m.isVideo && m.videoUrl);
+                if (firstVideo) {
+                  post.videoUrl = firstVideo.videoUrl;
+                  post.isVideo = true;
+                }
+                logDebug(`[Instagram] ✅ Found carousel with ${mediaItems.length} items for post ${i + 1}/${allPosts.length} (${post.shortcode})`, {
+                  videoCount: mediaItems.filter(m => m.isVideo).length,
+                  imageCount: mediaItems.filter(m => !m.isVideo).length,
+                });
+              }
+            } else {
+              // Single post - simple extraction
+              const videoData = await postPage.evaluate(() => {
+                let videoUrl: string | null = null;
+                let imageUrl: string | null = null;
+                
+                // Get video URL from video element
+                const video = document.querySelector('video');
+                if (video) {
+                  const vidEl = video as HTMLVideoElement;
+                  videoUrl = vidEl.src && !vidEl.src.startsWith('blob:') ? vidEl.src : 
+                            (vidEl.currentSrc && !vidEl.currentSrc.startsWith('blob:') ? vidEl.currentSrc : null);
+                }
+                
+                // Get image URL
                 const imgs = document.querySelectorAll('img[src*="cdninstagram"]');
                 for (const img of Array.from(imgs)) {
                   const src = (img as HTMLImageElement).src;
                   if (src && !src.includes('profile') && !src.includes('avatar')) {
-                    thumbnailUrl = src;
+                    imageUrl = src;
                     break;
                   }
                 }
-              }
+                
+                return { videoUrl, imageUrl };
+              });
               
-              return { videoUrl, thumbnailUrl, debugInfo };
-            });
-            
-            if (videoData.videoUrl) {
-              post.videoUrl = videoData.videoUrl;
-              post.isVideo = true;
-              logDebug(`[Instagram] ✅ Found video URL for post ${i + 1}/${allPosts.length} (${post.shortcode}): ${videoData.videoUrl.substring(0, 80)}...`);
-            } else {
-              logDebug(`[Instagram] No video in embed page for post ${i + 1}/${allPosts.length} (${post.shortcode}) - videoElements: ${videoData.debugInfo.videoElementsCount}`);
+              if (videoData.videoUrl) {
+                post.videoUrl = videoData.videoUrl;
+                post.isVideo = true;
+                logDebug(`[Instagram] ✅ Found video URL for post ${i + 1}/${allPosts.length} (${post.shortcode}): ${videoData.videoUrl.substring(0, 80)}...`);
+              } else {
+                logDebug(`[Instagram] No video in embed page for post ${i + 1}/${allPosts.length} (${post.shortcode})`);
+              }
             }
           } catch (error) {
             logDebug(`[Instagram] Error extracting from embed page for post ${i + 1}: ${error instanceof Error ? error.message : String(error)}`);
