@@ -1412,20 +1412,20 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
           ref={scrollTrackRef}
           className={css({
             position: 'fixed',
-            right: 'max(8px, env(safe-area-inset-right))',
+            right: 'calc(max(16px, env(safe-area-inset-right)) + 56px)',
             top: '50%',
             transform: 'translateY(-50%)',
             height: 'calc(60vh - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
-            width: '6px',
-            background: 'rgba(255, 255, 255, 0.1)',
-            borderRadius: '3px',
+            width: '8px',
+            background: 'rgba(255, 255, 255, 0.15)',
+            borderRadius: '4px',
             cursor: 'pointer',
-            zIndex: 50,
+            zIndex: 60,
             transition: isDraggingScrollbar ? 'none' : 'opacity 0.2s',
-            opacity: isDraggingScrollbar ? 1 : 0.6,
+            opacity: isDraggingScrollbar ? 1 : 0.7,
             _hover: {
               opacity: 1,
-              width: '10px',
+              width: '12px',
             },
           })}
           onMouseDown={handleScrollbarMouseDown}
@@ -1437,18 +1437,18 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
               position: 'absolute',
               left: '50%',
               transform: 'translateX(-50%)',
-              width: '14px',
-              height: '40px',
+              width: '18px',
+              height: '48px',
               background: isDraggingScrollbar 
-                ? 'rgba(88, 166, 255, 0.9)' 
-                : 'rgba(255, 255, 255, 0.8)',
-              borderRadius: '7px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                ? 'rgba(88, 166, 255, 0.95)' 
+                : 'rgba(255, 255, 255, 0.9)',
+              borderRadius: '9px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
               transition: isDraggingScrollbar ? 'none' : 'all 0.15s ease-out',
               pointerEvents: 'none',
             })}
             style={{
-              top: `calc(${(currentPostIndex / Math.max(1, filteredPosts.length - 1)) * 100}% - 20px)`,
+              top: `calc(${(currentPostIndex / Math.max(1, filteredPosts.length - 1)) * 100}% - 24px)`,
             }}
           />
           {/* Current position indicator */}
