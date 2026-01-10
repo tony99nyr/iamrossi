@@ -130,27 +130,17 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     const postOrCarouselChanged = prevPostIndexRef.current !== currentPostIndex || 
                                    prevVideoKeyRef.current !== currentVideoKey;
     
-    // Pause the PREVIOUS video explicitly when switching posts
-    if (postOrCarouselChanged && prevVideoKeyRef.current) {
-      const prevVideo = videoRefs.current.get(prevVideoKeyRef.current);
-      if (prevVideo) {
-        prevVideo.pause();
-        console.log('[Video] Paused previous video:', prevVideoKeyRef.current);
+    // ALWAYS pause ALL videos except the current one (defensive)
+    videoRefs.current.forEach((video, key) => {
+      if (video && key !== currentVideoKey && !video.paused) {
+        video.pause();
+        console.log('[Video] Paused non-active video:', key);
       }
-    }
+    });
     
     // Update refs AFTER checking for changes
     prevPostIndexRef.current = currentPostIndex;
     prevVideoKeyRef.current = currentVideoKey;
-
-    // Also pause any other videos that might be playing (defensive)
-    if (postOrCarouselChanged) {
-      videoRefs.current.forEach((video, key) => {
-        if (video && key !== currentVideoKey) {
-          video.pause();
-        }
-      });
-    }
 
     // Play current video if it's a video
     const isCarousel = currentPost.isCarousel && currentPost.mediaItems && currentPost.mediaItems.length > 0;
@@ -172,7 +162,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         // This ensures videos play when scrolling, even if the previous video was paused
         if (postOrCarouselChanged) {
           const attemptPlay = () => {
-            if (video.readyState >= 2) {
+            // Double-check we're still the active video before playing
+            const stillActive = filteredPosts[currentPostIndex]?.shortcode === currentPost.shortcode;
+            if (stillActive && video.readyState >= 2) {
               video.play().then(() => {
                 setIsPlaying(true);
               }).catch((err) => {
@@ -908,27 +900,14 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                     {currentMedia?.isVideo && currentMedia.videoUrl ? (
                       <>
                         <video
-                          ref={(el) => {
-                            videoRef(el);
-                            // If this is the active post, load and auto-play the video
-                            if (el && isActive && currentMedia.videoUrl) {
-                              // Ensure video loads immediately when active
-                              if (el.readyState === 0) {
-                                el.load();
-                              }
-                              // Auto-play when video is ready
-                              if (el.readyState >= 2) {
-                                el.play().then(() => setIsPlaying(true)).catch(console.error);
-                              }
-                            }
-                          }}
+                          ref={videoRef}
                           src={currentMedia.videoUrl}
                           poster={currentMedia.imageUrl}
                           className={videoStyle}
                           playsInline
                           muted={isMuted}
                           loop
-                          preload={isActive ? "auto" : "metadata"}
+                          preload={isActive ? "auto" : "none"}
                           controls={false}
                           style={{
                             display: 'block',
@@ -941,32 +920,22 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                             e.stopPropagation();
                             handleVideoClick(post.shortcode, carouselIndex);
                           }}
-                          onLoadedMetadata={() => {
-                            if (isActive) {
+                          onPlay={() => {
+                            // Check actual current index, not stale closure
+                            const currentActiveIndex = currentPostIndex;
+                            if (index === currentActiveIndex) {
+                              setIsPlaying(true);
+                            } else {
+                              // If a non-active video tries to play, pause it immediately
                               const video = videoRefs.current.get(`${post.shortcode}-${carouselIndex}`);
-                              if (video) {
-                                video.play().then(() => setIsPlaying(true)).catch(console.error);
-                              }
+                              if (video) video.pause();
                             }
                           }}
-                          onCanPlay={() => {
-                            if (isActive) {
-                              const video = videoRefs.current.get(`${post.shortcode}-${carouselIndex}`);
-                              if (video) {
-                                video.play().then(() => setIsPlaying(true)).catch(console.error);
-                              }
+                          onPause={() => {
+                            const currentActiveIndex = currentPostIndex;
+                            if (index === currentActiveIndex) {
+                              setIsPlaying(false);
                             }
-                          }}
-                        onPlay={() => {
-                          if (isActive) setIsPlaying(true);
-                        }}
-                        onPause={() => {
-                          if (isActive) setIsPlaying(false);
-                        }}
-                          onError={(e) => {
-                            console.error('Video error:', e);
-                            console.log('Video URL:', currentMedia.videoUrl);
-                            console.log('Post:', post);
                           }}
                         />
                         {!isPlaying && isActive && (
@@ -1044,27 +1013,14 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                 ) : ((currentMedia?.isVideo && currentMedia.videoUrl) || (post.isVideo && post.videoUrl)) ? (
                   <>
                     <video
-                      ref={(el) => {
-                        videoRef(el);
-                        // If this is the active post, load and auto-play the video
-                        if (el && isActive && (currentMedia?.videoUrl || post.videoUrl)) {
-                          // Ensure video loads immediately when active
-                          if (el.readyState === 0) {
-                            el.load();
-                          }
-                          // Auto-play when video is ready
-                          if (el.readyState >= 2) {
-                            el.play().then(() => setIsPlaying(true)).catch(console.error);
-                          }
-                        }
-                      }}
+                      ref={videoRef}
                       src={currentMedia?.videoUrl || post.videoUrl}
                       poster={currentMedia?.imageUrl || post.imageUrl}
                       className={videoStyle}
                       playsInline
                       muted={isMuted}
                       loop
-                      preload={isActive ? "auto" : "metadata"}
+                      preload={isActive ? "auto" : "none"}
                       controls={false}
                       style={{
                         display: 'block',
@@ -1078,67 +1034,23 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         const idx = carouselIndices.get(post.shortcode) || 0;
                         handleVideoClick(post.shortcode, idx);
                       }}
-                      onLoadedMetadata={() => {
-                        console.log('[Video] Loaded metadata for', post.shortcode, 'URL:', currentMedia?.videoUrl || post.videoUrl);
-                        if (isActive) {
-                          const carouselIndex = carouselIndices.get(post.shortcode) || 0;
-                          // Video refs are always stored with the carousel index suffix
-                          const videoKey = `${post.shortcode}-${carouselIndex}`;
-                          const video = videoRefs.current.get(videoKey);
-                          if (video) {
-                            console.log('[Video] Attempting to play', videoKey, 'readyState:', video.readyState);
-                            video.play().then(() => setIsPlaying(true)).catch((err) => {
-                              console.error('[Video] Play failed:', err);
-                              // Try loading first
-                              video.load();
-                              setTimeout(() => {
-                                video.play().then(() => setIsPlaying(true)).catch(console.error);
-                              }, 100);
-                            });
-                          }
-                        }
-                      }}
-                      onCanPlay={() => {
-                        console.log('[Video] Can play', post.shortcode);
-                        if (isActive) {
-                          const carouselIndex = carouselIndices.get(post.shortcode) || 0;
-                          // Video refs are always stored with the carousel index suffix
-                          const videoKey = `${post.shortcode}-${carouselIndex}`;
-                          const video = videoRefs.current.get(videoKey);
-                          if (video) {
-                            video.play().then(() => setIsPlaying(true)).catch((err) => {
-                              console.error('[Video] Play failed in onCanPlay:', err);
-                            });
-                          }
-                        }
-                      }}
                       onPlay={() => {
                         // Only update global state if this is the active video
-                        if (isActive) {
-                          console.log('[Video] Playing (active)', post.shortcode);
+                        const currentActiveIndex = currentPostIndex;
+                        if (index === currentActiveIndex) {
                           setIsPlaying(true);
+                        } else {
+                          // If a non-active video tries to play, pause it immediately
+                          const video = videoRefs.current.get(`${post.shortcode}-${carouselIndices.get(post.shortcode) || 0}`);
+                          if (video) video.pause();
                         }
                       }}
                       onPause={() => {
                         // Only update global state if this is the active video
-                        // This prevents feedback loops when we pause other videos
-                        if (isActive) {
-                          console.log('[Video] Paused (active)', post.shortcode);
+                        const currentActiveIndex = currentPostIndex;
+                        if (index === currentActiveIndex) {
                           setIsPlaying(false);
                         }
-                      }}
-                      onError={(e) => {
-                        console.error('[Video] Error for', post.shortcode, e);
-                        console.log('[Video] Video URL:', currentMedia?.videoUrl || post.videoUrl);
-                        console.log('[Video] Post data:', { 
-                          shortcode: post.shortcode, 
-                          isVideo: post.isVideo, 
-                          videoUrl: post.videoUrl,
-                          currentMediaVideoUrl: currentMedia?.videoUrl 
-                        });
-                      }}
-                      onLoadStart={() => {
-                        console.log('[Video] Load start for', post.shortcode);
                       }}
                     />
                     {!isPlaying && isActive && (
