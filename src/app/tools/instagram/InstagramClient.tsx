@@ -1850,7 +1850,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
           <div style={{ borderTop: '1px solid rgba(148, 163, 184, 0.2)', paddingTop: '8px', marginTop: '4px' }}>
             <button
               onClick={() => {
-                setSelectedLabelId(null);
+                handleLabelSelect(null);
                 setShowFilters(false);
               }}
               className={cx(filterMenuItemStyle, !selectedLabelId && activeFilterItemStyle)}
@@ -1861,7 +1861,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
               <button
                 key={label.id}
                 onClick={() => {
-                  setSelectedLabelId(label.id);
+                  handleLabelSelect(label.id);
                   setShowFilters(false);
                 }}
                 className={cx(filterMenuItemStyle, selectedLabelId === label.id && activeFilterItemStyle)}
