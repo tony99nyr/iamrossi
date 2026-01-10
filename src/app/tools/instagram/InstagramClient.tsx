@@ -147,9 +147,11 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     
     if ((currentMedia?.isVideo && currentMedia?.videoUrl) || (currentPost.isVideo && currentPost.videoUrl)) {
       const video = videoRefs.current.get(currentVideoKey);
+      console.log('[Video Effect] Post', currentPostIndex, currentPost.shortcode, 'videoKey:', currentVideoKey, 'found:', !!video, 'available refs:', Array.from(videoRefs.current.keys()));
       if (video) {
         // Always ensure video is loaded when post becomes active
         if (video.readyState === 0) {
+          console.log('[Video Effect] Loading video', currentVideoKey);
           video.load();
         }
         
@@ -159,6 +161,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         if (isPlaying && postOrCarouselChanged) {
           const attemptPlay = () => {
             if (video.readyState >= 2) {
+              console.log('[Video Effect] Playing video', currentVideoKey);
               video.play().catch((err) => {
                 console.error('[Video] Auto-play failed:', err);
               });
@@ -171,7 +174,11 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
             video.addEventListener('canplay', attemptPlay, { once: true });
           }
         }
+      } else {
+        console.warn('[Video Effect] Video not found for', currentVideoKey);
       }
+    } else {
+      console.log('[Video Effect] Post', currentPostIndex, currentPost.shortcode, 'is not a video. isVideo:', currentPost.isVideo, 'videoUrl:', currentPost.videoUrl, 'currentMedia:', currentMedia);
     }
   }, [currentPostIndex, filteredPosts, isPlaying, isMuted, carouselIndices]);
 
