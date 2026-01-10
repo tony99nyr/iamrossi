@@ -43,8 +43,9 @@ function formatUsd(value: number): string {
 }
 
 function formatPercent(value: number): string {
+  // value is already a percentage (e.g., -5.49 means -5.49%)
   const sign = value >= 0 ? '+' : '';
-  return `${sign}${(value * 100).toFixed(2)}%`;
+  return `${sign}${value.toFixed(2)}%`;
 }
 
 function formatTimeAgo(timestamp: number): string {
@@ -130,6 +131,7 @@ function formatAssetSummary(
 
   let summary = `**Status**: ${health.status}\n`;
   summary += `**Portfolio**: ${formatUsd(session.portfolio.totalValue)} (${formatPercent(session.portfolio.totalReturn)})\n`;
+  summary += `**Cash**: ${formatUsd(session.portfolio.usdcBalance)} | **Asset**: ${session.portfolio.ethBalance.toFixed(6)}\n`;
   summary += `**Price**: ${formatUsd(session.lastPrice)}\n`;
   summary += `**Regime**: ${session.currentRegime.regime.toUpperCase()} (${(session.currentRegime.confidence * 100).toFixed(0)}%)\n`;
   

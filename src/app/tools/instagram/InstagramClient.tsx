@@ -1425,20 +1425,20 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
           ref={scrollTrackRef}
           className={css({
             position: 'fixed',
-            right: 'calc(max(16px, env(safe-area-inset-right)) + 56px)',
+            left: 'max(4px, env(safe-area-inset-left))',
             top: '50%',
             transform: 'translateY(-50%)',
-            height: 'calc(60vh - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
-            width: '8px',
-            background: 'rgba(255, 255, 255, 0.15)',
-            borderRadius: '4px',
+            height: '40vh',
+            width: '4px',
+            background: 'rgba(255, 255, 255, 0.1)',
+            borderRadius: '2px',
             cursor: 'pointer',
             zIndex: 60,
             transition: isDraggingScrollbar ? 'none' : 'opacity 0.2s',
-            opacity: isDraggingScrollbar ? 1 : 0.7,
+            opacity: isDraggingScrollbar ? 1 : 0.5,
             _hover: {
               opacity: 1,
-              width: '12px',
+              width: '6px',
             },
           })}
           onMouseDown={handleScrollbarMouseDown}
@@ -1450,31 +1450,31 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
               position: 'absolute',
               left: '50%',
               transform: 'translateX(-50%)',
-              width: '18px',
-              height: '48px',
+              width: '8px',
+              height: '24px',
               background: isDraggingScrollbar 
-                ? 'rgba(88, 166, 255, 0.95)' 
-                : 'rgba(255, 255, 255, 0.9)',
-              borderRadius: '9px',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
+                ? 'rgba(88, 166, 255, 0.9)' 
+                : 'rgba(255, 255, 255, 0.8)',
+              borderRadius: '4px',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
               transition: isDraggingScrollbar ? 'none' : 'all 0.15s ease-out',
               pointerEvents: 'none',
             })}
             style={{
-              top: `calc(${(currentPostIndex / Math.max(1, filteredPosts.length - 1)) * 100}% - 24px)`,
+              top: `calc(${(currentPostIndex / Math.max(1, filteredPosts.length - 1)) * 100}% - 12px)`,
             }}
           />
           {/* Current position indicator */}
           <div
             className={css({
               position: 'absolute',
-              right: '20px',
+              left: '16px',
               transform: 'translateY(-50%)',
-              background: 'rgba(0, 0, 0, 0.8)',
+              background: 'rgba(0, 0, 0, 0.85)',
               color: '#f5f5f5',
-              padding: '4px 10px',
+              padding: '3px 8px',
               borderRadius: '4px',
-              fontSize: '12px',
+              fontSize: '11px',
               fontWeight: '500',
               whiteSpace: 'nowrap',
               opacity: isDraggingScrollbar ? 1 : 0,
