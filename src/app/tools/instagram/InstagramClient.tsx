@@ -420,18 +420,23 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         // Ensure video is ready to play
         if (video.readyState >= 2) {
           console.log('[Video] Video ready, attempting to play');
-          video.play().catch((error) => {
+          video.play().then(() => {
+            console.log('[Video] Play started successfully');
+            setIsPlaying(true);
+          }).catch((error) => {
             console.error('[Video] Play error:', error);
             // If video fails to play, try to load it first
             console.log('[Video] Reloading video and retrying');
             video.load();
             setTimeout(() => {
-              video.play().catch((err) => {
+              video.play().then(() => {
+                console.log('[Video] Retry play succeeded');
+                setIsPlaying(true);
+              }).catch((err) => {
                 console.error('[Video] Retry play failed:', err);
               });
             }, 200);
           });
-          setIsPlaying(true);
         } else {
           // Wait for video to be ready
           console.log('[Video] Video not ready, waiting for canplay');
@@ -469,7 +474,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   }, []);
 
   // Timeline seek handler
-  const handleTimelineSeek = useCallback((clientX: number) => {
+  const handleTimelineSeek = useCallback((clientX: number, shouldPlay: boolean = false) => {
     if (!timelineRef.current) return;
     const rect = timelineRef.current.getBoundingClientRect();
     const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
@@ -483,12 +488,19 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       if (video && video.duration) {
         video.currentTime = percentage * video.duration;
         setVideoProgress(percentage * video.duration);
+        
+        // If video is paused and shouldPlay is true, start playback
+        if (shouldPlay && video.paused) {
+          userPausedRef.current = false;
+          video.play().then(() => setIsPlaying(true)).catch(console.error);
+        }
       }
     }
   }, [currentPostIndex, filteredPosts, carouselIndices]);
 
   const handleTimelineMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDraggingTimeline(true);
     handleTimelineSeek(e.clientX);
     
@@ -496,8 +508,10 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       handleTimelineSeek(e.clientX);
     };
     
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
       setIsDraggingTimeline(false);
+      // Play the video after seeking if it was paused
+      handleTimelineSeek(e.clientX, true);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -508,15 +522,21 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
   const handleTimelineTouchStart = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDraggingTimeline(true);
-    handleTimelineSeek(e.touches[0].clientX);
+    const startX = e.touches[0].clientX;
+    handleTimelineSeek(startX);
     
+    let lastX = startX;
     const handleTouchMove = (e: TouchEvent) => {
-      handleTimelineSeek(e.touches[0].clientX);
+      lastX = e.touches[0].clientX;
+      handleTimelineSeek(lastX);
     };
     
     const handleTouchEnd = () => {
       setIsDraggingTimeline(false);
+      // Play the video after seeking if it was paused
+      handleTimelineSeek(lastX, true);
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
     };
