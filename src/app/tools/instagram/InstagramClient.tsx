@@ -145,6 +145,12 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   // Track the previous post index and video key to pause when leaving
   const prevPostIndexRef = useRef(currentPostIndex);
   const prevVideoKeyRef = useRef<string>('');
+  const currentPostIndexRef = useRef(currentPostIndex);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentPostIndexRef.current = currentPostIndex;
+  }, [currentPostIndex]);
 
   // Handle video playback when post or carousel item becomes active
   useEffect(() => {
@@ -156,20 +162,39 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     const postOrCarouselChanged = prevPostIndexRef.current !== currentPostIndex || 
                                    prevVideoKeyRef.current !== currentVideoKey;
     
+    // Only log when something changes
+    if (postOrCarouselChanged) {
+      console.log('[Video] Post changed - from:', prevVideoKeyRef.current, 'to:', currentVideoKey);
+    }
+    
     // Reset userPaused when switching to a new post (new post = fresh start)
     if (postOrCarouselChanged) {
       userPausedRef.current = false;
+      
+      // Explicitly pause the PREVIOUS video first (and mute it for safety)
+      if (prevVideoKeyRef.current) {
+        const prevVideo = videoRefs.current.get(prevVideoKeyRef.current);
+        if (prevVideo) {
+          prevVideo.pause();
+          prevVideo.muted = true; // Ensure no audio leak
+          console.log('[Video] Explicitly paused and muted previous video:', prevVideoKeyRef.current);
+        }
+      }
     }
     
-    // ALWAYS pause ALL videos except the current one (defensive)
+    // ALWAYS pause ALL videos except the current one (defensive - catches any we missed)
     videoRefs.current.forEach((video, key) => {
-      if (video && key !== currentVideoKey && !video.paused) {
-        video.pause();
-        console.log('[Video] Paused non-active video:', key);
+      if (video && key !== currentVideoKey) {
+        if (!video.paused) {
+          video.pause();
+          console.log('[Video] Paused non-active video:', key);
+        }
+        // Always mute non-active videos for safety
+        video.muted = true;
       }
     });
     
-    // Update refs AFTER checking for changes
+    // Update refs AFTER pausing
     prevPostIndexRef.current = currentPostIndex;
     prevVideoKeyRef.current = currentVideoKey;
 
@@ -190,12 +215,17 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         video.muted = isMuted;
         
         // Auto-play when switching to a new post (always auto-play on post change)
-        // This ensures videos play when scrolling, even if the previous video was paused
         if (postOrCarouselChanged) {
           const attemptPlay = () => {
-            // Double-check we're still the active video before playing
-            const stillActive = filteredPosts[currentPostIndex]?.shortcode === currentPost.shortcode;
-            if (stillActive && video.readyState >= 2) {
+            // Double-check this is still the current video
+            const currentCarouselIdx = carouselIndices.get(currentPost.shortcode) || 0;
+            const expectedKey = `${currentPost.shortcode}-${currentCarouselIdx}`;
+            if (expectedKey !== currentVideoKey) {
+              console.log('[Video] Video key changed, skipping play');
+              return;
+            }
+            
+            if (video.readyState >= 2) {
               video.play().then(() => {
                 setIsPlaying(true);
               }).catch((err) => {
@@ -1006,14 +1036,25 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
           const videoRef = (el: HTMLVideoElement | null) => {
             if (el) {
               videoRefs.current.set(videoKey, el);
-              // Auto-play if this is the active post and video is ready
-              // BUT respect user's manual pause
-              if (isActive && el.readyState >= 2 && el.paused && !userPausedRef.current) {
+              // Check if this is ACTUALLY the active post using the ref (not stale isActive)
+              const isReallyActive = index === currentPostIndexRef.current;
+              
+              // Only auto-play in ref callback if this is truly the active post
+              // The useEffect handles most auto-play cases, this is just for initial mount
+              if (isReallyActive && el.readyState >= 2 && el.paused && !userPausedRef.current) {
+                console.log('[Video] Ref callback auto-play for:', videoKey);
                 el.muted = isMuted;
                 el.play().then(() => setIsPlaying(true)).catch(console.error);
-              } else if (isActive && el.readyState < 2) {
+              } else if (isReallyActive && el.readyState < 2) {
                 // Load and wait for canplay
                 el.load();
+              } else if (!isReallyActive) {
+                // If this video is not active, ensure it's paused and muted
+                if (!el.paused) {
+                  console.log('[Video] Ref callback pausing non-active video:', videoKey);
+                  el.pause();
+                }
+                el.muted = true; // Ensure no audio leak
               }
             } else {
               videoRefs.current.delete(videoKey);
@@ -1052,18 +1093,23 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                             handleVideoClick(post.shortcode, carouselIndex);
                           }}
                           onPlay={() => {
-                            // Check actual current index, not stale closure
-                            const currentActiveIndex = currentPostIndex;
+                            // Use ref to get the current active index (not stale closure)
+                            const currentActiveIndex = currentPostIndexRef.current;
+                            console.log('[Video] onPlay fired for index:', index, 'current active:', currentActiveIndex);
                             if (index === currentActiveIndex) {
                               setIsPlaying(true);
                             } else {
-                              // If a non-active video tries to play, pause it immediately
+                              // If a non-active video tries to play, pause and mute it immediately
+                              console.log('[Video] Pausing non-active video that tried to play');
                               const video = videoRefs.current.get(`${post.shortcode}-${carouselIndex}`);
-                              if (video) video.pause();
+                              if (video) {
+                                video.pause();
+                                video.muted = true;
+                              }
                             }
                           }}
                           onPause={() => {
-                            const currentActiveIndex = currentPostIndex;
+                            const currentActiveIndex = currentPostIndexRef.current;
                             if (index === currentActiveIndex) {
                               setIsPlaying(false);
                             }
@@ -1071,9 +1117,19 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                           onCanPlay={(e) => {
                             // Auto-play when video becomes ready if this is the active post
                             // BUT respect user's manual pause
+                            // Use ref to check if this is still the active post
+                            const currentActiveIndex = currentPostIndexRef.current;
                             const video = e.currentTarget;
-                            if (isActive && video.paused && !userPausedRef.current) {
+                            if (index === currentActiveIndex && video.paused && !userPausedRef.current) {
+                              console.log('[Video] onCanPlay auto-play for carousel index:', index);
                               video.play().then(() => setIsPlaying(true)).catch(console.error);
+                            } else if (index !== currentActiveIndex) {
+                              // Defensive: ensure non-active videos are paused and muted
+                              if (!video.paused) {
+                                console.log('[Video] onCanPlay pausing non-active video index:', index);
+                                video.pause();
+                              }
+                              video.muted = true;
                             }
                           }}
                           onTimeUpdate={(e) => {
@@ -1248,19 +1304,24 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         handleVideoClick(post.shortcode, idx);
                       }}
                       onPlay={() => {
-                        // Only update global state if this is the active video
-                        const currentActiveIndex = currentPostIndex;
+                        // Use ref to get the current active index (not stale closure)
+                        const currentActiveIndex = currentPostIndexRef.current;
+                        console.log('[Video] onPlay fired for index:', index, 'current active:', currentActiveIndex);
                         if (index === currentActiveIndex) {
                           setIsPlaying(true);
                         } else {
-                          // If a non-active video tries to play, pause it immediately
+                          // If a non-active video tries to play, pause and mute it immediately
+                          console.log('[Video] Pausing non-active video that tried to play');
                           const video = videoRefs.current.get(`${post.shortcode}-${carouselIndices.get(post.shortcode) || 0}`);
-                          if (video) video.pause();
+                          if (video) {
+                            video.pause();
+                            video.muted = true;
+                          }
                         }
                       }}
                       onPause={() => {
-                        // Only update global state if this is the active video
-                        const currentActiveIndex = currentPostIndex;
+                        // Use ref to get the current active index (not stale closure)
+                        const currentActiveIndex = currentPostIndexRef.current;
                         if (index === currentActiveIndex) {
                           setIsPlaying(false);
                         }
@@ -1268,9 +1329,19 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                       onCanPlay={(e) => {
                         // Auto-play when video becomes ready if this is the active post
                         // BUT respect user's manual pause
+                        // Use ref to check if this is still the active post
+                        const currentActiveIndex = currentPostIndexRef.current;
                         const video = e.currentTarget;
-                        if (isActive && video.paused && !userPausedRef.current) {
+                        if (index === currentActiveIndex && video.paused && !userPausedRef.current) {
+                          console.log('[Video] onCanPlay auto-play for index:', index);
                           video.play().then(() => setIsPlaying(true)).catch(console.error);
+                        } else if (index !== currentActiveIndex) {
+                          // Defensive: ensure non-active videos are paused and muted
+                          if (!video.paused) {
+                            console.log('[Video] onCanPlay pausing non-active video index:', index);
+                            video.pause();
+                          }
+                          video.muted = true;
                         }
                       }}
                       onTimeUpdate={(e) => {
