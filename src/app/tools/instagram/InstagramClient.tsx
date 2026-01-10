@@ -166,11 +166,14 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         
         video.muted = isMuted;
         
-        // Only auto-play if isPlaying is true and we just switched to this post/carousel
-        if (isPlaying && postOrCarouselChanged) {
+        // Auto-play when switching to a new post (always auto-play on post change)
+        // This ensures videos play when scrolling, even if the previous video was paused
+        if (postOrCarouselChanged) {
           const attemptPlay = () => {
             if (video.readyState >= 2) {
-              video.play().catch((err) => {
+              video.play().then(() => {
+                setIsPlaying(true);
+              }).catch((err) => {
                 console.error('[Video] Auto-play failed:', err);
               });
             }
@@ -184,7 +187,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         }
       }
     }
-  }, [currentPostIndex, filteredPosts, isPlaying, isMuted, carouselIndices]);
+  }, [currentPostIndex, filteredPosts, isMuted, carouselIndices]);
 
   // Handle scroll to snap to posts
   useEffect(() => {
@@ -831,15 +834,15 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         <video
                           ref={(el) => {
                             videoRef(el);
-                            // If this is the active post, load the video immediately
+                            // If this is the active post, load and auto-play the video
                             if (el && isActive && currentMedia.videoUrl) {
                               // Ensure video loads immediately when active
                               if (el.readyState === 0) {
                                 el.load();
                               }
-                              // Try to play if ready
-                              if (el.readyState >= 2 && isPlaying) {
-                                el.play().catch(console.error);
+                              // Auto-play when video is ready
+                              if (el.readyState >= 2) {
+                                el.play().then(() => setIsPlaying(true)).catch(console.error);
                               }
                             }
                           }}
@@ -863,18 +866,18 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                             handleVideoClick(post.shortcode, carouselIndex);
                           }}
                           onLoadedMetadata={() => {
-                            if (isActive && isPlaying) {
+                            if (isActive) {
                               const video = videoRefs.current.get(`${post.shortcode}-${carouselIndex}`);
                               if (video) {
-                                video.play().catch(console.error);
+                                video.play().then(() => setIsPlaying(true)).catch(console.error);
                               }
                             }
                           }}
                           onCanPlay={() => {
-                            if (isActive && isPlaying) {
+                            if (isActive) {
                               const video = videoRefs.current.get(`${post.shortcode}-${carouselIndex}`);
                               if (video) {
-                                video.play().catch(console.error);
+                                video.play().then(() => setIsPlaying(true)).catch(console.error);
                               }
                             }
                           }}
@@ -967,15 +970,15 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                     <video
                       ref={(el) => {
                         videoRef(el);
-                        // If this is the active post, load the video immediately
+                        // If this is the active post, load and auto-play the video
                         if (el && isActive && (currentMedia?.videoUrl || post.videoUrl)) {
                           // Ensure video loads immediately when active
                           if (el.readyState === 0) {
                             el.load();
                           }
-                          // Try to play if ready
-                          if (el.readyState >= 2 && isPlaying) {
-                            el.play().catch(console.error);
+                          // Auto-play when video is ready
+                          if (el.readyState >= 2) {
+                            el.play().then(() => setIsPlaying(true)).catch(console.error);
                           }
                         }
                       }}
@@ -1001,19 +1004,19 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                       }}
                       onLoadedMetadata={() => {
                         console.log('[Video] Loaded metadata for', post.shortcode, 'URL:', currentMedia?.videoUrl || post.videoUrl);
-                        if (isActive && isPlaying) {
+                        if (isActive) {
                           const carouselIndex = carouselIndices.get(post.shortcode) || 0;
                           // Video refs are always stored with the carousel index suffix
                           const videoKey = `${post.shortcode}-${carouselIndex}`;
                           const video = videoRefs.current.get(videoKey);
                           if (video) {
                             console.log('[Video] Attempting to play', videoKey, 'readyState:', video.readyState);
-                            video.play().catch((err) => {
+                            video.play().then(() => setIsPlaying(true)).catch((err) => {
                               console.error('[Video] Play failed:', err);
                               // Try loading first
                               video.load();
                               setTimeout(() => {
-                                video.play().catch(console.error);
+                                video.play().then(() => setIsPlaying(true)).catch(console.error);
                               }, 100);
                             });
                           }
@@ -1021,13 +1024,13 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                       }}
                       onCanPlay={() => {
                         console.log('[Video] Can play', post.shortcode);
-                        if (isActive && isPlaying) {
+                        if (isActive) {
                           const carouselIndex = carouselIndices.get(post.shortcode) || 0;
                           // Video refs are always stored with the carousel index suffix
                           const videoKey = `${post.shortcode}-${carouselIndex}`;
                           const video = videoRefs.current.get(videoKey);
                           if (video) {
-                            video.play().catch((err) => {
+                            video.play().then(() => setIsPlaying(true)).catch((err) => {
                               console.error('[Video] Play failed in onCanPlay:', err);
                             });
                           }
