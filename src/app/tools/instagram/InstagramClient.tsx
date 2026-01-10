@@ -291,33 +291,37 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     };
   }, [filteredPosts, carouselIndices]);
 
-  // Handle scroll to snap to posts
+  // Use Intersection Observer to detect which post is visible
+  // This is more reliable than scroll events with scroll-snap
+  const postRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  
   useEffect(() => {
-    if (!containerRef.current || isScrolling) return;
-
-    const handleScroll = () => {
-      if (!containerRef.current) return;
-      
-      const container = containerRef.current;
-      const scrollTop = container.scrollTop;
-      const postHeight = window.innerHeight;
-      const newIndex = Math.round(scrollTop / postHeight);
-      
-      console.log('[Scroll] scrollTop:', scrollTop, 'postHeight:', postHeight, 'newIndex:', newIndex, 'currentPostIndex:', currentPostIndex);
-      
-      if (newIndex !== currentPostIndex && newIndex >= 0 && newIndex < filteredPosts.length) {
-        console.log('[Scroll] ====> Index changing from', currentPostIndex, 'to', newIndex);
-        setCurrentPostIndex(newIndex);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            const index = parseInt(entry.target.getAttribute('data-index') || '0', 10);
+            console.log('[Observer] Post', index, 'is now visible, intersectionRatio:', entry.intersectionRatio);
+            if (index !== currentPostIndexRef.current) {
+              console.log('[Observer] ====> Changing active from', currentPostIndexRef.current, 'to', index);
+              setCurrentPostIndex(index);
+            }
+          }
+        });
+      },
+      {
+        root: containerRef.current,
+        threshold: 0.5, // Trigger when 50% visible
       }
-    };
+    );
 
-    const container = containerRef.current;
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-    };
-  }, [currentPostIndex, filteredPosts.length, isScrolling]);
+    // Observe all post elements
+    postRefs.current.forEach((el) => {
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [filteredPosts.length]); // Only recreate when number of posts changes
 
   // Snap to current post index (only on programmatic changes, not scroll)
   useEffect(() => {
@@ -1118,7 +1122,18 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
           };
 
           return (
-            <div key={post.shortcode} className={postContainerStyle}>
+            <div 
+              key={post.shortcode} 
+              className={postContainerStyle}
+              data-index={index}
+              ref={(el) => {
+                if (el) {
+                  postRefs.current.set(index, el);
+                } else {
+                  postRefs.current.delete(index);
+                }
+              }}
+            >
               {/* Debug indicator */}
               <div style={{
                 position: 'absolute',
