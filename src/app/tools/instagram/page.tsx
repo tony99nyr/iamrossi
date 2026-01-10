@@ -1,6 +1,6 @@
-import { Metadata } from 'next';
+import { Suspense } from 'react';
+import type { Metadata } from 'next';
 import InstagramClient from './InstagramClient';
-import { getAllInstagramPosts, getAllInstagramLabels } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,19 +17,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function InstagramPage() {
-  // Fetch initial data
-  const posts = await getAllInstagramPosts();
-  const labels = await getAllInstagramLabels();
-
-  // Filter out archived posts by default
-  const activePosts = posts.filter(p => !(p.archived ?? false));
-
+export default function InstagramPage() {
   return (
-    <InstagramClient
-      initialPosts={activePosts}
-      initialLabels={labels}
-    />
+    <Suspense fallback={<div>Loading...</div>}>
+      <InstagramClient initialPosts={[]} initialLabels={[]} />
+    </Suspense>
   );
 }
 

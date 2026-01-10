@@ -41,10 +41,42 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   const [isDraggingScrollbar, setIsDraggingScrollbar] = useState(false);
   const scrollTrackRef = useRef<HTMLDivElement>(null);
   const userPausedRef = useRef(false); // Track if user manually paused
+  const draggingScrollbarTargetIndexRef = useRef<number | null>(null); // Track target index while dragging
   const [videoProgress, setVideoProgress] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const justSeekedRef = useRef(false);
+
+  // Fetch posts and labels after authentication
+  const fetchData = useCallback(async () => {
+    try {
+      const [postsRes, labelsRes] = await Promise.all([
+        fetch('/api/instagram/posts?archived=false', {
+          credentials: 'include',
+        }),
+        fetch('/api/instagram/labels', {
+          credentials: 'include',
+        }),
+      ]);
+
+      if (postsRes.ok) {
+        const postsData = await postsRes.json();
+        if (postsData.posts) {
+          setPosts(postsData.posts);
+        }
+      }
+
+      if (labelsRes.ok) {
+        const labelsData = await labelsRes.json();
+        if (labelsData.labels) {
+          setLabels(labelsData.labels);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch Instagram data:', error);
+    }
+  }, []);
 
   // Check authentication on mount
   useEffect(() => {
@@ -56,6 +88,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         
         if (res.ok) {
           setIsAuthenticated(true);
+          // Fetch all data after authentication
+          await fetchData();
         } else if (res.status === 401) {
           setIsAuthenticated(false);
           setShowPinModal(true);
@@ -72,24 +106,15 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     };
     
     checkAuth();
-  }, []);
+  }, [fetchData]);
 
   // Handle PIN success
   const handlePinSuccess = useCallback(() => {
     setIsAuthenticated(true);
     setShowPinModal(false);
-    // Refresh posts after authentication
-    fetch('/api/instagram/posts?archived=false', {
-      credentials: 'include',
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.posts) {
-          setPosts(data.posts);
-        }
-      })
-      .catch(console.error);
-  }, []);
+    // Fetch all data after authentication
+    fetchData();
+  }, [fetchData]);
 
   // Handle PIN cancel - don't allow canceling
   const handlePinCancel = useCallback(() => {
@@ -166,6 +191,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
   // Handle video playback when post or carousel item becomes active
   useEffect(() => {
+    // Don't play videos while dragging scrollbar
+    if (isDraggingScrollbar) return;
+    
     const currentPost = filteredPosts[currentPostIndex];
     if (!currentPost) return;
 
@@ -249,7 +277,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         }
       }
     }
-  }, [currentPostIndex, filteredPosts, isMuted, carouselIndices, pauseAllExcept]);
+  }, [currentPostIndex, filteredPosts, isMuted, carouselIndices, pauseAllExcept, isDraggingScrollbar]);
 
   // Global video play enforcement - catches ANY video that plays when it shouldn't
   useEffect(() => {
@@ -300,6 +328,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   useEffect(() => {
     observerRef.current = new IntersectionObserver(
       (entries) => {
+        // Don't update if user is dragging the scrollbar
+        if (isDraggingScrollbar) return;
+        
         entries.forEach((entry) => {
           if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
             const index = parseInt(entry.target.getAttribute('data-index') || '0', 10);
@@ -320,7 +351,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     return () => {
       observerRef.current?.disconnect();
     };
-  }, []); // Create once on mount
+  }, [isDraggingScrollbar]); // Re-create when dragging state changes
   
   // Function to register/unregister post elements with observer
   const registerPostRef = useCallback((index: number, el: HTMLDivElement | null) => {
@@ -339,6 +370,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
   // Snap to current post index (only on programmatic changes, not scroll)
   useEffect(() => {
+    // Don't snap while dragging scrollbar
+    if (isDraggingScrollbar) return;
+    
     if (!containerRef.current) return;
 
     const container = containerRef.current;
@@ -355,7 +389,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       });
       setTimeout(() => setIsScrolling(false), 500);
     }
-  }, [currentPostIndex]);
+  }, [currentPostIndex, isDraggingScrollbar]);
 
   // Handle touch/swipe gestures for post navigation
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -599,9 +633,12 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   }, []);
 
   // Timeline seek handler
-  const handleTimelineSeek = useCallback((clientX: number, shouldPlay: boolean = false) => {
-    if (!timelineRef.current) return;
-    const rect = timelineRef.current.getBoundingClientRect();
+  const handleTimelineSeek = useCallback((clientX: number, shouldPlay: boolean = false, targetElement?: HTMLElement) => {
+    // Use target element if provided, otherwise fall back to ref
+    const timelineElement = targetElement || timelineRef.current;
+    if (!timelineElement) return;
+    
+    const rect = timelineElement.getBoundingClientRect();
     const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     
     // Find the active video and seek
@@ -610,33 +647,71 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       const carouselIndex = carouselIndices.get(currentPost.shortcode) || 0;
       const videoKey = `${currentPost.shortcode}-${carouselIndex}`;
       const video = videoRefs.current.get(videoKey);
-      if (video && video.duration) {
-        video.currentTime = percentage * video.duration;
-        setVideoProgress(percentage * video.duration);
+      if (video && video.duration && !isNaN(video.duration)) {
+        const newTime = percentage * video.duration;
+        
+        // Set the video time immediately
+        video.currentTime = newTime;
+        setVideoProgress(newTime);
+        
+        // Prevent onTimeUpdate from overriding our seek for a longer moment
+        justSeekedRef.current = true;
+        setTimeout(() => {
+          justSeekedRef.current = false;
+        }, 200);
         
         // If video is paused and shouldPlay is true, start playback
         if (shouldPlay && video.paused) {
           userPausedRef.current = false;
-          video.play().then(() => setIsPlaying(true)).catch(console.error);
+          video.play().then(() => {
+            setIsPlaying(true);
+            // Double-check the time after play starts (sometimes browsers adjust it slightly)
+            if (Math.abs(video.currentTime - newTime) > 0.5) {
+              video.currentTime = newTime;
+            }
+          }).catch(console.error);
         }
       }
     }
   }, [currentPostIndex, filteredPosts, carouselIndices]);
 
+  const handleTimelineClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Direct click handler - seek immediately and play if paused
+    // Find the timeline bar element (the div with the progress bar)
+    const target = e.currentTarget as HTMLElement;
+    handleTimelineSeek(e.clientX, true, target);
+  }, [handleTimelineSeek]);
+
   const handleTimelineMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingTimeline(true);
-    handleTimelineSeek(e.clientX);
+    
+    // Get the timeline bar element
+    const target = e.currentTarget as HTMLElement;
+    
+    // Seek immediately on mousedown
+    handleTimelineSeek(e.clientX, false, target);
+    
+    let hasMoved = false;
+    const startX = e.clientX;
     
     const handleMouseMove = (e: MouseEvent) => {
-      handleTimelineSeek(e.clientX);
+      hasMoved = true;
+      handleTimelineSeek(e.clientX, false, target);
     };
     
     const handleMouseUp = (e: MouseEvent) => {
       setIsDraggingTimeline(false);
-      // Play the video after seeking if it was paused
-      handleTimelineSeek(e.clientX, true);
+      // If we dragged, seek to final position and play
+      if (hasMoved) {
+        handleTimelineSeek(e.clientX, true, target);
+      } else {
+        // Simple click - seek and play (onClick will also fire, but this ensures it works)
+        handleTimelineSeek(startX, true, target);
+      }
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -649,19 +724,22 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingTimeline(true);
+    
+    // Get the timeline bar element
+    const target = e.currentTarget as HTMLElement;
     const startX = e.touches[0].clientX;
-    handleTimelineSeek(startX);
+    handleTimelineSeek(startX, false, target);
     
     let lastX = startX;
     const handleTouchMove = (e: TouchEvent) => {
       lastX = e.touches[0].clientX;
-      handleTimelineSeek(lastX);
+      handleTimelineSeek(lastX, false, target);
     };
     
     const handleTouchEnd = () => {
       setIsDraggingTimeline(false);
       // Play the video after seeking if it was paused
-      handleTimelineSeek(lastX, true);
+      handleTimelineSeek(lastX, true, target);
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
     };
@@ -804,8 +882,10 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
   const handleScrollbarInteraction = useCallback((clientY: number) => {
     const newIndex = calculateIndexFromPosition(clientY);
-    if (newIndex !== currentPostIndex && newIndex >= 0 && newIndex < filteredPosts.length) {
-      setCurrentPostIndex(newIndex);
+    if (newIndex >= 0 && newIndex < filteredPosts.length) {
+      // While dragging, only update the ref and scroll position (no state update = no re-render)
+      draggingScrollbarTargetIndexRef.current = newIndex;
+      
       // Scroll to the post
       if (containerRef.current) {
         const postHeight = window.innerHeight;
@@ -815,16 +895,28 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         });
       }
     }
-  }, [calculateIndexFromPosition, currentPostIndex, filteredPosts.length]);
+  }, [calculateIndexFromPosition, filteredPosts.length]);
 
   const handleScrollbarMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    // Pause all videos when starting to drag
+    videoRefs.current.forEach((video) => {
+      if (video && !video.paused) {
+        video.pause();
+      }
+    });
     setIsDraggingScrollbar(true);
     handleScrollbarInteraction(e.clientY);
   }, [handleScrollbarInteraction]);
 
   const handleScrollbarTouchStart = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
+    // Pause all videos when starting to drag
+    videoRefs.current.forEach((video) => {
+      if (video && !video.paused) {
+        video.pause();
+      }
+    });
     setIsDraggingScrollbar(true);
     if (e.touches.length > 0) {
       handleScrollbarInteraction(e.touches[0].clientY);
@@ -846,6 +938,12 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     };
 
     const handleEnd = () => {
+      // Update state with the final target index when dragging ends
+      const targetIndex = draggingScrollbarTargetIndexRef.current;
+      if (targetIndex !== null && targetIndex !== currentPostIndex) {
+        setCurrentPostIndex(targetIndex);
+      }
+      draggingScrollbarTargetIndexRef.current = null;
       setIsDraggingScrollbar(false);
     };
 
@@ -860,7 +958,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleEnd);
     };
-  }, [isDraggingScrollbar, handleScrollbarInteraction]);
+  }, [isDraggingScrollbar, handleScrollbarInteraction, currentPostIndex]);
 
   // Don't render UI until authenticated
   if (isLoading) {
@@ -1227,7 +1325,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                             }
                           }}
                           onTimeUpdate={(e) => {
-                            if (isActive) {
+                            if (isActive && !isDraggingTimeline && !justSeekedRef.current) {
                               setVideoProgress(e.currentTarget.currentTime);
                             }
                           }}
@@ -1266,6 +1364,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                                 cursor: 'pointer',
                                 position: 'relative',
                               })}
+                              onClick={handleTimelineClick}
                               onMouseDown={handleTimelineMouseDown}
                               onTouchStart={handleTimelineTouchStart}
                             >
@@ -1439,7 +1538,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         }
                       }}
                       onTimeUpdate={(e) => {
-                        if (isActive) {
+                        if (isActive && !isDraggingTimeline && !justSeekedRef.current) {
                           setVideoProgress(e.currentTarget.currentTime);
                         }
                       }}
@@ -1478,6 +1577,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                             cursor: 'pointer',
                             position: 'relative',
                           })}
+                          onClick={handleTimelineClick}
                           onMouseDown={handleTimelineMouseDown}
                           onTouchStart={handleTimelineTouchStart}
                         >
@@ -1947,7 +2047,9 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
               pointerEvents: 'none',
             })}
             style={{
-              top: `calc(${(currentPostIndex / Math.max(1, filteredPosts.length - 1)) * 100}% - 12px)`,
+              top: `calc(${((isDraggingScrollbar && draggingScrollbarTargetIndexRef.current !== null 
+                ? draggingScrollbarTargetIndexRef.current 
+                : currentPostIndex) / Math.max(1, filteredPosts.length - 1)) * 100}% - 12px)`,
             }}
           />
           {/* Current position indicator */}
@@ -1968,10 +2070,14 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
               pointerEvents: 'none',
             })}
             style={{
-              top: `calc(${(currentPostIndex / Math.max(1, filteredPosts.length - 1)) * 100}%)`,
+              top: `calc(${((isDraggingScrollbar && draggingScrollbarTargetIndexRef.current !== null 
+                ? draggingScrollbarTargetIndexRef.current 
+                : currentPostIndex) / Math.max(1, filteredPosts.length - 1)) * 100}%)`,
             }}
           >
-            {currentPostIndex + 1} / {filteredPosts.length}
+            {(isDraggingScrollbar && draggingScrollbarTargetIndexRef.current !== null 
+              ? draggingScrollbarTargetIndexRef.current 
+              : currentPostIndex) + 1} / {filteredPosts.length}
           </div>
         </div>
       )}
