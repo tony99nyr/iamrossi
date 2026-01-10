@@ -881,11 +881,20 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
             : { imageUrl: post.imageUrl, videoUrl: post.videoUrl, isVideo: post.isVideo };
           
           
+          const videoKey = `${post.shortcode}-${carouselIndex}`;
           const videoRef = (el: HTMLVideoElement | null) => {
             if (el) {
-              videoRefs.current.set(`${post.shortcode}-${carouselIndex}`, el);
+              videoRefs.current.set(videoKey, el);
+              // Auto-play if this is the active post and video is ready
+              if (isActive && el.readyState >= 2 && el.paused) {
+                el.muted = isMuted;
+                el.play().then(() => setIsPlaying(true)).catch(console.error);
+              } else if (isActive && el.readyState < 2) {
+                // Load and wait for canplay
+                el.load();
+              }
             } else {
-              videoRefs.current.delete(`${post.shortcode}-${carouselIndex}`);
+              videoRefs.current.delete(videoKey);
             }
           };
 
@@ -935,6 +944,13 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                             const currentActiveIndex = currentPostIndex;
                             if (index === currentActiveIndex) {
                               setIsPlaying(false);
+                            }
+                          }}
+                          onCanPlay={(e) => {
+                            // Auto-play when video becomes ready if this is the active post
+                            const video = e.currentTarget;
+                            if (isActive && video.paused) {
+                              video.play().then(() => setIsPlaying(true)).catch(console.error);
                             }
                           }}
                         />
@@ -1050,6 +1066,13 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                         const currentActiveIndex = currentPostIndex;
                         if (index === currentActiveIndex) {
                           setIsPlaying(false);
+                        }
+                      }}
+                      onCanPlay={(e) => {
+                        // Auto-play when video becomes ready if this is the active post
+                        const video = e.currentTarget;
+                        if (isActive && video.paused) {
+                          video.play().then(() => setIsPlaying(true)).catch(console.error);
                         }
                       }}
                     />
