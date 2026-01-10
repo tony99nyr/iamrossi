@@ -796,7 +796,7 @@ export async function fetchInstagramSavedPosts(
           // Always close the page, even on error
           try {
             await postPage.close();
-          } catch (closeError) {
+          } catch {
             // Ignore close errors
           }
           
