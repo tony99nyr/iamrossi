@@ -851,6 +851,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     alignItems: 'flex-start',
     width: '100%',
     pointerEvents: 'auto',
+    // Add right padding to avoid toolbar buttons on mobile
+    paddingRight: '60px',
   });
 
   const bottomControlsStyle = css({
