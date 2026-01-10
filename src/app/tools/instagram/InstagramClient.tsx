@@ -152,6 +152,17 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     currentPostIndexRef.current = currentPostIndex;
   }, [currentPostIndex]);
 
+  // Helper function to pause and mute all non-active videos
+  const pauseAllExcept = useCallback((activeKey: string) => {
+    videoRefs.current.forEach((video, key) => {
+      if (video && key !== activeKey) {
+        video.pause();
+        video.muted = true;
+        video.currentTime = 0; // Reset to start
+      }
+    });
+  }, []);
+
   // Handle video playback when post or carousel item becomes active
   useEffect(() => {
     const currentPost = filteredPosts[currentPostIndex];
@@ -171,28 +182,17 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     if (postOrCarouselChanged) {
       userPausedRef.current = false;
       
-      // Explicitly pause the PREVIOUS video first (and mute it for safety)
-      if (prevVideoKeyRef.current) {
-        const prevVideo = videoRefs.current.get(prevVideoKeyRef.current);
-        if (prevVideo) {
-          prevVideo.pause();
-          prevVideo.muted = true; // Ensure no audio leak
-          console.log('[Video] Explicitly paused and muted previous video:', prevVideoKeyRef.current);
-        }
-      }
+      // Immediately pause all non-active videos
+      pauseAllExcept(currentVideoKey);
+      
+      // Also pause with delays to catch any race conditions
+      setTimeout(() => pauseAllExcept(currentVideoKey), 50);
+      setTimeout(() => pauseAllExcept(currentVideoKey), 150);
+      setTimeout(() => pauseAllExcept(currentVideoKey), 300);
     }
     
     // ALWAYS pause ALL videos except the current one (defensive - catches any we missed)
-    videoRefs.current.forEach((video, key) => {
-      if (video && key !== currentVideoKey) {
-        if (!video.paused) {
-          video.pause();
-          console.log('[Video] Paused non-active video:', key);
-        }
-        // Always mute non-active videos for safety
-        video.muted = true;
-      }
-    });
+    pauseAllExcept(currentVideoKey);
     
     // Update refs AFTER pausing
     prevPostIndexRef.current = currentPostIndex;
@@ -242,7 +242,43 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
         }
       }
     }
-  }, [currentPostIndex, filteredPosts, isMuted, carouselIndices]);
+  }, [currentPostIndex, filteredPosts, isMuted, carouselIndices, pauseAllExcept]);
+
+  // Global video play enforcement - catches ANY video that plays when it shouldn't
+  useEffect(() => {
+    const handleGlobalPlay = (e: Event) => {
+      const video = e.target as HTMLVideoElement;
+      if (!video || video.tagName !== 'VIDEO') return;
+      
+      // Find which video key this is
+      let playingVideoKey: string | null = null;
+      videoRefs.current.forEach((v, key) => {
+        if (v === video) playingVideoKey = key;
+      });
+      
+      // Get the expected active video key
+      const currentPost = filteredPosts[currentPostIndexRef.current];
+      if (!currentPost) return;
+      
+      const carouselIndex = carouselIndices.get(currentPost.shortcode) || 0;
+      const expectedKey = `${currentPost.shortcode}-${carouselIndex}`;
+      
+      // If this video shouldn't be playing, stop it immediately
+      if (playingVideoKey && playingVideoKey !== expectedKey) {
+        console.log('[Video] Global handler: stopping unauthorized video:', playingVideoKey, 'expected:', expectedKey);
+        video.pause();
+        video.muted = true;
+        video.currentTime = 0;
+      }
+    };
+    
+    // Listen for play events on the entire document
+    document.addEventListener('play', handleGlobalPlay, true);
+    
+    return () => {
+      document.removeEventListener('play', handleGlobalPlay, true);
+    };
+  }, [filteredPosts, carouselIndices]);
 
   // Handle scroll to snap to posts
   useEffect(() => {
