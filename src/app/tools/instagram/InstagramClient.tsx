@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { css } from '@styled-system/css';
 import { cx } from '@styled-system/css';
@@ -13,8 +14,12 @@ interface InstagramClientProps {
 }
 
 export default function InstagramClient({ initialPosts, initialLabels }: InstagramClientProps) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [posts, setPosts] = useState<InstagramSavedPost[]>(initialPosts);
-  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(
+    searchParams.get('label') || null
+  );
   const [isSyncing, setIsSyncing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [currentPostIndex, setCurrentPostIndex] = useState(0);
@@ -90,6 +95,22 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   const handlePinCancel = useCallback(() => {
     // Don't allow canceling - user must authenticate
   }, []);
+
+  // Handle label selection with URL persistence
+  const handleLabelSelect = useCallback((labelId: string | null) => {
+    setSelectedLabelId(labelId);
+    setCurrentPostIndex(0); // Reset to first post when filtering
+    
+    // Update URL
+    const params = new URLSearchParams(searchParams.toString());
+    if (labelId) {
+      params.set('label', labelId);
+    } else {
+      params.delete('label');
+    }
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    router.push(newUrl, { scroll: false });
+  }, [searchParams, router]);
 
   // Filter and sort posts
   const filteredPosts = posts
@@ -1374,17 +1395,79 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                 <div className={controlsOverlayStyle}>
                   <div className={topControlsStyle}>
                     <div style={{ flex: 1 }}>
+                      {/* Active filter indicator */}
+                      {selectedLabelId && index === currentPostIndex && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleLabelSelect(null);
+                          }}
+                          className={css({
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 12px',
+                            marginBottom: '8px',
+                            borderRadius: '20px',
+                            background: 'rgba(88, 166, 255, 0.2)',
+                            border: '1px solid rgba(88, 166, 255, 0.4)',
+                            color: '#88a6ff',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            backdropFilter: 'blur(12px)',
+                            transition: 'all 0.2s',
+                            _hover: {
+                              background: 'rgba(239, 68, 68, 0.2)',
+                              borderColor: 'rgba(239, 68, 68, 0.4)',
+                              color: '#ef4444',
+                            },
+                          })}
+                        >
+                          <span>🏷️ {labels.find(l => l.id === selectedLabelId)?.name}</span>
+                          <span style={{ fontSize: '14px' }}>✕</span>
+                        </button>
+                      )}
                       {post.authorUsername && (
                         <div className={authorStyle}>@{post.authorUsername}</div>
                       )}
                       {post.labels && post.labels.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: '8px', gap: '4px' }}>
                           {post.labels.map(labelId => {
                             const label = labels.find(l => l.id === labelId);
                             return label ? (
-                              <span key={labelId} className={labelBadgeStyle}>
+                              <button
+                                key={labelId}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleLabelSelect(labelId);
+                                }}
+                                className={css({
+                                  padding: '4px 10px',
+                                  borderRadius: '16px',
+                                  background: selectedLabelId === labelId 
+                                    ? 'rgba(88, 166, 255, 0.3)' 
+                                    : 'rgba(15, 23, 42, 0.6)',
+                                  border: selectedLabelId === labelId
+                                    ? '1px solid rgba(88, 166, 255, 0.6)'
+                                    : '1px solid rgba(148, 163, 184, 0.2)',
+                                  color: '#f5f5f5',
+                                  fontSize: '12px',
+                                  fontWeight: '500',
+                                  backdropFilter: 'blur(12px)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s',
+                                  _hover: {
+                                    background: 'rgba(88, 166, 255, 0.2)',
+                                    borderColor: 'rgba(88, 166, 255, 0.4)',
+                                  },
+                                })}
+                                title={`Filter by ${label.name}`}
+                              >
                                 {label.name}
-                              </span>
+                              </button>
                             ) : null;
                           })}
                         </div>
