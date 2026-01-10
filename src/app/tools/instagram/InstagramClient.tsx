@@ -36,6 +36,10 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   const [isDraggingScrollbar, setIsDraggingScrollbar] = useState(false);
   const scrollTrackRef = useRef<HTMLDivElement>(null);
   const userPausedRef = useRef(false); // Track if user manually paused
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
+  const timelineRef = useRef<HTMLDivElement>(null);
 
   // Check authentication on mount
   useEffect(() => {
@@ -463,6 +467,70 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       return newMuted;
     });
   }, []);
+
+  // Timeline seek handler
+  const handleTimelineSeek = useCallback((clientX: number) => {
+    if (!timelineRef.current) return;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    
+    // Find the active video and seek
+    const currentPost = filteredPosts[currentPostIndex];
+    if (currentPost) {
+      const carouselIndex = carouselIndices.get(currentPost.shortcode) || 0;
+      const videoKey = `${currentPost.shortcode}-${carouselIndex}`;
+      const video = videoRefs.current.get(videoKey);
+      if (video && video.duration) {
+        video.currentTime = percentage * video.duration;
+        setVideoProgress(percentage * video.duration);
+      }
+    }
+  }, [currentPostIndex, filteredPosts, carouselIndices]);
+
+  const handleTimelineMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingTimeline(true);
+    handleTimelineSeek(e.clientX);
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      handleTimelineSeek(e.clientX);
+    };
+    
+    const handleMouseUp = () => {
+      setIsDraggingTimeline(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [handleTimelineSeek]);
+
+  const handleTimelineTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    setIsDraggingTimeline(true);
+    handleTimelineSeek(e.touches[0].clientX);
+    
+    const handleTouchMove = (e: TouchEvent) => {
+      handleTimelineSeek(e.touches[0].clientX);
+    };
+    
+    const handleTouchEnd = () => {
+      setIsDraggingTimeline(false);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+    
+    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchend', handleTouchEnd);
+  }, [handleTimelineSeek]);
+
+  // Format time as mm:ss
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const archivePost = useCallback(async (shortcode: string) => {
     // Show confirmation prompt
@@ -965,7 +1033,81 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                               video.play().then(() => setIsPlaying(true)).catch(console.error);
                             }
                           }}
+                          onTimeUpdate={(e) => {
+                            if (isActive) {
+                              setVideoProgress(e.currentTarget.currentTime);
+                            }
+                          }}
+                          onLoadedMetadata={(e) => {
+                            if (isActive) {
+                              setVideoDuration(e.currentTarget.duration);
+                            }
+                          }}
                         />
+                        {/* Video Timeline */}
+                        {isActive && videoDuration > 0 && (
+                          <div
+                            ref={timelineRef}
+                            className={css({
+                              position: 'absolute',
+                              bottom: '60px',
+                              left: '16px',
+                              right: '16px',
+                              height: '24px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              zIndex: 15,
+                              pointerEvents: 'auto',
+                            })}
+                          >
+                            <span className={css({ color: '#fff', fontSize: '11px', fontWeight: '500', minWidth: '36px', textShadow: '0 1px 2px rgba(0,0,0,0.8)' })}>
+                              {formatTime(videoProgress)}
+                            </span>
+                            <div
+                              className={css({
+                                flex: 1,
+                                height: '6px',
+                                background: 'rgba(255, 255, 255, 0.3)',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                position: 'relative',
+                              })}
+                              onMouseDown={handleTimelineMouseDown}
+                              onTouchStart={handleTimelineTouchStart}
+                            >
+                              <div
+                                className={css({
+                                  position: 'absolute',
+                                  left: 0,
+                                  top: 0,
+                                  height: '100%',
+                                  background: 'rgba(255, 255, 255, 0.9)',
+                                  borderRadius: '3px',
+                                  transition: isDraggingTimeline ? 'none' : 'width 0.1s',
+                                })}
+                                style={{ width: `${(videoProgress / videoDuration) * 100}%` }}
+                              />
+                              <div
+                                className={css({
+                                  position: 'absolute',
+                                  top: '50%',
+                                  transform: 'translate(-50%, -50%)',
+                                  width: '14px',
+                                  height: '14px',
+                                  background: '#fff',
+                                  borderRadius: '50%',
+                                  boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                                  transition: isDraggingTimeline ? 'none' : 'left 0.1s',
+                                })}
+                                style={{ left: `${(videoProgress / videoDuration) * 100}%` }}
+                              />
+                            </div>
+                            <span className={css({ color: '#fff', fontSize: '11px', fontWeight: '500', minWidth: '36px', textAlign: 'right', textShadow: '0 1px 2px rgba(0,0,0,0.8)' })}>
+                              {formatTime(videoDuration)}
+                            </span>
+                          </div>
+                        )}
                         {!isPlaying && isActive && (
                           <div 
                             onClick={(e) => {
@@ -1088,7 +1230,81 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
                           video.play().then(() => setIsPlaying(true)).catch(console.error);
                         }
                       }}
+                      onTimeUpdate={(e) => {
+                        if (isActive) {
+                          setVideoProgress(e.currentTarget.currentTime);
+                        }
+                      }}
+                      onLoadedMetadata={(e) => {
+                        if (isActive) {
+                          setVideoDuration(e.currentTarget.duration);
+                        }
+                      }}
                     />
+                    {/* Video Timeline */}
+                    {isActive && videoDuration > 0 && (
+                      <div
+                        ref={timelineRef}
+                        className={css({
+                          position: 'absolute',
+                          bottom: '60px',
+                          left: '16px',
+                          right: '16px',
+                          height: '24px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          zIndex: 15,
+                          pointerEvents: 'auto',
+                        })}
+                      >
+                        <span className={css({ color: '#fff', fontSize: '11px', fontWeight: '500', minWidth: '36px', textShadow: '0 1px 2px rgba(0,0,0,0.8)' })}>
+                          {formatTime(videoProgress)}
+                        </span>
+                        <div
+                          className={css({
+                            flex: 1,
+                            height: '6px',
+                            background: 'rgba(255, 255, 255, 0.3)',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            position: 'relative',
+                          })}
+                          onMouseDown={handleTimelineMouseDown}
+                          onTouchStart={handleTimelineTouchStart}
+                        >
+                          <div
+                            className={css({
+                              position: 'absolute',
+                              left: 0,
+                              top: 0,
+                              height: '100%',
+                              background: 'rgba(255, 255, 255, 0.9)',
+                              borderRadius: '3px',
+                              transition: isDraggingTimeline ? 'none' : 'width 0.1s',
+                            })}
+                            style={{ width: `${(videoProgress / videoDuration) * 100}%` }}
+                          />
+                          <div
+                            className={css({
+                              position: 'absolute',
+                              top: '50%',
+                              transform: 'translate(-50%, -50%)',
+                              width: '14px',
+                              height: '14px',
+                              background: '#fff',
+                              borderRadius: '50%',
+                              boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                              transition: isDraggingTimeline ? 'none' : 'left 0.1s',
+                            })}
+                            style={{ left: `${(videoProgress / videoDuration) * 100}%` }}
+                          />
+                        </div>
+                        <span className={css({ color: '#fff', fontSize: '11px', fontWeight: '500', minWidth: '36px', textAlign: 'right', textShadow: '0 1px 2px rgba(0,0,0,0.8)' })}>
+                          {formatTime(videoDuration)}
+                        </span>
+                      </div>
+                    )}
                     {!isPlaying && isActive && (
                       <div 
                         onClick={(e) => {
