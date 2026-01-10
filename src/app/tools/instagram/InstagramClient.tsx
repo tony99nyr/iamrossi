@@ -747,6 +747,10 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     flexDirection: 'column',
     justifyContent: 'space-between',
     padding: '16px',
+    paddingTop: 'max(16px, env(safe-area-inset-top))',
+    paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+    paddingLeft: 'max(16px, env(safe-area-inset-left))',
+    paddingRight: 'max(16px, env(safe-area-inset-right))',
     pointerEvents: 'none',
     zIndex: 10,
   });
@@ -765,6 +769,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
     gap: '12px',
     width: '100%',
     pointerEvents: 'auto',
+    paddingBottom: 'env(safe-area-inset-bottom, 0px)',
   });
 
   const buttonStyle = css({
@@ -811,8 +816,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
   const toolbarStyle = css({
     position: 'fixed',
-    top: '16px',
-    right: '16px',
+    top: 'max(16px, env(safe-area-inset-top))',
+    right: 'max(16px, env(safe-area-inset-right))',
     zIndex: 100,
     display: 'flex',
     flexDirection: 'column',
@@ -822,8 +827,8 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
 
   const filterMenuStyle = css({
     position: 'fixed',
-    top: '60px',
-    right: '16px',
+    top: 'calc(max(16px, env(safe-area-inset-top)) + 52px)',
+    right: 'max(16px, env(safe-area-inset-right))',
     zIndex: 100,
     background: 'rgba(15, 23, 42, 0.9)',
     border: '1px solid rgba(148, 163, 184, 0.2)',
@@ -1472,10 +1477,10 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
           ref={scrollTrackRef}
           className={css({
             position: 'fixed',
-            right: '8px',
+            right: 'max(8px, env(safe-area-inset-right))',
             top: '50%',
             transform: 'translateY(-50%)',
-            height: '60vh',
+            height: 'calc(60vh - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
             width: '6px',
             background: 'rgba(255, 255, 255, 0.1)',
             borderRadius: '3px',
