@@ -149,6 +149,7 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   
   // Keep ref in sync with state
   useEffect(() => {
+    console.log('[Ref] Updating currentPostIndexRef from', currentPostIndexRef.current, 'to', currentPostIndex);
     currentPostIndexRef.current = currentPostIndex;
   }, [currentPostIndex]);
 
@@ -302,8 +303,10 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
       const postHeight = window.innerHeight;
       const newIndex = Math.round(scrollTop / postHeight);
       
+      console.log('[Scroll] scrollTop:', scrollTop, 'postHeight:', postHeight, 'newIndex:', newIndex, 'currentPostIndex:', currentPostIndex);
+      
       if (newIndex !== currentPostIndex && newIndex >= 0 && newIndex < filteredPosts.length) {
-        console.log('[Scroll] Index changing from', currentPostIndex, 'to', newIndex);
+        console.log('[Scroll] ====> Index changing from', currentPostIndex, 'to', newIndex);
         setCurrentPostIndex(newIndex);
       }
     };
