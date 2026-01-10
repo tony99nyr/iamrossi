@@ -678,7 +678,115 @@ export async function fetchInstagramSavedPosts(
                 post.isVideo = true;
                 logDebug(`[Instagram] ✅ Found video URL for post ${i + 1}/${allPosts.length} (${post.shortcode}): ${videoData.videoUrl.substring(0, 80)}...`);
               } else {
-                logDebug(`[Instagram] No video in embed page for post ${i + 1}/${allPosts.length} (${post.shortcode})`);
+                // Check if embed has a "Play" button indicating it's a video that requires Instagram
+                const hasPlayButton = await postPage.evaluate(() => {
+                  const links = document.querySelectorAll('a');
+                  for (const link of Array.from(links)) {
+                    const text = link.textContent?.toLowerCase() || '';
+                    const ariaLabel = link.getAttribute('aria-label')?.toLowerCase() || '';
+                    if (text.includes('play') || text.includes('watch') || 
+                        ariaLabel.includes('play') || ariaLabel.includes('watch')) {
+                      return true;
+                    }
+                  }
+                  return false;
+                }).catch(() => false);
+                
+                if (hasPlayButton) {
+                  logDebug(`[Instagram] Embed has play button but no video element for post ${i + 1}/${allPosts.length} (${post.shortcode}), trying authenticated scrape...`);
+                  // Close embed page and try authenticated direct URL
+                  await postPage.close().catch(() => {});
+                  postPage = await context.newPage();
+                  
+                  try {
+                    // Navigate to direct post URL with authentication
+                    await postPage.goto(post.url, {
+                      waitUntil: 'domcontentloaded',
+                      timeout: 20000,
+                    });
+                    
+                    // Wait for content to load
+                    await new Promise(r => setTimeout(r, 3000));
+                    
+                    // Try to extract video URL from the authenticated page
+                    const authVideoData = await postPage.evaluate(() => {
+                      let videoUrl: string | null = null;
+                      
+                      // Method 1: Direct video element
+                      const video = document.querySelector('video');
+                      if (video) {
+                        const vidEl = video as HTMLVideoElement;
+                        videoUrl = vidEl.src && !vidEl.src.startsWith('blob:') ? vidEl.src : 
+                                  (vidEl.currentSrc && !vidEl.currentSrc.startsWith('blob:') ? vidEl.currentSrc : null);
+                        if (videoUrl) return { videoUrl, source: 'video-element' };
+                      }
+                      
+                      // Method 2: Check for video URL in page data/scripts
+                      const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+                      for (const script of Array.from(scripts)) {
+                        try {
+                          const data = JSON.parse(script.textContent || '');
+                          if (data.video?.contentUrl) {
+                            return { videoUrl: data.video.contentUrl, source: 'ld-json' };
+                          }
+                          if (data.contentUrl) {
+                            return { videoUrl: data.contentUrl, source: 'ld-json' };
+                          }
+                        } catch {
+                          // Ignore parse errors
+                        }
+                      }
+                      
+                      // Method 3: Check og:video meta tag
+                      const ogVideo = document.querySelector('meta[property="og:video"]');
+                      if (ogVideo) {
+                        const content = ogVideo.getAttribute('content');
+                        if (content && content.includes('.mp4')) {
+                          return { videoUrl: content, source: 'og-video' };
+                        }
+                      }
+                      
+                      // Method 4: Search for video URLs in all scripts
+                      const allScripts = document.querySelectorAll('script');
+                      for (const script of Array.from(allScripts)) {
+                        const text = script.textContent || '';
+                        // Look for CDN video URLs
+                        const videoMatch = text.match(/"video_url":"([^"]+)"/);
+                        if (videoMatch) {
+                          // Unescape the URL
+                          const url = videoMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+                          if (url.includes('.mp4') || url.includes('cdninstagram')) {
+                            return { videoUrl: url, source: 'script-data' };
+                          }
+                        }
+                        
+                        // Also try video_versions pattern
+                        const versionsMatch = text.match(/"video_versions":\s*\[([^\]]+)\]/);
+                        if (versionsMatch) {
+                          const urlMatch = versionsMatch[1].match(/"url":"([^"]+)"/);
+                          if (urlMatch) {
+                            const url = urlMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+                            return { videoUrl: url, source: 'video-versions' };
+                          }
+                        }
+                      }
+                      
+                      return { videoUrl: null, source: null };
+                    }).catch(() => ({ videoUrl: null, source: null }));
+                    
+                    if (authVideoData.videoUrl) {
+                      post.videoUrl = authVideoData.videoUrl;
+                      post.isVideo = true;
+                      logDebug(`[Instagram] ✅ Found video URL via authenticated scrape (${authVideoData.source}) for post ${i + 1}/${allPosts.length} (${post.shortcode}): ${authVideoData.videoUrl.substring(0, 80)}...`);
+                    } else {
+                      logDebug(`[Instagram] No video found even with authenticated scrape for post ${i + 1}/${allPosts.length} (${post.shortcode})`);
+                    }
+                  } catch (authError) {
+                    logDebug(`[Instagram] Authenticated scrape failed for post ${i + 1}: ${authError instanceof Error ? authError.message : String(authError)}`);
+                  }
+                } else {
+                  logDebug(`[Instagram] No video in embed page for post ${i + 1}/${allPosts.length} (${post.shortcode})`);
+                }
               }
             }
           } catch (error) {
