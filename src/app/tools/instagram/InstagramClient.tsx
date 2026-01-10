@@ -366,6 +366,12 @@ export default function InstagramClient({ initialPosts, initialLabels }: Instagr
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle shortcuts when typing in input fields
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      
       const currentPost = filteredPosts[currentPostIndex];
       const isCarousel = currentPost?.isCarousel && currentPost?.mediaItems && currentPost.mediaItems.length > 1;
       const currentCarouselIndex = carouselIndices.get(currentPost?.shortcode || '') || 0;
